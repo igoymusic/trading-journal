@@ -14,8 +14,10 @@ function compactUsd(n: number): string {
 }
 
 /** P&L calendar for one month. Each day shows its P&L; the right column totals each week. */
-export function MonthView({ trades, year, month, onMonthChange, onOpenDay }: {
+export function MonthView({ trades, year, month, compact, onMonthChange, onOpenDay }: {
   trades: Trade[];
+  /** Smaller version for the Home page. */
+  compact?: boolean;
   year: number;
   month: number;
   onMonthChange: (year: number, month: number) => void;
@@ -26,7 +28,7 @@ export function MonthView({ trades, year, month, onMonthChange, onOpenDay }: {
   const go = (by: number) => { const m = shiftMonth(year, month, by); onMonthChange(m.year, m.month); };
 
   return (
-    <section className="month">
+    <section className={`month ${compact ? 'compact' : ''}`}>
       <div className="month-head">
         <div className="month-nav">
           <button onClick={() => go(-1)} aria-label="Previous month">‹</button>
@@ -35,7 +37,7 @@ export function MonthView({ trades, year, month, onMonthChange, onOpenDay }: {
         </div>
         <div className="month-stats">
           <span>Month <b className={pnlClass(cal.netPnl)}>{signedUsd(cal.netPnl)}</b></span>
-          <span className="muted">{cal.tradedDays} trading day{cal.tradedDays === 1 ? '' : 's'} · <span className="win">{cal.greenDays} green</span> · <span className="loss">{cal.redDays} red</span></span>
+          {!compact && <span className="muted">{cal.tradedDays} trading day{cal.tradedDays === 1 ? '' : 's'} · <span className="win">{cal.greenDays} green</span> · <span className="loss">{cal.redDays} red</span></span>}
         </div>
       </div>
 
@@ -60,18 +62,18 @@ export function MonthView({ trades, year, month, onMonthChange, onOpenDay }: {
                     <>
                       <div className={`cal-pnl ${tone}`}>{compactUsd(d.netPnl)}</div>
                       <div className="cal-sub">{d.trades} trade{d.trades === 1 ? '' : 's'}</div>
-                      {d.wins + d.losses > 0 && <div className="cal-sub">{Math.round((d.wins / (d.wins + d.losses)) * 100)}% win</div>}
+                      {!compact && d.wins + d.losses > 0 && <div className="cal-sub">{Math.round((d.wins / (d.wins + d.losses)) * 100)}% win</div>}
                     </>
                   )}
                 </div>
               );
             })}
             <div className="cal-week">
-              <div className="cal-date">Week {i + 1}</div>
+              <div className="cal-date">{compact ? `Wk ${i + 1}` : `Week ${i + 1}`}</div>
               {w.trades > 0 ? (
                 <>
                   <div className={`cal-pnl ${pnlClass(w.netPnl)}`}>{compactUsd(w.netPnl)}</div>
-                  <div className="cal-sub">{w.tradedDays} day{w.tradedDays === 1 ? '' : 's'} · {w.trades} trade{w.trades === 1 ? '' : 's'}</div>
+                  {!compact && <div className="cal-sub">{w.tradedDays} day{w.tradedDays === 1 ? '' : 's'} · {w.trades} trade{w.trades === 1 ? '' : 's'}</div>}
                 </>
               ) : <div className="cal-sub">No trades</div>}
             </div>

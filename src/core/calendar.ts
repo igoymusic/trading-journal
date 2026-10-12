@@ -113,9 +113,62 @@ export function shiftMonth(year: number, month: number, by: number): { year: num
   return { year: Math.floor(index / 12), month: (index % 12) + 1 };
 }
 
-/** The traded day just before or after `date` (or null at either end). */
-export function neighborDay(days: string[], date: string, dir: -1 | 1): string | null {
-  const sorted = [...new Set(days)].sort();
-  if (dir > 0) return sorted.find((d) => d > date) ?? null;
-  return [...sorted].reverse().find((d) => d < date) ?? null;
+export interface MonthSummary {
+  /** 1-12 */
+  month: number;
+  netPnl: number;
+  trades: number;
+  tradedDays: number;
+}
+
+export interface YearSummary {
+  year: number;
+  netPnl: number;
+  trades: number;
+  tradedDays: number;
+  /** Only months with trades, January first. */
+  months: MonthSummary[];
+}
+
+/** P&L per year and per month, newest year first, for the Year tab's list. */
+export function yearSummaries(trades: Trade[]): YearSummary[] {
+  const years = new Map<number, YearSummary>();
+  for (const d of statsByDay(trades).values()) {
+    const y = Number(d.date.slice(0, 4));
+    const m = Number(d.date.slice(5, 7));
+    const year = years.get(y) ?? { year: y, netPnl: 0, trades: 0, tradedDays: 0, months: [] };
+    let month = year.months.find((x) => x.month === m);
+    if (!month) {
+      month = { month: m, netPnl: 0, trades: 0, tradedDays: 0 };
+      year.months.push(month);
+    }
+    for (const s of [year, month]) {
+      s.netPnl = round2(s.netPnl + d.netPnl);
+      s.trades += d.trades;
+      s.tradedDays += 1;
+    }
+    years.set(y, year);
+  }
+  for (const y of years.values()) y.months.sort((a, b) => a.month - b.month);
+  return [...years.values()].sort((a, b) => b.year - a.year);
+}
+
+/**
+ * Running total of net P&L by day, from `from` ("YYYY-MM-DD", inclusive) onward, starting at $0.
+ * With no `from`, it covers every trade.
+ */
+export function equityCurve(trades: Trade[], from: string | null): { date: string; value: number }[] {
+  const days = [...statsByDay(trades).values()]
+    .filter((d) => (from === null || d.date >= from) && d.netPnl !== 0)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  if (days.length === 0) return from ? [{ date: from, value: 0 }] : [];
+  const points: { date: string; value: number }[] = [];
+  // Start the line at $0 on the first day of the range, unless a trade already sits there.
+  if (from !== null && from < days[0].date) points.push({ date: from, value: 0 });
+  let total = 0;
+  for (const d of days) {
+    total = round2(total + d.netPnl);
+    points.push({ date: d.date, value: total });
+  }
+  return points;
 }
