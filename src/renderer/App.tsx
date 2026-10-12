@@ -1,11 +1,18 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
-import type { Trade } from '../core/types';
+import { useEffect, useState } from 'react';
 import type { ImportResult, JournalData } from '../shared/api';
-import { holdTime, longDate, pnlClass, shortDate, signedUsd, timeOf, usd } from './format';
+import { pnlClass, signedUsd, usd } from './format';
+import { SettingsDialog } from './SettingsDialog';
+import { TradePanel } from './TradePanel';
+import { TradeTable } from './TradeTable';
 
 export function App() {
   const [data, setData] = useState<JournalData | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  // Bumped when Settings closes so an open chart reloads with new keys or time zone.
+  const [settingsVersion, setSettingsVersion] = useState(0);
+  const selected = data?.trades.find((t) => t.id === selectedId) ?? null;
 
   const load = () => window.journal.getJournal().then(setData);
   useEffect(() => { load(); }, []);
@@ -24,22 +31,23 @@ export function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <h1>Trading Journal</h1>
-        <button className="primary" onClick={importCsv}>Import thinkorswim CSV</button>
+        <h1>Moon Journal</h1>
+        <div className="topbar-actions">
+          <button onClick={() => setShowSettings(true)}>Settings</button>
+          <button className="primary" onClick={importCsv}>Import thinkorswim CSV</button>
+        </div>
       </header>
       {notice && <div className="notice" onClick={() => setNotice(null)}>{notice}</div>}
       {!data ? null : data.trades.length === 0 ? <EmptyState onImport={importCsv} /> : (
         <>
           <SummaryBar data={data} />
-          <TradeList trades={data.trades} />
+          {selected && <TradePanel key={`${selected.id}:${settingsVersion}`} trade={selected} onClose={() => setSelectedId(null)} onOpenSettings={() => setShowSettings(true)} />}
+          <TradeTable trades={data.trades} selectedId={selectedId} onSelect={(id) => setSelectedId(id === selectedId ? null : id)} />
         </>
       )}
+      {showSettings && <SettingsDialog onClose={() => { setShowSettings(false); setSettingsVersion((v) => v + 1); }} />}
     </div>
   );
-}
-
-function plural(n: number, word: string) {
-  return `${n} ${word}${n === 1 ? '' : 's'}`;
 }
 
 function describeImport(r: ImportResult): string {
@@ -83,80 +91,6 @@ function SummaryBar({ data }: { data: JournalData }) {
           {t.sub && <div className="tile-sub">{t.sub}</div>}
         </div>
       ))}
-    </section>
-  );
-}
-
-/** Trades grouped by the day they closed (open positions sit under the day they opened). */
-function TradeList({ trades }: { trades: Trade[] }) {
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const days = useMemo(() => {
-    const byDay = new Map<string, Trade[]>();
-    for (const t of trades) {
-      const day = (t.closeTime ?? t.openTime).slice(0, 10);
-      byDay.set(day, [...(byDay.get(day) ?? []), t]);
-    }
-    return [...byDay.entries()];
-  }, [trades]);
-
-  return (
-    <section className="trades">
-      <table>
-        <thead>
-          <tr>
-            <th>Opened</th><th>Closed</th><th>Contract</th><th>Side</th><th className="num">Qty</th>
-            <th className="num">Avg entry</th><th className="num">Avg exit</th><th className="num">Held</th>
-            <th className="num">Fees</th><th className="num">Net P&L</th>
-          </tr>
-        </thead>
-        <tbody>
-          {days.map(([day, dayTrades]) => {
-            const dayPnl = dayTrades.reduce((a, t) => a + t.netPnl, 0);
-            const wins = dayTrades.filter((t) => t.netPnl > 0).length;
-            return (
-              <Fragment key={day}>
-                <tr className="day-row">
-                  <td colSpan={9}>{longDate(day)} <span className="muted">· {plural(dayTrades.length, 'trade')} · {plural(wins, 'win')}</span></td>
-                  <td className={`num ${pnlClass(dayPnl)}`}>{signedUsd(Math.round(dayPnl * 100) / 100)}</td>
-                </tr>
-                {dayTrades.map((t) => (
-                  <Fragment key={t.id}>
-                    <tr className="trade-row" onClick={() => setExpanded(expanded === t.id ? null : t.id)}>
-                      <td>{timeOf(t.openTime)}</td>
-                      <td>{t.closeTime ? timeOf(t.closeTime) : <span className="badge">OPEN</span>}</td>
-                      <td className="contract">
-                        <b>{t.underlying}</b> {t.strike}{t.putCall === 'CALL' ? 'C' : 'P'} <span className="muted">{shortDate(t.expiry)}</span>
-                      </td>
-                      <td>{t.direction === 'LONG' ? 'Long' : 'Short'}</td>
-                      <td className="num">{t.maxContracts}</td>
-                      <td className="num">{usd(t.avgEntry)}</td>
-                      <td className="num">{t.avgExit === undefined ? '' : usd(t.avgExit)}</td>
-                      <td className="num">{holdTime(t.openTime, t.closeTime)}</td>
-                      <td className="num muted">{usd(t.fees)}</td>
-                      <td className={`num ${pnlClass(t.netPnl)}`}>{signedUsd(t.netPnl)}</td>
-                    </tr>
-                    {expanded === t.id && (
-                      <tr className="fills-row">
-                        <td colSpan={10}>
-                          {t.fills.map((f) => (
-                            <div className="fill" key={f.id}>
-                              <span>{f.execTime.replace('T', ' ')}</span>
-                              <span className={f.side === 'BUY' ? 'win' : 'loss'}>{f.side === 'BUY' ? 'Bought' : 'Sold'} {f.quantity}</span>
-                              <span>@ {usd(f.price * 100)}</span>
-                              <span className="muted">{f.orderType === 'EXPIRED' ? 'Expired worthless' : `${f.orderType} ${f.spread !== 'SINGLE' ? f.spread : ''}`}</span>
-                              <span className="muted">fees {usd(f.fees)}</span>
-                            </div>
-                          ))}
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                ))}
-              </Fragment>
-            );
-          })}
-        </tbody>
-      </table>
     </section>
   );
 }

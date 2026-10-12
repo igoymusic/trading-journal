@@ -32,6 +32,6 @@ jobs:
       - run: npm run dist
       - uses: actions/upload-artifact@v4
         with:
-          name: Trading-Journal-Windows-Installer
+          name: Moon-Journal-Windows-Installer
           path: release/*.exe
           if-no-files-found: error
