@@ -35,6 +35,8 @@ export type TradeChart =
 export interface SettingsView {
   timeZone: string;
   hasAlpacaKey: boolean;
+  /** Visible trade table columns in order; undefined means the defaults. */
+  tradeColumns?: string[];
 }
 
 export interface JournalApi {
@@ -46,6 +48,8 @@ export interface JournalApi {
   /** Saves (or clears, with null) the Alpaca keys after checking they work. */
   saveAlpacaKeys(keys: { keyId: string; secretKey: string } | null): Promise<{ ok: boolean; message: string }>;
   setTimeZone(timeZone: string): Promise<void>;
+  /** Saves the trade table's columns; null restores the defaults. */
+  setTradeColumns(ids: string[] | null): Promise<void>;
 }
 
 declare global {

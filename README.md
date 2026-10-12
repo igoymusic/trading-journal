@@ -21,6 +21,7 @@ Your journal lives in `%APPDATA%\Trading Journal\journal.sqlite`.
 - Options that expired are closed at $0 using the "Removed due to Expiration" rows.
 - Fills on the same contract are grouped into a trade from the moment you open a position until you're flat again. Scaling in and out stays in one trade.
 - Option prices are shown per contract in dollars: a $0.79 quote is shown as $79.00.
+- The trade table's columns are yours to choose: click **Columns** to show or hide them, and drag a column header (or the handle in that list) to move it. Your layout is remembered.
 
 ## How the chart finds the underlying's price
 

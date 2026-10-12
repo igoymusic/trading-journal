@@ -76,8 +76,9 @@ app.whenReady().then(async () => {
     }
   });
 
-  ipcMain.handle('settings:get', () => ({ timeZone: settings.timeZone, hasAlpacaKey: settings.alpacaCredentials() !== null }));
+  ipcMain.handle('settings:get', () => ({ timeZone: settings.timeZone, hasAlpacaKey: settings.alpacaCredentials() !== null, tradeColumns: settings.tradeColumns }));
   ipcMain.handle('settings:setTimeZone', (_event, tz: string) => { settings.timeZone = tz; });
+  ipcMain.handle('settings:setTradeColumns', (_event, ids: string[] | null) => { settings.tradeColumns = ids ?? undefined; });
   ipcMain.handle('settings:saveAlpaca', async (_event, keys: { keyId: string; secretKey: string } | null) => {
     if (!keys) {
       settings.setAlpacaCredentials(null);

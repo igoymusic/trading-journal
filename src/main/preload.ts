@@ -10,6 +10,7 @@ const api: JournalApi = {
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveAlpacaKeys: (keys) => ipcRenderer.invoke('settings:saveAlpaca', keys),
   setTimeZone: (tz) => ipcRenderer.invoke('settings:setTimeZone', tz),
+  setTradeColumns: (ids) => ipcRenderer.invoke('settings:setTradeColumns', ids),
 };
 
 contextBridge.exposeInMainWorld('journal', api);

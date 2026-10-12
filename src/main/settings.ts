@@ -7,6 +7,8 @@ import type { AlpacaCredentials } from '../core/alpaca';
 
 interface StoredSettings {
   timeZone: string;
+  /** Trade table columns, in display order. */
+  tradeColumns?: string[];
   /** Base64 of the encrypted "keyId\nsecretKey". */
   alpaca?: string;
 }
@@ -30,6 +32,15 @@ export class Settings {
 
   set timeZone(tz: string) {
     this.data.timeZone = tz;
+    this.save();
+  }
+
+  get tradeColumns() {
+    return this.data.tradeColumns;
+  }
+
+  set tradeColumns(ids: string[] | undefined) {
+    this.data.tradeColumns = ids;
     this.save();
   }
 
