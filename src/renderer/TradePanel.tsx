@@ -1,9 +1,10 @@
-import { CandlestickSeries, ColorType, createChart, createSeriesMarkers, CrosshairMode, type IChartApi, type SeriesMarker, type Time, type UTCTimestamp } from 'lightweight-charts';
+import { CandlestickSeries, ColorType, createChart, CrosshairMode, type IChartApi, type UTCTimestamp } from 'lightweight-charts';
 import { useEffect, useRef, useState } from 'react';
 import type { Bar } from '../core/alpaca';
 import { chartTime } from '../core/time';
 import type { Trade } from '../core/types';
 import type { TradeChart } from '../shared/api';
+import { type FillMarker, FillMarkersPrimitive } from './fillMarkers';
 import { holdTime, pnlClass, shortDate, signedUsd, usd } from './format';
 
 type Interval = 1 | 5 | 15;
@@ -118,12 +119,11 @@ function PriceChart({ trade, chart, interval }: { trade: Trade; chart: Extract<T
 
     const tz = chart.timeZone;
     const size = interval * 60_000;
-    const candles = aggregate(chart.bars, interval);
-    series.setData(candles.map((b) => ({ time: chartTime(b.time, tz) as UTCTimestamp, open: b.open, high: b.high, low: b.low, close: b.close })));
+    const candles = aggregate(chart.bars, interval).map((b) => ({ ...b, time: chartTime(b.time, tz) as UTCTimestamp }));
+    series.setData(candles.map((b) => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close })));
 
-    // Opening fills point up from below (long) or down from above (short); closing fills the opposite way.
-    const entrySide = trade.direction === 'LONG' ? 'BUY' : 'SELL';
     // Partial fills in the same second at the same price share one marker ("B 2 @ $79.00").
+    const entrySide = trade.direction === 'LONG' ? 'BUY' : 'SELL';
     const groups = new Map<string, { time: number; isEntry: boolean; side: string; qty: number; optionPrice: number; underlying?: number }>();
     for (const f of trade.fills) {
       const point = chart.fills.find((p) => p.fillId === f.id);
@@ -133,18 +133,16 @@ function PriceChart({ trade, chart, interval }: { trade: Trade; chart: Extract<T
       if (g) g.qty += f.quantity;
       else groups.set(key, { time: point.time, isEntry: f.side === entrySide, side: f.side, qty: f.quantity, optionPrice: f.price, underlying: point.underlyingPrice });
     }
-    const markers: SeriesMarker<Time>[] = [];
+    const markers: FillMarker[] = [];
     for (const g of groups.values()) {
       const candleTime = chartTime(Math.floor(g.time / size) * size, tz) as UTCTimestamp;
-      const color = g.isEntry ? '#2962ff' : '#ff9800';
-      const shape = g.isEntry ? 'arrowUp' : 'arrowDown';
-      const text = `${g.side === 'BUY' ? 'B' : 'S'} ${g.qty} @ ${usd(g.optionPrice * 100)}`;
-      markers.push(g.underlying !== undefined
-        ? { time: candleTime, position: g.isEntry ? 'atPriceBottom' : 'atPriceTop', price: g.underlying, shape, color, text }
-        : { time: candleTime, position: g.isEntry ? 'belowBar' : 'aboveBar', shape, color, text });
+      // Without an exact price, fall back to the close of the fill's candle.
+      const price = g.underlying ?? candles.find((c) => c.time === candleTime)?.close;
+      if (price === undefined) continue;
+      const text = `${g.side === 'BUY' ? 'B' : 'S'} ${g.qty} @ ${usd(g.optionPrice * 100)}${g.underlying === undefined ? ' (approx.)' : ''}`;
+      markers.push({ time: candleTime, price, kind: g.isEntry ? 'entry' : 'exit', text });
     }
-    markers.sort((a, b) => (a.time as number) - (b.time as number));
-    createSeriesMarkers(series, markers);
+    series.attachPrimitive(new FillMarkersPrimitive(markers, candles));
 
     // Frame the trade: from a bit before the entry to a bit after the exit.
     const first = chart.fills[0]?.time;
