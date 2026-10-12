@@ -50,7 +50,18 @@ export class Settings {
       return { keyId: process.env.ALPACA_KEY_ID, secretKey: process.env.ALPACA_SECRET_KEY };
     }
     if (!this.data.alpaca || !safeStorage.isEncryptionAvailable()) return null;
-    const [keyId, secretKey] = safeStorage.decryptString(Buffer.from(this.data.alpaca, 'base64')).split('\n');
+    let plain: string;
+    try {
+      plain = safeStorage.decryptString(Buffer.from(this.data.alpaca, 'base64'));
+    } catch {
+      // The keys were locked with a different lock than this app folder has, e.g. they were copied
+      // over from the old "trading-journal" folder. They can't be recovered, so forget them and
+      // let the chart ask for them again instead of failing every time.
+      delete this.data.alpaca;
+      this.save();
+      return null;
+    }
+    const [keyId, secretKey] = plain.split('\n');
     return keyId && secretKey ? { keyId, secretKey } : null;
   }
 

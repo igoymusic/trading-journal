@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import type { Trade } from '../core/types';
 import { COLUMNS, DEFAULT_COLUMNS, moveColumn, resolveColumns } from './columns';
 import { longDate, pnlClass, signedUsd } from './format';
@@ -7,8 +7,17 @@ function plural(n: number, word: string) {
   return `${n} ${word}${n === 1 ? '' : 's'}`;
 }
 
-/** Trades grouped by the day they closed (open positions sit under the day they opened). */
-export function TradeTable({ trades, selectedId, onSelect }: { trades: Trade[]; selectedId: string | null; onSelect: (id: string) => void }) {
+/**
+ * Trades grouped by the day they closed (open positions sit under the day they opened).
+ * With `renderDetail`, each row expands to show that content underneath when its id is in `expanded`.
+ */
+export function TradeTable({ trades, selectedId, onSelect, expanded, renderDetail }: {
+  trades: Trade[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  expanded?: ReadonlySet<string>;
+  renderDetail?: (t: Trade) => ReactNode;
+}) {
   const [columnIds, setColumnIds] = useState<string[] | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [dragging, setDragging] = useState<string | null>(null);
@@ -26,6 +35,8 @@ export function TradeTable({ trades, selectedId, onSelect }: { trades: Trade[]; 
   // The day's total sits under the Net P&L column, or at the far right if that column is hidden.
   const netIndex = columns.findIndex((c) => c.id === 'net');
   const pnlAt = netIndex > 0 ? netIndex : columns.length - 1;
+  // Expandable tables get a narrow arrow column on the left.
+  const lead = renderDetail ? 1 : 0;
   const days = useMemo(() => {
     const byDay = new Map<string, Trade[]>();
     for (const t of trades) {
@@ -66,6 +77,7 @@ export function TradeTable({ trades, selectedId, onSelect }: { trades: Trade[]; 
       <table>
         <thead>
           <tr>
+            {lead > 0 && <th className="chev-col" />}
             {columns.map((c) => (
               <th key={c.id} className={`${c.numeric ? 'num' : ''} ${dragging === c.id ? 'dragging' : ''}`} title="Drag to move" {...dragProps(c.id)}>
                 {c.label}
@@ -80,17 +92,28 @@ export function TradeTable({ trades, selectedId, onSelect }: { trades: Trade[]; 
             return (
               <Fragment key={day}>
                 <tr className="day-row">
-                  <td colSpan={Math.max(1, pnlAt)}>
+                  <td colSpan={Math.max(1, pnlAt + lead)}>
                     {longDate(day)} <span className="muted">· {plural(dayTrades.length, 'trade')} · {plural(wins, 'win')}</span>
                   </td>
                   <td className={`num ${pnlClass(dayPnl)}`}>{signedUsd(dayPnl)}</td>
                   {pnlAt < columns.length - 1 && <td colSpan={columns.length - 1 - pnlAt} />}
                 </tr>
-                {dayTrades.map((t) => (
-                  <tr key={t.id} className={`trade-row ${t.id === selectedId ? 'selected' : ''}`} onClick={() => onSelect(t.id)}>
-                    {columns.map((c) => <td key={c.id} className={c.numeric ? 'num' : ''}>{c.render(t)}</td>)}
-                  </tr>
-                ))}
+                {dayTrades.map((t) => {
+                  const open = !!expanded?.has(t.id);
+                  return (
+                    <Fragment key={t.id}>
+                      <tr className={`trade-row ${t.id === selectedId || open ? 'selected' : ''}`} onClick={() => onSelect(t.id)}>
+                        {lead > 0 && <td className="chev-col muted">{open ? '▾' : '▸'}</td>}
+                        {columns.map((c) => <td key={c.id} className={c.numeric ? 'num' : ''}>{c.render(t)}</td>)}
+                      </tr>
+                      {open && renderDetail && (
+                        <tr className="detail-row">
+                          <td colSpan={columns.length + lead}>{renderDetail(t)}</td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
               </Fragment>
             );
           })}

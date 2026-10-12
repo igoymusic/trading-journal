@@ -29,7 +29,7 @@ function aggregate(bars: Bar[], minutes: Interval): Bar[] {
   return out;
 }
 
-export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; onClose: () => void; onOpenSettings: () => void }) {
+export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; onClose?: () => void; onOpenSettings: () => void }) {
   const [chart, setChart] = useState<TradeChart | null>(null);
   const [interval, setInterval] = useState<Interval>(1);
 
@@ -52,7 +52,7 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
           {[1, 5, 15].map((m) => (
             <button key={m} className={interval === m ? 'active' : ''} onClick={() => setInterval(m as Interval)}>{m}m</button>
           ))}
-          <button onClick={onClose} aria-label="Close">✕</button>
+          {onClose && <button onClick={onClose} aria-label="Close">✕</button>}
         </div>
       </div>
 
