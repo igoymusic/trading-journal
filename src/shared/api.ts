@@ -1,12 +1,17 @@
 // The contract between the screens (renderer) and the main process.
 
 import type { Bar } from '../core/alpaca';
-import type { Trade } from '../core/types';
+import type { MistakeTag, Setup, Trade, TradeJournal } from '../core/types';
 import type { Summary } from '../core/trades';
 
 export interface JournalData {
+  /** Each trade carries its journal entry, if it has one. */
   trades: Trade[];
   summary: Summary;
+  setups: Setup[];
+  mistakes: MistakeTag[];
+  /** Daily notes keyed by "YYYY-MM-DD". */
+  dayNotes: Record<string, string>;
 }
 
 export interface ImportResult {
@@ -50,6 +55,10 @@ export interface JournalApi {
   setTimeZone(timeZone: string): Promise<void>;
   /** Saves the trade table's columns; null restores the defaults. */
   setTradeColumns(ids: string[] | null): Promise<void>;
+  saveTradeJournal(tradeId: string, journal: TradeJournal): Promise<void>;
+  saveSetups(setups: Setup[]): Promise<void>;
+  saveMistakes(mistakes: MistakeTag[]): Promise<void>;
+  saveDayNote(date: string, notes: string): Promise<void>;
 }
 
 declare global {

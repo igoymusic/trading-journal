@@ -50,6 +50,34 @@ export interface Trade {
   fees: number;
   netPnl: number;
   fills: Fill[];
+  /** Your notes and labels for this trade, if you've added any. */
+  journal?: TradeJournal;
+}
+
+/** What you record about a trade: the setup it was, mistakes made, a 1-5 rating and free notes. */
+export interface TradeJournal {
+  notes: string;
+  setupId: string | null;
+  /** Ids of mistake tags. */
+  mistakes: string[];
+  /** 1-5, or null if not rated. */
+  rating: number | null;
+}
+
+export const EMPTY_JOURNAL: TradeJournal = { notes: '', setupId: null, mistakes: [], rating: null };
+
+/** A trade setup you define, e.g. "Opening range breakout". */
+export interface Setup {
+  id: string;
+  name: string;
+  /** Hex color used for its badge. */
+  color: string;
+}
+
+/** A mistake label, e.g. "Chased entry". */
+export interface MistakeTag {
+  id: string;
+  name: string;
 }
 
 export const CONTRACT_MULTIPLIER = 100;

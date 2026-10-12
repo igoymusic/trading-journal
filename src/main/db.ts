@@ -2,7 +2,7 @@
 
 import { DatabaseSync } from 'node:sqlite';
 import type { Bar } from '../core/alpaca';
-import type { Fill } from '../core/types';
+import type { Fill, MistakeTag, Setup, TradeJournal } from '../core/types';
 
 export class JournalDb {
   private db: DatabaseSync;
@@ -49,7 +49,43 @@ export class JournalDb {
         trade_time INTEGER NOT NULL,
         feed TEXT NOT NULL
       );
+
+      -- Your journal. A trade's id is the id of its first fill, so it survives re-imports.
+      CREATE TABLE IF NOT EXISTS trade_journal (
+        trade_id TEXT PRIMARY KEY,
+        notes TEXT NOT NULL DEFAULT '',
+        setup_id TEXT,
+        mistakes TEXT NOT NULL DEFAULT '[]',
+        rating INTEGER,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS setups (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        color TEXT NOT NULL,
+        position INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS mistake_tags (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        position INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS day_notes (
+        date TEXT PRIMARY KEY,
+        notes TEXT NOT NULL,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     `);
+    this.seedMistakes();
+  }
+
+  /** A starter list of common mistakes, added once. Deleting them later is fine. */
+  private seedMistakes() {
+    if (this.db.prepare("SELECT 1 FROM meta WHERE key = 'seeded_mistakes'").get()) return;
+    const names = ['Chased entry', 'No stop', 'Held too long', 'Cut winner early', 'Oversized', 'FOMO', 'Revenge trade'];
+    this.saveMistakeTags(names.map((name, i) => ({ id: `default-${i + 1}`, name })));
+    this.db.prepare("INSERT INTO meta (key, value) VALUES ('seeded_mistakes', '1')").run();
   }
 
   /** Saves fills, ignoring ones already imported. Returns how many were new. */
@@ -112,6 +148,74 @@ export class JournalDb {
 
   saveFillPrice(fillId: string, price: number, tradeTime: number, feed: string) {
     this.db.prepare('INSERT OR REPLACE INTO fill_underlying_prices (fill_id, price, trade_time, feed) VALUES (?, ?, ?, ?)').run(fillId, price, tradeTime, feed);
+  }
+
+  tradeJournals(): Map<string, TradeJournal> {
+    const rows = this.db.prepare('SELECT * FROM trade_journal').all() as Record<string, any>[];
+    return new Map(rows.map((r) => [r.trade_id, { notes: r.notes, setupId: r.setup_id, mistakes: JSON.parse(r.mistakes), rating: r.rating }]));
+  }
+
+  saveTradeJournal(tradeId: string, j: TradeJournal) {
+    this.db.prepare(`
+      INSERT INTO trade_journal (trade_id, notes, setup_id, mistakes, rating, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now'))
+      ON CONFLICT (trade_id) DO UPDATE SET notes = excluded.notes, setup_id = excluded.setup_id,
+        mistakes = excluded.mistakes, rating = excluded.rating, updated_at = excluded.updated_at`)
+      .run(tradeId, j.notes, j.setupId, JSON.stringify(j.mistakes), j.rating);
+  }
+
+  setups(): Setup[] {
+    return this.db.prepare('SELECT id, name, color FROM setups ORDER BY position').all() as unknown as Setup[];
+  }
+
+  /** Replaces the setup list. Trades that used a deleted setup go back to having none. */
+  saveSetups(list: Setup[]) {
+    this.transaction(() => {
+      this.db.exec('DELETE FROM setups');
+      const insert = this.db.prepare('INSERT INTO setups (id, name, color, position) VALUES (?, ?, ?, ?)');
+      list.forEach((x, i) => insert.run(x.id, x.name, x.color, i));
+      this.db.exec('UPDATE trade_journal SET setup_id = NULL WHERE setup_id IS NOT NULL AND setup_id NOT IN (SELECT id FROM setups)');
+    });
+  }
+
+  mistakeTags(): MistakeTag[] {
+    return this.db.prepare('SELECT id, name FROM mistake_tags ORDER BY position').all() as unknown as MistakeTag[];
+  }
+
+  /** Replaces the mistake list. Deleted mistakes are taken off the trades that had them. */
+  saveMistakeTags(list: MistakeTag[]) {
+    this.transaction(() => {
+      this.db.exec('DELETE FROM mistake_tags');
+      const insert = this.db.prepare('INSERT INTO mistake_tags (id, name, position) VALUES (?, ?, ?)');
+      list.forEach((x, i) => insert.run(x.id, x.name, i));
+      const keep = new Set(list.map((x) => x.id));
+      const update = this.db.prepare('UPDATE trade_journal SET mistakes = ? WHERE trade_id = ?');
+      for (const [id, j] of this.tradeJournals()) {
+        const mistakes = j.mistakes.filter((m) => keep.has(m));
+        if (mistakes.length !== j.mistakes.length) update.run(JSON.stringify(mistakes), id);
+      }
+    });
+  }
+
+  dayNotes(): Record<string, string> {
+    const rows = this.db.prepare('SELECT date, notes FROM day_notes').all() as { date: string; notes: string }[];
+    return Object.fromEntries(rows.map((r) => [r.date, r.notes]));
+  }
+
+  saveDayNote(date: string, notes: string) {
+    this.db.prepare(`
+      INSERT INTO day_notes (date, notes, updated_at) VALUES (?, ?, datetime('now'))
+      ON CONFLICT (date) DO UPDATE SET notes = excluded.notes, updated_at = excluded.updated_at`).run(date, notes);
+  }
+
+  private transaction(work: () => void) {
+    this.db.exec('BEGIN');
+    try {
+      work();
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
   }
 
   close() {

@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseTosStatement } from '../core/tosCsv';
 import { buildTrades, summarizeTrades } from '../core/trades';
+import type { MistakeTag, Setup, TradeJournal } from '../core/types';
 import type { ImportResult, JournalData, TradeChart } from '../shared/api';
 import { AlpacaClient } from '../core/alpaca';
 import { JournalDb } from './db';
@@ -22,8 +23,9 @@ function importFile(file: string): ImportResult {
 }
 
 function journalData(): JournalData {
-  const trades = buildTrades(db.allFills());
-  return { trades, summary: summarizeTrades(trades) };
+  const journals = db.tradeJournals();
+  const trades = buildTrades(db.allFills()).map((t) => ({ ...t, journal: journals.get(t.id) }));
+  return { trades, summary: summarizeTrades(trades), setups: db.setups(), mistakes: db.mistakeTags(), dayNotes: db.dayNotes() };
 }
 
 async function createWindow() {
@@ -68,6 +70,11 @@ app.whenReady().then(async () => {
     if (pick.canceled || !pick.filePaths[0]) return null;
     return importFile(pick.filePaths[0]);
   });
+
+  ipcMain.handle('journal:saveTrade', (_event, tradeId: string, journal: TradeJournal) => db.saveTradeJournal(tradeId, journal));
+  ipcMain.handle('journal:saveSetups', (_event, setups: Setup[]) => db.saveSetups(setups));
+  ipcMain.handle('journal:saveMistakes', (_event, mistakes: MistakeTag[]) => db.saveMistakeTags(mistakes));
+  ipcMain.handle('journal:saveDayNote', (_event, date: string, notes: string) => db.saveDayNote(date, notes));
 
   ipcMain.handle('market:tradeChart', async (_event, tradeId: string): Promise<TradeChart> => {
     const trade = buildTrades(db.allFills()).find((t) => t.id === tradeId);

@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react';
 import type { Trade } from '../core/types';
 import { holdTime, pnlClass, shortDate, signedUsd, timeOf, usd } from './format';
+import { MistakeNames, SetupBadge, Stars } from './journal';
 
 export interface Column {
   id: string;
@@ -47,10 +48,14 @@ export const COLUMNS: Column[] = [
   { id: 'gross', label: 'Gross P&L', numeric: true, render: (t) => <span className={pnlClass(t.grossPnl)}>{signedUsd(t.grossPnl)}</span> },
   { id: 'fees', label: 'Fees', numeric: true, render: (t) => <span className="muted">{usd(t.fees)}</span> },
   { id: 'returnPct', label: 'Return %', numeric: true, render: (t) => { const r = returnPct(t); return <span className={pnlClass(r)}>{r > 0 ? '+' : ''}{r.toFixed(1)}%</span>; } },
+  { id: 'setup', label: 'Setup', render: (t) => <SetupBadge id={t.journal?.setupId} /> },
+  { id: 'mistakes', label: 'Mistakes', render: (t) => <MistakeNames ids={t.journal?.mistakes} /> },
+  { id: 'rating', label: 'Rating', render: (t) => (t.journal?.rating ? <Stars value={t.journal.rating} size="small" /> : null) },
+  { id: 'notes', label: 'Notes', render: (t) => (t.journal?.notes ? <span className="muted" title={t.journal.notes}>✎</span> : null) },
   { id: 'net', label: 'Net P&L', numeric: true, render: (t) => <span className={pnlClass(t.netPnl)}>{signedUsd(t.netPnl)}</span> },
 ];
 
-export const DEFAULT_COLUMNS = ['opened', 'closed', 'contract', 'side', 'qty', 'avgEntry', 'avgExit', 'held', 'fees', 'net'];
+export const DEFAULT_COLUMNS = ['opened', 'closed', 'contract', 'setup', 'side', 'qty', 'avgEntry', 'avgExit', 'held', 'fees', 'rating', 'net'];
 
 const byId = new Map(COLUMNS.map((c) => [c.id, c]));
 

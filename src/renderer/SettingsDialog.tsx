@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { SettingsView } from '../shared/api';
+import { newId, SETUP_COLORS, useJournal } from './journal';
 
 const TIME_ZONES = [
   ['America/New_York', 'Eastern'],
@@ -69,6 +70,9 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
         )}
         {status && <p className={status.ok ? 'win' : 'loss'}>{status.message}</p>}
 
+        <SetupsEditor />
+        <MistakesEditor />
+
         <h3>Time zone of your broker exports</h3>
         <p className="muted">thinkorswim exports times in your computer's time zone without saying which one.</p>
         <select value={settings?.timeZone ?? 'America/New_York'} onChange={(e) => changeZone(e.target.value)}>
@@ -77,4 +81,66 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
       </div>
     </div>
   );
+}
+
+/** Your setups: rename, recolor or delete. Deleting one clears it from its trades. */
+function SetupsEditor() {
+  const { setups, saveSetups } = useJournal();
+  const [name, setName] = useState('');
+  const add = () => {
+    if (!name.trim()) return;
+    saveSetups([...setups, { id: newId(), name: name.trim(), color: SETUP_COLORS[setups.length % SETUP_COLORS.length] }]);
+    setName('');
+  };
+  return (
+    <>
+      <h3>Setups</h3>
+      <p className="muted">The kinds of trades you take. Pick one on each trade to see later which setups make money.</p>
+      {setups.map((s) => (
+        <div className="list-row" key={s.id}>
+          <input type="color" value={s.color} onChange={(e) => saveSetups(setups.map((x) => (x.id === s.id ? { ...x, color: e.target.value } : x)))} />
+          <RenameInput value={s.name} onSave={(v) => saveSetups(setups.map((x) => (x.id === s.id ? { ...x, name: v } : x)))} />
+          <button className="danger-link" onClick={() => saveSetups(setups.filter((x) => x.id !== s.id))}>Delete</button>
+        </div>
+      ))}
+      <div className="list-row">
+        <input placeholder="New setup, e.g. Opening range breakout" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
+        <button onClick={add} disabled={!name.trim()}>Add</button>
+      </div>
+    </>
+  );
+}
+
+function MistakesEditor() {
+  const { mistakes, saveMistakes } = useJournal();
+  const [name, setName] = useState('');
+  const add = () => {
+    if (!name.trim()) return;
+    saveMistakes([...mistakes, { id: newId(), name: name.trim() }]);
+    setName('');
+  };
+  return (
+    <>
+      <h3>Mistakes</h3>
+      <p className="muted">Labels you can put on trades. Deleting one takes it off every trade.</p>
+      {mistakes.map((m) => (
+        <div className="list-row" key={m.id}>
+          <RenameInput value={m.name} onSave={(v) => saveMistakes(mistakes.map((x) => (x.id === m.id ? { ...x, name: v } : x)))} />
+          <button className="danger-link" onClick={() => saveMistakes(mistakes.filter((x) => x.id !== m.id))}>Delete</button>
+        </div>
+      ))}
+      <div className="list-row">
+        <input placeholder="New mistake, e.g. Traded the open" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
+        <button onClick={add} disabled={!name.trim()}>Add</button>
+      </div>
+    </>
+  );
+}
+
+/** A name you can edit in place; it saves when you leave the box or press Enter. */
+function RenameInput({ value, onSave }: { value: string; onSave: (v: string) => void }) {
+  const [text, setText] = useState(value);
+  useEffect(() => setText(value), [value]);
+  const commit = () => { if (text.trim() && text.trim() !== value) onSave(text.trim()); else setText(value); };
+  return <input value={text} onChange={(e) => setText(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />;
 }
