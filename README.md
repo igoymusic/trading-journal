@@ -2,7 +2,7 @@
 
 A personal desktop trading journal for options traders, in the spirit of TradeZella and Kinfo. Trades are imported from your broker and stored only on your own computer.
 
-**Status:** step 1 of the [plan](#roadmap). Imports a thinkorswim Account Statement CSV and shows every round-trip trade with P&L per contract in dollars.
+**Status:** step 2 of the [plan](#roadmap). Imports a thinkorswim Account Statement CSV, shows every round-trip trade with P&L per contract in dollars, and charts the underlying with your entries and exits at the exact price they happened.
 
 ## Using it
 
@@ -10,6 +10,7 @@ A personal desktop trading journal for options traders, in the spirit of TradeZe
 2. Run the installer. Windows may warn that the app is from an unknown publisher, because it isn't code-signed. Click **More info**, then **Run anyway**.
 3. In thinkorswim: **Monitor** → **Account Statement** → choose dates → **Apply** → menu icon → **Export to File**.
 4. In the app, click **Import thinkorswim CSV** and pick that file. Importing the same file twice is safe; duplicates are skipped.
+5. For charts, open **Settings** and paste a free [Alpaca](https://alpaca.markets) market data API key and secret. Then click any trade.
 
 Your journal lives in `%APPDATA%\Trading Journal\journal.sqlite`.
 
@@ -20,6 +21,14 @@ Your journal lives in `%APPDATA%\Trading Journal\journal.sqlite`.
 - Options that expired are closed at $0 using the "Removed due to Expiration" rows.
 - Fills on the same contract are grouped into a trade from the moment you open a position until you're flat again. Scaling in and out stays in one trade.
 - Option prices are shown per contract in dollars: a $0.79 quote is shown as $79.00.
+
+## How the chart finds the underlying's price
+
+- Each fill time is converted from your time zone (Settings, Eastern by default) to UTC.
+- The app asks Alpaca for the last trade printed on the underlying at or before the end of that second, across all US exchanges (SIP). That price is where the marker sits.
+- The free Alpaca plan can't see the most recent 15 minutes, and sometimes only allows the IEX exchange feed. The app falls back to IEX automatically and says so under the fills.
+- Candles (1-minute, grouped into 5 and 15 on screen) cover 4:00 am to 8:00 pm New York time for each day of the trade.
+- Everything downloaded is saved in the local database, so a chart only downloads once.
 
 ## Developing
 
@@ -33,6 +42,8 @@ npm start         # build and launch the app
 npm run dist      # build the Windows installer into release/
 ```
 
+For development, `ALPACA_KEY_ID` and `ALPACA_SECRET_KEY` environment variables override the keys saved in Settings, and `TJ_ALPACA_BASE_URL` points the app at a different market data server.
+
 Code layout:
 
 - `src/core`: broker-file parsing and trade math, no Electron dependencies (unit-tested).
@@ -43,7 +54,7 @@ Code layout:
 ## Roadmap
 
 1. ~~App skeleton + thinkorswim CSV import~~
-2. Underlying chart (TradingView Lightweight Charts) with second-exact entry/exit markers
+2. ~~Underlying chart (TradingView Lightweight Charts) with second-exact entry/exit markers~~
 3. Monthly P&L calendar and Day view
 4. Year and Week views, summary stats
 5. Notes, setups, tags, ratings, R-multiple, reports, filters
