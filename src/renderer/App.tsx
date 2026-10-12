@@ -8,7 +8,7 @@ import { MonthView } from './MonthView';
 import { PnlChart } from './PnlChart';
 import { SettingsDialog } from './SettingsDialog';
 import { TradePanel } from './TradePanel';
-import { initialTabs, tabsReducer } from './tabs';
+import { type ActiveTab, initialTabs, monthKey, tabsReducer } from './tabs';
 import { TradeTable } from './TradeTable';
 import { YearView } from './YearView';
 
@@ -26,6 +26,9 @@ export function App() {
   const [settingsVersion, setSettingsVersion] = useState(0);
   const selected = data?.trades.find((t) => t.id === selectedId) ?? null;
   const activeDay = tabs.active.startsWith('day:') ? tabs.active.slice(4) : null;
+  const activeMonth = tabs.active.startsWith('month:')
+    ? { year: Number(tabs.active.slice(6, 10)), month: Number(tabs.active.slice(11, 13)) }
+    : null;
 
   const load = () => window.journal.getJournal().then(setData);
   useEffect(() => { load(); }, []);
@@ -46,10 +49,10 @@ export function App() {
     if (!data) return null;
     const pick = (prefix: string) => summarizeTrades(data.trades.filter((t) => tradeDay(t).startsWith(prefix)));
     if (tabs.active === 'year') return pick(String(tabs.year));
-    if (tabs.active === 'month' && tabs.month) return pick(`${tabs.month.year}-${String(tabs.month.month).padStart(2, '0')}`);
+    if (activeMonth) return pick(monthKey(activeMonth.year, activeMonth.month));
     if (activeDay) return pick(activeDay);
     return data.summary;
-  }, [data, tabs, activeDay]);
+  }, [data, tabs]);
 
   const hasTrades = !!data && data.trades.length > 0;
 
@@ -68,16 +71,24 @@ export function App() {
           <Tab active={tabs.active === 'trades'} onClick={() => dispatch({ type: 'show', tab: 'trades' })}>All trades</Tab>
           <span className="tab-gap" />
           <Tab active={tabs.active === 'year'} onClick={() => dispatch({ type: 'show', tab: 'year' })}>{tabs.year}</Tab>
-          {tabs.month && (
-            <Tab active={tabs.active === 'month'} onClick={() => dispatch({ type: 'show', tab: 'month' })} onClose={() => dispatch({ type: 'closeMonth' })}>
-              {MONTH_SHORT[tabs.month.month - 1]} {tabs.month.year}
-            </Tab>
-          )}
-          {tabs.days.map((d) => (
-            <Tab key={d} active={activeDay === d} onClick={() => dispatch({ type: 'show', tab: `day:${d}` })} onClose={() => dispatch({ type: 'closeDay', date: d })}>
-              {MONTH_SHORT[Number(d.slice(5, 7)) - 1]} {Number(d.slice(8))}
-            </Tab>
-          ))}
+          {tabs.months.map((m) => {
+            const tab: ActiveTab = `month:${monthKey(m.year, m.month)}`;
+            return (
+              <Tab key={tab} active={tabs.active === tab} pinned={m.pinned} onClick={() => dispatch({ type: 'show', tab })}
+                onPin={() => dispatch({ type: 'togglePin', tab })} onClose={() => dispatch({ type: 'closeTab', tab })}>
+                {MONTH_SHORT[m.month - 1]} {m.year}
+              </Tab>
+            );
+          })}
+          {tabs.days.map((d) => {
+            const tab: ActiveTab = `day:${d.date}`;
+            return (
+              <Tab key={tab} active={tabs.active === tab} pinned={d.pinned} onClick={() => dispatch({ type: 'show', tab })}
+                onPin={() => dispatch({ type: 'togglePin', tab })} onClose={() => dispatch({ type: 'closeTab', tab })}>
+                {MONTH_SHORT[Number(d.date.slice(5, 7)) - 1]} {Number(d.date.slice(8))}
+              </Tab>
+            );
+          })}
         </nav>
       )}
       {notice && <div className="notice" onClick={() => setNotice(null)}>{notice}</div>}
@@ -103,16 +114,16 @@ export function App() {
             <YearView
               trades={data.trades}
               year={tabs.year}
-              openMonth={tabs.month}
+              openMonths={tabs.months}
               onSelectYear={(year) => dispatch({ type: 'selectYear', year })}
               onOpenMonth={(year, month) => dispatch({ type: 'openMonth', year, month })}
             />
           )}
-          {tabs.active === 'month' && tabs.month && (
+          {activeMonth && (
             <MonthView
               trades={data.trades}
-              year={tabs.month.year}
-              month={tabs.month.month}
+              year={activeMonth.year}
+              month={activeMonth.month}
               onMonthChange={(year, month) => dispatch({ type: 'openMonth', year, month })}
               onOpenDay={(date) => dispatch({ type: 'openDay', date })}
             />
@@ -133,14 +144,36 @@ export function App() {
   );
 }
 
-function Tab({ active, onClick, onClose, children }: { active: boolean; onClick: () => void; onClose?: () => void; children: React.ReactNode }) {
+function Tab({ active, pinned, onClick, onPin, onClose, children }: {
+  active: boolean;
+  pinned?: boolean;
+  onClick: () => void;
+  onPin?: () => void;
+  onClose?: () => void;
+  children: React.ReactNode;
+}) {
   return (
-    <div className={`tab ${active ? 'active' : ''}`} onClick={onClick}>
+    <div className={`tab ${active ? 'active' : ''} ${pinned ? 'pinned' : ''}`} onClick={onClick}>
       <span>{children}</span>
+      {onPin && (
+        <button className="tab-pin" title={pinned ? 'Unpin: let this tab close when you pick another month' : 'Pin: keep this tab open'}
+          aria-label={pinned ? 'Unpin tab' : 'Pin tab'} onClick={(e) => { e.stopPropagation(); onPin(); }}>
+          <PinIcon filled={!!pinned} />
+        </button>
+      )}
       {onClose && (
         <button className="tab-close" aria-label="Close tab" onClick={(e) => { e.stopPropagation(); onClose(); }}>×</button>
       )}
     </div>
+  );
+}
+
+function PinIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill={filled ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
+      <path d="M9 3h6l-1 6 4 4v2H6v-2l4-4-1-6z" />
+      <path d="M12 15v6" strokeLinecap="round" />
+    </svg>
   );
 }
 

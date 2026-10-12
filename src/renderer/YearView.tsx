@@ -12,11 +12,11 @@ function days(n: number) {
  * Every year you traded, newest first. The selected year is expanded to its months;
  * clicking another year selects it, and clicking a month opens it.
  */
-export function YearView({ trades, year, openMonth, onSelectYear, onOpenMonth }: {
+export function YearView({ trades, year, openMonths, onSelectYear, onOpenMonth }: {
   trades: Trade[];
   year: number;
-  /** The month open in the Month tab, highlighted in the list. */
-  openMonth: { year: number; month: number } | null;
+  /** Months open in Month tabs, highlighted in the list. */
+  openMonths: { year: number; month: number }[];
   onSelectYear: (year: number) => void;
   onOpenMonth: (year: number, month: number) => void;
 }) {
@@ -33,7 +33,7 @@ export function YearView({ trades, year, openMonth, onSelectYear, onOpenMonth }:
               <span className={`pnl-pill ${pnlClass(y.netPnl)}-bg ${pnlClass(y.netPnl)}`}>{signedUsd(y.netPnl)}</span>
             </button>
             {expanded && y.months.slice().reverse().map((m) => {
-              const open = openMonth?.year === y.year && openMonth.month === m.month;
+              const open = openMonths.some((o) => o.year === y.year && o.month === m.month);
               return (
                 <button key={m.month} className={`month-row ${open ? 'open' : ''}`} onClick={() => onOpenMonth(y.year, m.month)}>
                   <span className="month-name">{MONTHS[m.month - 1]}</span>

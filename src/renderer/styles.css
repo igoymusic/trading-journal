@@ -102,7 +102,10 @@ button.link { background: none; border: none; color: var(--blue); padding: 6px; 
 .tab.active { background: var(--bg); border-color: var(--border); color: var(--text); }
 .tab-gap { width: 1px; height: 18px; background: var(--border); margin: 0 8px 8px; }
 .tab-close { border: none; background: none; padding: 0 2px; color: var(--muted); font-size: 15px; line-height: 1; }
-.tab-close:hover { color: var(--text); }
+.tab-close:hover, .tab-pin:hover { color: var(--text); }
+.tab-pin { border: none; background: none; padding: 0 2px; color: var(--muted); display: flex; visibility: hidden; }
+.tab:hover .tab-pin, .tab.pinned .tab-pin { visibility: visible; }
+.tab.pinned .tab-pin { color: var(--blue); }
 .view-title { font-size: 17px; margin: 4px 0 12px; }
 
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; }
