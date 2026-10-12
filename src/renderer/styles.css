@@ -189,3 +189,19 @@ button.link { background: none; border: none; color: var(--blue); padding: 6px; 
 .notes:focus, .journal-field select:focus, .quick-add:focus { outline: 1px solid var(--blue); border-color: var(--blue); }
 .day-note { margin-bottom: 14px; min-height: 60px; }
 .setup-badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; color: var(--c); border: 1px solid var(--c); background: color-mix(in srgb, var(--c) 15%, transparent); }
+
+.panel-r { margin-left: 10px; font-weight: 600; font-size: 14px; }
+.placing-hint { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); z-index: 3; background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; padding: 4px 10px; font-size: 12px; pointer-events: none; }
+.risk { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+.risk-buttons { display: flex; gap: 6px; margin-bottom: 8px; }
+.risk-buttons button { flex: 1; padding: 4px 8px; font-size: 12px; }
+.risk-buttons button.stops { color: var(--red); }
+.risk-buttons button.targets { color: var(--green); }
+.risk-buttons button.active { background: var(--panel-2); border-color: currentColor; }
+.level-row { display: flex; align-items: center; gap: 6px; padding: 3px 0; font-variant-numeric: tabular-nums; }
+.level-row.stops .level-name { color: var(--red); }
+.level-row.targets .level-name { color: var(--green); }
+.level-name { width: 44px; font-size: 12px; }
+.level-price { flex: 1; }
+.level-row input { width: 44px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 2px 4px; font: inherit; }
+.rr-summary { margin: 8px 0 4px; display: grid; gap: 2px; }

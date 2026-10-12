@@ -62,6 +62,19 @@ export interface TradeJournal {
   mistakes: string[];
   /** 1-5, or null if not rated. */
   rating: number | null;
+  /** Stop-loss levels you placed on the underlying's chart. */
+  stops?: PriceLevel[];
+  /** Take-profit levels (planned, or theoretical for a losing trade). */
+  targets?: PriceLevel[];
+  /** The underlying's average price at your entries and exits, saved with the levels so R shows without loading the chart. */
+  underlyingEntry?: number;
+  underlyingExit?: number;
+}
+
+/** A price on the underlying and how many contracts it applies to. */
+export interface PriceLevel {
+  price: number;
+  contracts: number;
 }
 
 export const EMPTY_JOURNAL: TradeJournal = { notes: '', setupId: null, mistakes: [], rating: null };

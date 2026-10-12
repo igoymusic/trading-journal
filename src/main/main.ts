@@ -44,6 +44,16 @@ async function createWindow() {
   if (shot) {
     // TJ_SCREENSHOT_JS runs first, e.g. to click a trade before capturing.
     if (process.env.TJ_SCREENSHOT_JS) setTimeout(() => win.webContents.executeJavaScript(process.env.TJ_SCREENSHOT_JS!), 1000);
+    // TJ_SCREENSHOT_CLICKS='[{"at":3000,"x":500,"y":400}]' sends real mouse clicks at window coordinates.
+    for (const c of JSON.parse(process.env.TJ_SCREENSHOT_CLICKS ?? '[]') as { at: number; x: number; y: number; toY?: number }[]) {
+      setTimeout(() => {
+        win.webContents.sendInputEvent({ type: 'mouseMove', x: c.x, y: c.y });
+        win.webContents.sendInputEvent({ type: 'mouseDown', x: c.x, y: c.y, button: 'left', clickCount: 1 });
+        // With toY, drag vertically before letting go.
+        if (c.toY !== undefined) for (let i = 1; i <= 10; i++) win.webContents.sendInputEvent({ type: 'mouseMove', x: c.x, y: Math.round(c.y + ((c.toY - c.y) * i) / 10) });
+        win.webContents.sendInputEvent({ type: 'mouseUp', x: c.x, y: c.toY ?? c.y, button: 'left', clickCount: 1 });
+      }, c.at);
+    }
     setTimeout(async () => {
       const image = await win.webContents.capturePage();
       writeFileSync(shot, image.toPNG());

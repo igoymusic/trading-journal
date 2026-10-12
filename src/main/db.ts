@@ -77,6 +77,9 @@ export class JournalDb {
       );
       CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     `);
+    // Added after the first journal release: stop/target levels for R.
+    const cols = (this.db.prepare('PRAGMA table_info(trade_journal)').all() as { name: string }[]).map((c) => c.name);
+    if (!cols.includes('levels')) this.db.exec("ALTER TABLE trade_journal ADD COLUMN levels TEXT NOT NULL DEFAULT '{}'");
     this.seedMistakes();
   }
 
@@ -152,15 +155,18 @@ export class JournalDb {
 
   tradeJournals(): Map<string, TradeJournal> {
     const rows = this.db.prepare('SELECT * FROM trade_journal').all() as Record<string, any>[];
-    return new Map(rows.map((r) => [r.trade_id, { notes: r.notes, setupId: r.setup_id, mistakes: JSON.parse(r.mistakes), rating: r.rating }]));
+    return new Map(rows.map((r) => [r.trade_id, {
+      notes: r.notes, setupId: r.setup_id, mistakes: JSON.parse(r.mistakes), rating: r.rating, ...JSON.parse(r.levels),
+    }]));
   }
 
   saveTradeJournal(tradeId: string, j: TradeJournal) {
     this.db.prepare(`
-      INSERT INTO trade_journal (trade_id, notes, setup_id, mistakes, rating, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now'))
+      INSERT INTO trade_journal (trade_id, notes, setup_id, mistakes, rating, levels, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
       ON CONFLICT (trade_id) DO UPDATE SET notes = excluded.notes, setup_id = excluded.setup_id,
-        mistakes = excluded.mistakes, rating = excluded.rating, updated_at = excluded.updated_at`)
-      .run(tradeId, j.notes, j.setupId, JSON.stringify(j.mistakes), j.rating);
+        mistakes = excluded.mistakes, rating = excluded.rating, levels = excluded.levels, updated_at = excluded.updated_at`)
+      .run(tradeId, j.notes, j.setupId, JSON.stringify(j.mistakes), j.rating,
+        JSON.stringify({ stops: j.stops, targets: j.targets, underlyingEntry: j.underlyingEntry, underlyingExit: j.underlyingExit }));
   }
 
   setups(): Setup[] {

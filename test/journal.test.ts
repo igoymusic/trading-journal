@@ -24,6 +24,13 @@ describe('journal storage', () => {
     expect(db.setups().map((s) => s.name)).toEqual(['VWAP reclaim']);
   });
 
+  it('saves stop and target levels with a trade', () => {
+    const db = new JournalDb(':memory:');
+    const levels = { stops: [{ price: 99, contracts: 2 }], targets: [{ price: 103, contracts: 2 }], underlyingEntry: 100, underlyingExit: 101.5 };
+    db.saveTradeJournal('t1', { notes: '', setupId: null, mistakes: [], rating: null, ...levels });
+    expect(db.tradeJournals().get('t1')).toMatchObject(levels);
+  });
+
   it('keeps one note per day', () => {
     const db = new JournalDb(':memory:');
     db.saveDayNote('2026-09-15', 'Choppy open');
