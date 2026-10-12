@@ -31,7 +31,8 @@ button:hover { filter: brightness(1.15); }
 .tile-value { font-size: 22px; font-weight: 600; margin-top: 2px; font-variant-numeric: tabular-nums; }
 .tile-sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
 
-.trades { flex: 1; overflow: auto; padding: 0 20px 20px; }
+.view { flex: 1; overflow: auto; }
+.trades { padding: 0 20px 20px; }
 table { width: 100%; border-collapse: collapse; }
 th { position: sticky; top: 0; background: var(--bg); color: var(--muted); font-weight: 500; text-align: left; padding: 8px; border-bottom: 1px solid var(--border); }
 td { padding: 6px 8px; border-bottom: 1px solid #22262f; white-space: nowrap; }
@@ -94,3 +95,33 @@ button:disabled { opacity: 0.5; cursor: default; }
 .dragging { opacity: 0.4; }
 th[draggable='true'] { cursor: grab; user-select: none; }
 button.link { background: none; border: none; color: var(--blue); padding: 6px; width: 100%; text-align: left; }
+
+.brand { display: flex; align-items: center; gap: 24px; }
+.tabs { display: flex; gap: 2px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 2px; }
+.tabs button { border: none; background: none; color: var(--muted); padding: 5px 14px; }
+.tabs button.active { background: var(--panel-2); color: var(--text); }
+
+.month, .day { padding: 0 20px 20px; }
+.day .trades { padding: 0 0 12px; }
+.day .trade-panel { margin: 0 0 12px; }
+.day-empty { padding: 20px 0; }
+.month-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.month-nav { display: flex; align-items: center; gap: 10px; }
+.month-nav h2 { font-size: 17px; margin: 0; min-width: 190px; text-align: center; }
+.month-nav button { padding: 3px 11px; font-size: 16px; }
+.month-stats { display: flex; gap: 16px; align-items: baseline; }
+
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr) 1.15fr; gap: 6px; }
+.cal-row { display: contents; }
+.cal-weekday { color: var(--muted); font-size: 12px; text-align: center; padding-bottom: 2px; }
+.cal-day, .cal-week { min-height: 92px; border-radius: 6px; padding: 7px 9px; background: var(--panel); border: 1px solid var(--border); }
+.cal-day.outside { opacity: 0.35; }
+.cal-day.traded { cursor: pointer; }
+.cal-day.traded:hover { filter: brightness(1.2); }
+.win-bg { background: rgba(38, 166, 154, 0.16); border-color: rgba(38, 166, 154, 0.55); }
+.loss-bg { background: rgba(239, 83, 80, 0.14); border-color: rgba(239, 83, 80, 0.5); }
+.flat-bg { background: var(--panel-2); }
+.cal-week { background: var(--panel-2); }
+.cal-date { color: var(--muted); font-size: 12px; }
+.cal-pnl { font-size: 16px; font-weight: 600; margin-top: 6px; font-variant-numeric: tabular-nums; }
+.cal-sub { color: var(--muted); font-size: 11px; }
