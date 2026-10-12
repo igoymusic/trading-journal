@@ -1,0 +1,10 @@
+node_modules/
+dist/
+release/
+*.sqlite
+*.sqlite-*
+.env
+.env.*
+*.log
+# Real broker exports stay off GitHub
+*AccountStatement*.csv
