@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Bar } from '../core/alpaca';
 import { chartTime } from '../core/time';
 import { dollarRiskReward } from '../core/optionLevels';
-import { averageUnderlying, formatR, riskReward } from '../core/rr';
+import { averageUnderlying, formatR, levelsFromExits, riskReward } from '../core/rr';
 import { EMPTY_JOURNAL, type PriceLevel, type Trade } from '../core/types';
 import type { LevelPrices, TradeChart } from '../shared/api';
 import { type FillMarker, FillMarkersPrimitive } from './fillMarkers';
@@ -89,6 +89,15 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
       underlyingExit: underlyingExit ?? journal.underlyingExit,
     });
   }
+
+  // The first time a trade's chart loads, start its lines at the exits you actually took.
+  // Once lines have been saved (even all removed), they're left as you set them.
+  useEffect(() => {
+    if (chart?.status !== 'ok' || journal.stops !== undefined || journal.targets !== undefined) return;
+    const prices = new Map(chart.fills.flatMap((f) => (f.underlyingPrice === undefined ? [] : [[f.fillId, f.underlyingPrice] as const])));
+    const found = levelsFromExits(trade, prices);
+    if (found) saveLevels(found);
+  }, [chart]);
 
   function placeLevel(price: number) {
     if (!placing) return;
@@ -420,7 +429,7 @@ function RiskPanel({ trade, levels, placing, onPlacing, onChange, canMeasure, rr
       )}
       {rr && losing && !levels.targets.length && <div className="muted small">Losing trade: add the target you were aiming for to see its planned R:R.</div>}
       {levels.stops.length + levels.targets.length > 0 && (
-        <div className="muted small">Drag a line on the chart to move it. Option prices marked ≈ are estimates; the rest are what the option traded at when the underlying got there.</div>
+        <div className="muted small">Lines start at your actual exits: winners as targets, losers as stops. Drag a line on the chart to move it. Option prices marked ≈ are estimates; the rest are what the option traded at when the underlying got there.</div>
       )}
     </div>
   );

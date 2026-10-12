@@ -53,6 +53,41 @@ export function averageUnderlying(fills: { quantity: number; underlying?: number
   return priced.reduce((a, f) => a + f.underlying! * f.quantity, 0) / qty;
 }
 
+/**
+ * Stops and targets read off how you actually got out: each exit that made money after fees
+ * becomes a target, each one that didn't (break-even loses the commissions) becomes a stop, at
+ * the underlying's price when it filled. Exits on the wrong side of the entry for their kind
+ * (e.g. a loss while the underlying moved your way, from time decay) can't be read this way and
+ * are left out. Null if nothing could be identified.
+ */
+export function levelsFromExits(
+  trade: Pick<Trade, 'putCall' | 'direction' | 'avgEntry' | 'fills'>,
+  underlyingByFill: Map<string, number>,
+): { stops: PriceLevel[]; targets: PriceLevel[] } | null {
+  const entrySide = trade.direction === 'LONG' ? 'BUY' : 'SELL';
+  const entries = trade.fills.filter((f) => f.side === entrySide);
+  const entryQty = entries.reduce((a, f) => a + f.quantity, 0);
+  const entryU = averageUnderlying(entries.map((f) => ({ quantity: f.quantity, underlying: underlyingByFill.get(f.id) })));
+  if (!entryQty || entryU === undefined) return null;
+  const entryFeePerContract = entries.reduce((a, f) => a + f.fees, 0) / entryQty;
+  const dir = trade.direction === 'LONG' ? 1 : -1;
+  const b = bias(trade);
+  const out = { stops: [] as PriceLevel[], targets: [] as PriceLevel[] };
+  for (const f of trade.fills) {
+    const u = underlyingByFill.get(f.id);
+    if (f.side === entrySide || u === undefined || !f.quantity) continue;
+    const perContract = dir * (f.price * 100 - trade.avgEntry) - entryFeePerContract - f.fees / f.quantity;
+    const kind = perContract > 0 ? 'targets' : 'stops';
+    const move = b * (u - entryU);
+    if (kind === 'targets' ? move <= 0 : move >= 0) continue;
+    const price = Math.round(u * 100) / 100;
+    const same = out[kind].find((l) => l.price === price);
+    if (same) same.contracts += f.quantity;
+    else out[kind].push({ price, contracts: f.quantity });
+  }
+  return out.stops.length || out.targets.length ? out : null;
+}
+
 /** "+1.8R" */
 export function formatR(r: number): string {
   return `${r > 0 ? '+' : r < 0 ? '−' : ''}${Math.abs(r).toFixed(1)}R`;

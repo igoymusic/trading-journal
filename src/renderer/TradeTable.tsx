@@ -11,7 +11,7 @@ function plural(n: number, word: string) {
 
 /**
  * Trades grouped by the day they closed (open positions sit under the day they opened).
- * Clicking a header sorts by that column instead, as one list without day groups.
+ * Clicking a header sorts by that column; across several days that makes one list without day groups.
  * With `renderDetail`, each row expands to show that content underneath when its id is in `expanded`.
  */
 export function TradeTable({ trades, selectedId, onSelect, expanded, renderDetail }: {
@@ -120,7 +120,8 @@ export function TradeTable({ trades, selectedId, onSelect, expanded, renderDetai
           </tr>
         </thead>
         <tbody>
-          {sorted ? sorted.map((t) => row(t, days.length > 1)) : days.map(([day, dayTrades]) => {
+          {/* Sorting several days makes one list; a single day keeps its summary bar on top. */}
+          {sorted && days.length > 1 ? sorted.map((t) => row(t, true)) : days.map(([day, dayTrades]) => {
             const dayPnl = Math.round(dayTrades.reduce((a, t) => a + t.netPnl, 0) * 100) / 100;
             const wins = dayTrades.filter((t) => t.netPnl > 0).length;
             return (
@@ -132,7 +133,7 @@ export function TradeTable({ trades, selectedId, onSelect, expanded, renderDetai
                   <td className={`num ${pnlClass(dayPnl)}`}>{signedUsd(dayPnl)}</td>
                   {pnlAt < columns.length - 1 && <td colSpan={columns.length - 1 - pnlAt} />}
                 </tr>
-                {dayTrades.map((t) => row(t, false))}
+                {(sorted ?? dayTrades).map((t) => row(t, false))}
               </Fragment>
             );
           })}
