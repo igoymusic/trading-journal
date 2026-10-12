@@ -1,9 +1,10 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { buildReports, type ReportRow, type Reports } from '../core/reports';
 import { formatR } from '../core/rr';
 import type { Trade } from '../core/types';
 import { pnlClass, signedUsd } from './format';
 import { useJournal } from './journal';
+import { nextSort, sortArrow, sortRows, type SortState } from './sorting';
 
 const SECTIONS: { key: keyof Reports; title: string; hint?: string }[] = [
   { key: 'setup', title: 'By setup' },
@@ -29,9 +30,31 @@ export function ReportsView({ trades }: { trades: Trade[] }) {
   );
 }
 
-function ReportCard({ title, hint, rows }: { title: string; hint?: string; rows: ReportRow[] }) {
+const COLS: { id: string; label: string; title?: string; value: (r: ReportRow) => number | string | null }[] = [
+  { id: 'label', label: '', value: (r) => r.label },
+  { id: 'trades', label: 'Trades', value: (r) => r.trades },
+  { id: 'winRate', label: 'Win %', value: (r) => r.winRate },
+  { id: 'netPnl', label: 'Net P&L', value: (r) => r.netPnl },
+  { id: 'avgPnl', label: 'Avg', value: (r) => r.avgPnl },
+  { id: 'pf', label: 'PF', title: 'Total won divided by total lost. Above 1 means it made money.', value: (r) => r.profitFactor },
+  { id: 'avgR', label: 'Avg R', title: 'Average R over the trades that have a stop line set', value: (r) => r.avgR },
+];
+
+function ReportCard({ title, hint, rows: unsorted }: { title: string; hint?: string; rows: ReportRow[] }) {
+  const [sort, setSort] = useState<SortState | null>(null);
+  const col = sort && COLS.find((c) => c.id === sort.id);
+  const rows = col ? sortRows(unsorted, col.value, sort!.dir) : unsorted;
+  const header = (id: string) => {
+    const c = COLS.find((x) => x.id === id)!;
+    return (
+      <th className={`sortable ${id === 'label' ? '' : 'num'} ${sort?.id === id ? 'sorted' : ''}`} title={c.title ?? 'Click to sort'}
+        onClick={() => setSort(nextSort(sort, id))}>
+        {c.label || 'Name'}{sortArrow(sort, id)}
+      </th>
+    );
+  };
   // Bars are scaled to the biggest win or loss in this card.
-  const scale = Math.max(...rows.map((r) => Math.abs(r.netPnl)), 1);
+  const scale = Math.max(...unsorted.map((r) => Math.abs(r.netPnl)), 1);
   return (
     <div className="card report">
       <div className="report-head">
@@ -41,14 +64,14 @@ function ReportCard({ title, hint, rows }: { title: string; hint?: string; rows:
       <table>
         <thead>
           <tr>
-            <th />
-            <th className="num">Trades</th>
-            <th className="num">Win %</th>
-            <th className="num">Net P&amp;L</th>
+            {header('label')}
+            {header('trades')}
+            {header('winRate')}
+            {header('netPnl')}
             <th className="bar-col" />
-            <th className="num">Avg</th>
-            <th className="num" title="Total won divided by total lost. Above 1 means it made money.">PF</th>
-            <th className="num" title="Average R over the trades that have a stop line set">Avg R</th>
+            {header('avgPnl')}
+            {header('pf')}
+            {header('avgR')}
           </tr>
         </thead>
         <tbody>

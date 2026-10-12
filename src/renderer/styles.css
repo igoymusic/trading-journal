@@ -245,3 +245,8 @@ button.link { background: none; border: none; color: var(--blue); padding: 6px; 
 .win-fill { background: var(--green); }
 .loss-fill { background: var(--red); }
 .flat-fill { background: var(--muted); }
+
+/* Click-to-sort headers */
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { color: var(--text); }
+th.sorted { color: var(--text); }
