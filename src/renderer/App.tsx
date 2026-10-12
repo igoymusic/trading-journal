@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useReducer, useState } from 'react';
-import { tradeDay } from '../core/calendar';
+import { statsByDay, tradeDay } from '../core/calendar';
 import { type Summary, summarizeTrades } from '../core/trades';
 import type { ImportResult, JournalData } from '../shared/api';
 import { DayView } from './DayView';
@@ -57,6 +57,9 @@ export function App() {
   }, [data, tabs]);
 
   const hasTrades = !!data && data.trades.length > 0;
+  // Net P&L shown on each Month and Day tab.
+  const dayPnl = useMemo(() => statsByDay(data?.trades ?? []), [data]);
+  const monthPnl = (key: string) => Math.round([...dayPnl.values()].filter((d) => d.date.startsWith(key)).reduce((a, d) => a + d.netPnl, 0) * 100) / 100;
 
   return (
     <div className="app">
@@ -76,7 +79,7 @@ export function App() {
           {tabs.months.map((m) => {
             const tab: ActiveTab = `month:${monthKey(m.year, m.month)}`;
             return (
-              <Tab key={tab} active={tabs.active === tab} pinned={m.pinned} onClick={() => dispatch({ type: 'show', tab })}
+              <Tab key={tab} active={tabs.active === tab} pinned={m.pinned} pnl={monthPnl(monthKey(m.year, m.month))} onClick={() => dispatch({ type: 'show', tab })}
                 onPin={() => dispatch({ type: 'togglePin', tab })} onClose={() => dispatch({ type: 'closeTab', tab })}>
                 {MONTH_SHORT[m.month - 1]} {m.year}
               </Tab>
@@ -85,7 +88,7 @@ export function App() {
           {tabs.days.map((d) => {
             const tab: ActiveTab = `day:${d.date}`;
             return (
-              <Tab key={tab} active={tabs.active === tab} pinned={d.pinned} onClick={() => dispatch({ type: 'show', tab })}
+              <Tab key={tab} active={tabs.active === tab} pinned={d.pinned} pnl={dayPnl.get(d.date)?.netPnl ?? 0} onClick={() => dispatch({ type: 'show', tab })}
                 onPin={() => dispatch({ type: 'togglePin', tab })} onClose={() => dispatch({ type: 'closeTab', tab })}>
                 {MONTH_SHORT[Number(d.date.slice(5, 7)) - 1]} {Number(d.date.slice(8))}
               </Tab>
@@ -157,9 +160,11 @@ export function App() {
   );
 }
 
-function Tab({ active, pinned, onClick, onPin, onClose, children }: {
+function Tab({ active, pinned, pnl, onClick, onPin, onClose, children }: {
   active: boolean;
   pinned?: boolean;
+  /** Net P&L shown after the label, colored green or red. */
+  pnl?: number;
   onClick: () => void;
   onPin?: () => void;
   onClose?: () => void;
@@ -168,6 +173,7 @@ function Tab({ active, pinned, onClick, onPin, onClose, children }: {
   return (
     <div className={`tab ${active ? 'active' : ''} ${pinned ? 'pinned' : ''}`} onClick={onClick}>
       <span>{children}</span>
+      {pnl !== undefined && <span className={`tab-pnl ${pnlClass(pnl)}`}>{signedUsd(pnl)}</span>}
       {onPin && (
         <button className="tab-pin" title={pinned ? 'Unpin: let this tab close when you pick another month' : 'Pin: keep this tab open'}
           aria-label={pinned ? 'Unpin tab' : 'Pin tab'} onClick={(e) => { e.stopPropagation(); onPin(); }}>

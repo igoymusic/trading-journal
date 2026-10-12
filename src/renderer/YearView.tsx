@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { yearSummaries } from '../core/calendar';
 import type { Trade } from '../core/types';
 import { pnlClass, signedUsd } from './format';
@@ -10,7 +11,7 @@ function days(n: number) {
 
 /**
  * Every year you traded, newest first. The selected year is expanded to its months;
- * clicking another year selects it, and clicking a month opens it.
+ * clicking it again collapses it, clicking another year selects it, and clicking a month opens it.
  */
 export function YearView({ trades, year, openMonths, onSelectYear, onOpenMonth }: {
   trades: Trade[];
@@ -20,13 +21,18 @@ export function YearView({ trades, year, openMonths, onSelectYear, onOpenMonth }
   onSelectYear: (year: number) => void;
   onOpenMonth: (year: number, month: number) => void;
 }) {
+  // Collapsing only hides the months; the year stays selected and no tabs close.
+  const [collapsed, setCollapsed] = useState(false);
   return (
     <section className="years">
       {yearSummaries(trades).map((y) => {
-        const expanded = y.year === year;
+        const expanded = y.year === year && !collapsed;
         return (
           <div key={y.year} className={`year-block ${expanded ? 'expanded' : ''}`}>
-            <button className="year-row" onClick={() => onSelectYear(y.year)}>
+            <button className="year-row" onClick={() => {
+              if (y.year === year) setCollapsed(!collapsed);
+              else { setCollapsed(false); onSelectYear(y.year); }
+            }}>
               <span className="chevron">{expanded ? '▾' : '▸'}</span>
               <span className="year-name">{y.year}</span>
               <span className="muted">{days(y.tradedDays)}</span>
