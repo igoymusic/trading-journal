@@ -84,7 +84,8 @@ class Renderer implements IPrimitivePaneRenderer {
         const x = timeScale.timeToCoordinate(m.time);
         const y = series.priceToCoordinate(m.price);
         if (x === null || y === null) continue;
-        const tipX = m.kind === 'entry' ? x - halfBar - GAP : x + halfBar + GAP;
+        // The arrow's point lands on the middle of the candle.
+        const tipX = x;
         arrows.push({ tipX, y, kind: m.kind, width: ctx.measureText(m.text).width + PAD_X * 2, marker: m });
       }
       // The arrows themselves count as obstacles for labels.
