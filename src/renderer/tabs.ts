@@ -2,7 +2,7 @@
 // tabs open as you drill in. Picking a different year or month closes the Month and Day tabs
 // that aren't pinned, so unpinned days always belong to the open month.
 
-export type ActiveTab = 'home' | 'trades' | 'year' | `month:${string}` | `day:${string}`;
+export type ActiveTab = 'home' | 'trades' | 'reports' | 'year' | `month:${string}` | `day:${string}`;
 
 export interface MonthTab { year: number; month: number; pinned: boolean }
 export interface DayTab { date: string; pinned: boolean }
@@ -79,7 +79,7 @@ export function tabsReducer(s: TabsState, a: TabAction): TabsState {
     case 'openDay':
       return { ...withDay(s, a.date), active: `day:${a.date}` };
     case 'closeTab': {
-      if (a.tab === 'home' || a.tab === 'trades' || a.tab === 'year') return s;
+      if (a.tab === 'home' || a.tab === 'trades' || a.tab === 'reports' || a.tab === 'year') return s;
       const order = tabOrder(s);
       let next: TabsState;
       if (a.tab.startsWith('month:')) {
