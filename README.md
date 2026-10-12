@@ -1,4 +1,4 @@
-# Trading Journal
+# Moon Journal
 
 A personal desktop trading journal for options traders, in the spirit of TradeZella and Kinfo. Trades are imported from your broker and stored only on your own computer.
 
@@ -6,13 +6,13 @@ A personal desktop trading journal for options traders, in the spirit of TradeZe
 
 ## Using it
 
-1. Download the latest Windows installer: open the **Actions** tab on GitHub, pick the newest green **Build** run, and download **Trading-Journal-Windows-Installer** at the bottom of the page.
+1. Download the latest Windows installer: open the **Actions** tab on GitHub, pick the newest green **Build** run, and download **Moon-Journal-Windows-Installer** at the bottom of the page.
 2. Run the installer. Windows may warn that the app is from an unknown publisher, because it isn't code-signed. Click **More info**, then **Run anyway**.
 3. In thinkorswim: **Monitor** → **Account Statement** → choose dates → **Apply** → menu icon → **Export to File**.
 4. In the app, click **Import thinkorswim CSV** and pick that file. Importing the same file twice is safe; duplicates are skipped.
 5. For charts, open **Settings** and paste a free [Alpaca](https://alpaca.markets) market data API key and secret. Then click any trade.
 
-Your journal lives in `%APPDATA%\Trading Journal\journal.sqlite`.
+Your journal lives in `%APPDATA%\Moon Journal\journal.sqlite`.
 
 ## How the import works
 

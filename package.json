@@ -1,7 +1,7 @@
 {
   "name": "trading-journal",
   "version": "0.1.0",
-  "description": "Personal options trading journal",
+  "description": "Moon Journal: a personal options trading journal",
   "main": "dist/main/main.js",
   "scripts": {
     "build": "vite build && node scripts/build-main.mjs",
@@ -31,7 +31,7 @@
   "license": "UNLICENSED",
   "build": {
     "appId": "com.yogi.tradingjournal",
-    "productName": "Trading Journal",
+    "productName": "Moon Journal",
     "directories": {
       "output": "release"
     },
@@ -46,5 +46,6 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
     }
-  }
+  },
+  "productName": "Moon Journal"
 }

@@ -8,6 +8,7 @@ import { buildTrades, summarizeTrades } from '../core/trades';
 import type { ImportResult, JournalData, TradeChart } from '../shared/api';
 import { AlpacaClient } from '../core/alpaca';
 import { JournalDb } from './db';
+import { moveDataFromOldName } from './migrate';
 import { buildTradeChart } from './market';
 import { Settings } from './settings';
 
@@ -30,7 +31,7 @@ async function createWindow() {
     width: 1400,
     height: 900,
     backgroundColor: '#131722',
-    title: 'Trading Journal',
+    title: 'Moon Journal',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true },
   });
   win.setMenuBarVisibility(false);
@@ -48,6 +49,8 @@ async function createWindow() {
     }, Number(process.env.TJ_SCREENSHOT_DELAY ?? 2500));
   }
 }
+
+moveDataFromOldName(app.getPath('appData'), app.getPath('userData'));
 
 app.whenReady().then(async () => {
   db = new JournalDb(path.join(app.getPath('userData'), 'journal.sqlite'));

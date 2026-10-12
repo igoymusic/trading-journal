@@ -31,7 +31,7 @@ export function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <h1>Trading Journal</h1>
+        <h1>Moon Journal</h1>
         <div className="topbar-actions">
           <button onClick={() => setShowSettings(true)}>Settings</button>
           <button className="primary" onClick={importCsv}>Import thinkorswim CSV</button>
