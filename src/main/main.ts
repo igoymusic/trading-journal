@@ -5,11 +5,12 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseTosStatement } from '../core/tosCsv';
 import { buildTrades, summarizeTrades } from '../core/trades';
+import type { MistakeTag, PriceLevel, Setup, TradeJournal } from '../core/types';
 import type { ImportResult, JournalData, TradeChart } from '../shared/api';
 import { AlpacaClient } from '../core/alpaca';
 import { JournalDb } from './db';
 import { moveDataFromOldName } from './migrate';
-import { buildTradeChart } from './market';
+import { buildTradeChart, levelOptionPrices } from './market';
 import { Settings } from './settings';
 
 let db: JournalDb;
@@ -22,8 +23,9 @@ function importFile(file: string): ImportResult {
 }
 
 function journalData(): JournalData {
-  const trades = buildTrades(db.allFills());
-  return { trades, summary: summarizeTrades(trades) };
+  const journals = db.tradeJournals();
+  const trades = buildTrades(db.allFills()).map((t) => ({ ...t, journal: journals.get(t.id) }));
+  return { trades, summary: summarizeTrades(trades), setups: db.setups(), mistakes: db.mistakeTags(), dayNotes: db.dayNotes() };
 }
 
 async function createWindow() {
@@ -42,6 +44,16 @@ async function createWindow() {
   if (shot) {
     // TJ_SCREENSHOT_JS runs first, e.g. to click a trade before capturing.
     if (process.env.TJ_SCREENSHOT_JS) setTimeout(() => win.webContents.executeJavaScript(process.env.TJ_SCREENSHOT_JS!), 1000);
+    // TJ_SCREENSHOT_CLICKS='[{"at":3000,"x":500,"y":400}]' sends real mouse clicks at window coordinates.
+    for (const c of JSON.parse(process.env.TJ_SCREENSHOT_CLICKS ?? '[]') as { at: number; x: number; y: number; toY?: number }[]) {
+      setTimeout(() => {
+        win.webContents.sendInputEvent({ type: 'mouseMove', x: c.x, y: c.y });
+        win.webContents.sendInputEvent({ type: 'mouseDown', x: c.x, y: c.y, button: 'left', clickCount: 1 });
+        // With toY, drag vertically before letting go.
+        if (c.toY !== undefined) for (let i = 1; i <= 10; i++) win.webContents.sendInputEvent({ type: 'mouseMove', x: c.x, y: Math.round(c.y + ((c.toY - c.y) * i) / 10) });
+        win.webContents.sendInputEvent({ type: 'mouseUp', x: c.x, y: c.toY ?? c.y, button: 'left', clickCount: 1 });
+      }, c.at);
+    }
     setTimeout(async () => {
       const image = await win.webContents.capturePage();
       writeFileSync(shot, image.toPNG());
@@ -69,6 +81,11 @@ app.whenReady().then(async () => {
     return importFile(pick.filePaths[0]);
   });
 
+  ipcMain.handle('journal:saveTrade', (_event, tradeId: string, journal: TradeJournal) => db.saveTradeJournal(tradeId, journal));
+  ipcMain.handle('journal:saveSetups', (_event, setups: Setup[]) => db.saveSetups(setups));
+  ipcMain.handle('journal:saveMistakes', (_event, mistakes: MistakeTag[]) => db.saveMistakeTags(mistakes));
+  ipcMain.handle('journal:saveDayNote', (_event, date: string, notes: string) => db.saveDayNote(date, notes));
+
   ipcMain.handle('market:tradeChart', async (_event, tradeId: string): Promise<TradeChart> => {
     const trade = buildTrades(db.allFills()).find((t) => t.id === tradeId);
     if (!trade) return { status: 'error', message: 'Trade not found.' };
@@ -76,6 +93,16 @@ app.whenReady().then(async () => {
       return await buildTradeChart(trade, db, settings);
     } catch (err) {
       return { status: 'error', message: (err as Error).message };
+    }
+  });
+
+  ipcMain.handle('market:levelPrices', async (_event, tradeId: string, stops: PriceLevel[], targets: PriceLevel[]) => {
+    const trade = buildTrades(db.allFills()).find((t) => t.id === tradeId);
+    if (!trade) return null;
+    try {
+      return await levelOptionPrices(trade, stops, targets, db, settings);
+    } catch {
+      return null;
     }
   });
 

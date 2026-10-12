@@ -3,6 +3,7 @@ import { statsByDay, tradeDay } from '../core/calendar';
 import { type Summary, summarizeTrades } from '../core/trades';
 import type { ImportResult, JournalData } from '../shared/api';
 import { DayView } from './DayView';
+import { JournalContext, type JournalContextValue, TradeJournalEditor } from './journal';
 import { pnlClass, signedUsd, usd } from './format';
 import { MonthView } from './MonthView';
 import { PnlChart } from './PnlChart';
@@ -33,6 +34,39 @@ export function App() {
     : null;
 
   const load = () => window.journal.getJournal().then(setData);
+
+  // Journal edits show at once and save in the background.
+  const journalApi = useMemo<JournalContextValue>(() => ({
+    setups: data?.setups ?? [],
+    mistakes: data?.mistakes ?? [],
+    saveTrade(tradeId, journal) {
+      setData((d) => d && { ...d, trades: d.trades.map((t) => (t.id === tradeId ? { ...t, journal } : t)) });
+      window.journal.saveTradeJournal(tradeId, journal);
+    },
+    saveSetups(setups) {
+      const ids = new Set(setups.map((x) => x.id));
+      setData((d) => d && {
+        ...d,
+        setups,
+        trades: d.trades.map((t) => (t.journal?.setupId && !ids.has(t.journal.setupId) ? { ...t, journal: { ...t.journal, setupId: null } } : t)),
+      });
+      window.journal.saveSetups(setups);
+    },
+    saveMistakes(mistakes) {
+      const ids = new Set(mistakes.map((x) => x.id));
+      setData((d) => d && {
+        ...d,
+        mistakes,
+        trades: d.trades.map((t) => (t.journal ? { ...t, journal: { ...t.journal, mistakes: t.journal.mistakes.filter((m) => ids.has(m)) } } : t)),
+      });
+      window.journal.saveMistakes(mistakes);
+    },
+  }), [data?.setups, data?.mistakes]);
+
+  function saveDayNote(date: string, notes: string) {
+    setData((d) => d && { ...d, dayNotes: { ...d.dayNotes, [date]: notes } });
+    window.journal.saveDayNote(date, notes);
+  }
   useEffect(() => { load(); }, []);
 
   async function importCsv() {
@@ -62,6 +96,7 @@ export function App() {
   const monthPnl = (key: string) => Math.round([...dayPnl.values()].filter((d) => d.date.startsWith(key)).reduce((a, d) => a + d.netPnl, 0) * 100) / 100;
 
   return (
+    <JournalContext.Provider value={journalApi}>
     <div className="app">
       <header className="topbar">
         <h1>Moon Journal</h1>
@@ -138,6 +173,8 @@ export function App() {
               key={activeDay}
               trades={data.trades}
               date={activeDay}
+              dayNote={data.dayNotes[activeDay] ?? ''}
+              onSaveDayNote={saveDayNote}
               chartVersion={settingsVersion}
               expanded={new Set(openCharts[activeDay] ?? [])}
               onToggle={(id) => setOpenCharts((all) => {
@@ -149,7 +186,12 @@ export function App() {
           )}
           {tabs.active === 'trades' && (
             <>
-              {selected && <TradePanel key={`${selected.id}:${settingsVersion}`} trade={selected} onClose={() => setSelectedId(null)} onOpenSettings={() => setShowSettings(true)} />}
+              {selected && (
+                <div className="selected-trade">
+                  <TradePanel key={`${selected.id}:${settingsVersion}`} trade={selected} onClose={() => setSelectedId(null)} onOpenSettings={() => setShowSettings(true)} />
+                  <TradeJournalEditor key={selected.id} trade={selected} />
+                </div>
+              )}
               <TradeTable trades={data.trades} selectedId={selectedId} onSelect={(id) => setSelectedId(id === selectedId ? null : id)} />
             </>
           )}
@@ -157,6 +199,7 @@ export function App() {
       )}
       {showSettings && <SettingsDialog onClose={() => { setShowSettings(false); setSettingsVersion((v) => v + 1); }} />}
     </div>
+    </JournalContext.Provider>
   );
 }
 

@@ -110,4 +110,34 @@ export class AlpacaClient {
     });
     return result ? { time: Date.parse(result.t), price: result.p, feed } : null;
   }
+
+  /**
+   * Minute candles for one option contract (OCC symbol). History starts in February 2024; minutes
+   * with no trades have no candle.
+   */
+  async optionMinuteBars(occSymbol: string, startMillis: number, endMillis: number): Promise<Bar[]> {
+    const bars: Bar[] = [];
+    let pageToken: string | undefined;
+    do {
+      const body = await this.get('/v1beta1/options/bars', {
+        symbols: occSymbol,
+        timeframe: '1Min',
+        start: new Date(startMillis).toISOString(),
+        end: new Date(endMillis).toISOString(),
+        limit: 10000,
+        ...(pageToken ? { page_token: pageToken } : {}),
+      });
+      for (const b of body.bars?.[occSymbol] ?? []) {
+        bars.push({ time: Date.parse(b.t), open: b.o, high: b.h, low: b.l, close: b.c, volume: b.v });
+      }
+      pageToken = body.next_page_token ?? undefined;
+    } while (pageToken);
+    return bars;
+  }
+}
+
+/** The standard (OCC) option symbol, e.g. SPY 776 call expiring 2026-09-15 -> "SPY260915C00776000". */
+export function occSymbol(underlying: string, expiry: string, putCall: 'CALL' | 'PUT', strike: number): string {
+  const date = expiry.slice(2, 4) + expiry.slice(5, 7) + expiry.slice(8, 10);
+  return `${underlying}${date}${putCall === 'CALL' ? 'C' : 'P'}${String(Math.round(strike * 1000)).padStart(8, '0')}`;
 }

@@ -50,6 +50,47 @@ export interface Trade {
   fees: number;
   netPnl: number;
   fills: Fill[];
+  /** Your notes and labels for this trade, if you've added any. */
+  journal?: TradeJournal;
+}
+
+/** What you record about a trade: the setup it was, mistakes made, a 1-5 rating and free notes. */
+export interface TradeJournal {
+  notes: string;
+  setupId: string | null;
+  /** Ids of mistake tags. */
+  mistakes: string[];
+  /** 1-5, or null if not rated. */
+  rating: number | null;
+  /** Stop-loss levels you placed on the underlying's chart. */
+  stops?: PriceLevel[];
+  /** Take-profit levels (planned, or theoretical for a losing trade). */
+  targets?: PriceLevel[];
+  /** The underlying's average price at your entries and exits, saved with the levels so R shows without loading the chart. */
+  underlyingEntry?: number;
+  underlyingExit?: number;
+}
+
+/** A price on the underlying and how many contracts it applies to. */
+export interface PriceLevel {
+  price: number;
+  contracts: number;
+}
+
+export const EMPTY_JOURNAL: TradeJournal = { notes: '', setupId: null, mistakes: [], rating: null };
+
+/** A trade setup you define, e.g. "Opening range breakout". */
+export interface Setup {
+  id: string;
+  name: string;
+  /** Hex color used for its badge. */
+  color: string;
+}
+
+/** A mistake label, e.g. "Chased entry". */
+export interface MistakeTag {
+  id: string;
+  name: string;
 }
 
 export const CONTRACT_MULTIPLIER = 100;

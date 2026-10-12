@@ -1,11 +1,21 @@
-import { CandlestickSeries, ColorType, createChart, CrosshairMode, type IChartApi, type UTCTimestamp } from 'lightweight-charts';
+import {
+  CandlestickSeries, ColorType, createChart, CrosshairMode, type IChartApi, type IPriceLine, type ISeriesApi, LineStyle, type UTCTimestamp,
+} from 'lightweight-charts';
 import { useEffect, useRef, useState } from 'react';
 import type { Bar } from '../core/alpaca';
 import { chartTime } from '../core/time';
-import type { Trade } from '../core/types';
-import type { TradeChart } from '../shared/api';
+import { dollarRiskReward } from '../core/optionLevels';
+import { averageUnderlying, formatR, riskReward } from '../core/rr';
+import { EMPTY_JOURNAL, type PriceLevel, type Trade } from '../core/types';
+import type { LevelPrices, TradeChart } from '../shared/api';
 import { type FillMarker, FillMarkersPrimitive } from './fillMarkers';
 import { holdTime, pnlClass, shortDate, signedUsd, usd } from './format';
+import { useJournal } from './journal';
+
+type LevelKind = 'stops' | 'targets';
+interface Levels { stops: PriceLevel[]; targets: PriceLevel[] }
+const LEVEL_COLORS = { stops: '#ef5350', targets: '#26a69a' };
+const round2 = (n: number) => Math.round(n * 100) / 100;
 
 type Interval = 1 | 5 | 15;
 
@@ -32,13 +42,68 @@ function aggregate(bars: Bar[], minutes: Interval): Bar[] {
 export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; onClose?: () => void; onOpenSettings: () => void }) {
   const [chart, setChart] = useState<TradeChart | null>(null);
   const [interval, setInterval] = useState<Interval>(1);
+  const [placing, setPlacing] = useState<LevelKind | null>(null);
+  const { saveTrade } = useJournal();
+  const journal = trade.journal ?? EMPTY_JOURNAL;
+  const levels: Levels = { stops: journal.stops ?? [], targets: journal.targets ?? [] };
 
   useEffect(() => {
     setChart(null);
     window.journal.getTradeChart(trade.id).then(setChart);
   }, [trade.id]);
 
+  useEffect(() => {
+    if (!placing) return;
+    const cancel = (e: KeyboardEvent) => { if (e.key === 'Escape') setPlacing(null); };
+    window.addEventListener('keydown', cancel);
+    return () => window.removeEventListener('keydown', cancel);
+  }, [placing]);
+
   const priceByFill = new Map(chart?.status === 'ok' ? chart.fills.map((f) => [f.fillId, f]) : []);
+
+  // Where the underlying was when you got in and out, for measuring R.
+  const entrySide = trade.direction === 'LONG' ? 'BUY' : 'SELL';
+  const withPrices = trade.fills.map((f) => ({ ...f, underlying: priceByFill.get(f.id)?.underlyingPrice }));
+  const underlyingEntry = averageUnderlying(withPrices.filter((f) => f.side === entrySide));
+  const underlyingExit = trade.status === 'CLOSED' ? averageUnderlying(withPrices.filter((f) => f.side !== entrySide)) : undefined;
+  const rr = riskReward(trade, journal);
+
+  // What the option would have been worth at each line (real price or estimate), for dollar risk.
+  const [levelPrices, setLevelPrices] = useState<LevelPrices | null>(null);
+  const levelsKey = JSON.stringify(levels);
+  useEffect(() => {
+    if (chart?.status !== 'ok' || !levels.stops.length && !levels.targets.length) { setLevelPrices(null); return; }
+    let current = true;
+    const timer = setTimeout(() => {
+      window.journal.getLevelPrices(trade.id, levels.stops, levels.targets).then((p) => { if (current) setLevelPrices(p); });
+    }, 250);
+    return () => { current = false; clearTimeout(timer); };
+  }, [chart, levelsKey]);
+
+  function saveLevels(next: Levels) {
+    saveTrade(trade.id, {
+      ...journal,
+      stops: next.stops,
+      targets: next.targets,
+      underlyingEntry: underlyingEntry ?? journal.underlyingEntry,
+      underlyingExit: underlyingExit ?? journal.underlyingExit,
+    });
+  }
+
+  function placeLevel(price: number) {
+    if (!placing) return;
+    const allocated = levels[placing].reduce((a, l) => a + l.contracts, 0);
+    const contracts = Math.max(1, trade.maxContracts - allocated);
+    saveLevels({ ...levels, [placing]: [...levels[placing], { price: round2(price), contracts }] });
+    setPlacing(null);
+  }
+
+  function changeLevel(kind: LevelKind, index: number, patch: Partial<PriceLevel> | null) {
+    const list = patch === null
+      ? levels[kind].filter((_, i) => i !== index)
+      : levels[kind].map((l, i) => (i === index ? { ...l, ...patch } : l));
+    saveLevels({ ...levels, [kind]: list });
+  }
 
   return (
     <section className="trade-panel">
@@ -47,6 +112,8 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
           <span className="panel-title">{trade.underlying} {trade.strike}{trade.putCall === 'CALL' ? 'C' : 'P'} {shortDate(trade.expiry)}</span>
           <span className="muted"> · {trade.direction === 'LONG' ? 'Long' : 'Short'} {trade.maxContracts} · held {holdTime(trade.openTime, trade.closeTime)}</span>
           <span className={`panel-pnl ${pnlClass(trade.netPnl)}`}>{signedUsd(trade.netPnl)}</span>
+          {rr?.realizedR !== undefined && <span className={`panel-r ${pnlClass(rr.realizedR)}`}>{formatR(rr.realizedR)}</span>}
+          {rr?.plannedR !== undefined && <span className="panel-r muted">planned 1 : {rr.plannedR.toFixed(1)}</span>}
         </div>
         <div className="panel-actions">
           {[1, 5, 15].map((m) => (
@@ -66,7 +133,18 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
             </div>
           )}
           {chart?.status === 'error' && <div className="chart-message loss">Couldn't load prices: {chart.message}</div>}
-          {chart?.status === 'ok' && <PriceChart trade={trade} chart={chart} interval={interval} />}
+          {chart?.status === 'ok' && (
+            <PriceChart
+              trade={trade}
+              chart={chart}
+              interval={interval}
+              levels={levels}
+              placing={placing}
+              onPlace={placeLevel}
+              onMove={(kind, i, price) => changeLevel(kind, i, { price: round2(price) })}
+            />
+          )}
+          {placing && <div className="placing-hint">Click the chart where your {placing === 'stops' ? 'stop' : 'target'} is. Press Esc to cancel.</div>}
         </div>
 
         <div className="fill-list">
@@ -89,6 +167,18 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
               </div>
             );
           })}
+          {chart?.status === 'ok' && (
+            <RiskPanel
+              trade={trade}
+              levels={levels}
+              placing={placing}
+              onPlacing={setPlacing}
+              onChange={changeLevel}
+              canMeasure={underlyingEntry !== undefined}
+              rr={rr}
+              prices={levelPrices}
+            />
+          )}
           {chart?.status === 'ok' && chart.feed === 'iex' && (
             <div className="muted small">Some prices come from the IEX exchange only, so they can differ by a cent or two.</div>
           )}
@@ -98,9 +188,23 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
   );
 }
 
-function PriceChart({ trade, chart, interval }: { trade: Trade; chart: Extract<TradeChart, { status: 'ok' }>; interval: Interval }) {
+function PriceChart({ trade, chart, interval, levels, placing, onPlace, onMove }: {
+  trade: Trade;
+  chart: Extract<TradeChart, { status: 'ok' }>;
+  interval: Interval;
+  levels: Levels;
+  placing: LevelKind | null;
+  onPlace: (price: number) => void;
+  onMove: (kind: LevelKind, index: number, price: number) => void;
+}) {
   const container = useRef<HTMLDivElement>(null);
   const api = useRef<IChartApi | null>(null);
+  const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  const lines = useRef(new Map<string, IPriceLine>());
+  const [built, setBuilt] = useState(0);
+  // The chart's event handlers are set up once per build, so they read the latest props from here.
+  const live = useRef({ trade, levels, placing, onPlace, onMove });
+  live.current = { trade, levels, placing, onPlace, onMove };
 
   useEffect(() => {
     const el = container.current!;
@@ -123,6 +227,7 @@ function PriceChart({ trade, chart, interval }: { trade: Trade; chart: Extract<T
     series.setData(candles.map((b) => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close })));
 
     // Partial fills in the same second at the same price share one marker ("B 2 @ $79.00").
+    const trade = live.current.trade;
     const entrySide = trade.direction === 'LONG' ? 'BUY' : 'SELL';
     const groups = new Map<string, { time: number; isEntry: boolean; side: string; qty: number; optionPrice: number; underlying?: number }>();
     for (const f of trade.fills) {
@@ -152,8 +257,171 @@ function PriceChart({ trade, chart, interval }: { trade: Trade; chart: Extract<T
       const pad = Math.max(30 * 60_000 * interval, (last - first) * 0.5);
       c.timeScale().setVisibleRange({ from: chartTime(first - pad, tz) as UTCTimestamp, to: chartTime(last + pad, tz) as UTCTimestamp });
     }
-    return () => { c.remove(); api.current = null; };
-  }, [chart, interval, trade]);
+    seriesRef.current = series;
+
+    // In placing mode, a click on the chart drops the level at that price.
+    c.subscribeClick((param) => {
+      const { placing: kind, onPlace: place } = live.current;
+      if (!kind || !param.point) return;
+      const price = series.coordinateToPrice(param.point.y);
+      if (price !== null) place(price);
+    });
+
+    // Levels can be dragged up and down. Grabbing one stops the chart from panning meanwhile.
+    const lineAt = (y: number): { kind: LevelKind; index: number } | null => {
+      for (const kind of ['stops', 'targets'] as const) {
+        const index = live.current.levels[kind].findIndex((l) => {
+          const ly = series.priceToCoordinate(l.price);
+          return ly !== null && Math.abs(ly - y) <= 5;
+        });
+        if (index >= 0) return { kind, index };
+      }
+      return null;
+    };
+    const yOf = (e: MouseEvent) => e.clientY - el.getBoundingClientRect().top;
+    let drag: { kind: LevelKind; index: number; price: number } | null = null;
+    const onDown = (e: MouseEvent) => {
+      const hit = live.current.placing ? null : lineAt(yOf(e));
+      if (!hit) return;
+      e.stopPropagation();
+      e.preventDefault();
+      drag = { ...hit, price: live.current.levels[hit.kind][hit.index].price };
+      c.applyOptions({ handleScroll: false, handleScale: false });
+    };
+    const onMoveMouse = (e: MouseEvent) => {
+      if (!drag) {
+        el.style.cursor = live.current.placing ? 'crosshair' : lineAt(yOf(e)) ? 'ns-resize' : '';
+        return;
+      }
+      const price = series.coordinateToPrice(yOf(e));
+      if (price === null) return;
+      drag.price = price;
+      lines.current.get(`${drag.kind}:${drag.index}`)?.applyOptions({ price });
+    };
+    const onUp = () => {
+      if (!drag) return;
+      live.current.onMove(drag.kind, drag.index, drag.price);
+      drag = null;
+      c.applyOptions({ handleScroll: true, handleScale: true });
+    };
+    el.addEventListener('mousedown', onDown, true);
+    el.addEventListener('mousemove', onMoveMouse);
+    window.addEventListener('mousemove', onMoveMouse);
+    window.addEventListener('mouseup', onUp);
+    setBuilt((n) => n + 1);
+
+    return () => {
+      el.removeEventListener('mousedown', onDown, true);
+      el.removeEventListener('mousemove', onMoveMouse);
+      window.removeEventListener('mousemove', onMoveMouse);
+      window.removeEventListener('mouseup', onUp);
+      c.remove();
+      api.current = null;
+      seriesRef.current = null;
+      lines.current.clear();
+    };
+  }, [chart, interval, trade.id]);
+
+  // Stop and target lines, redrawn whenever they change.
+  useEffect(() => {
+    const series = seriesRef.current;
+    if (!series) return;
+    for (const line of lines.current.values()) series.removePriceLine(line);
+    lines.current.clear();
+    for (const kind of ['stops', 'targets'] as const) {
+      levels[kind].forEach((l, i) => {
+        lines.current.set(`${kind}:${i}`, series.createPriceLine({
+          price: l.price,
+          color: LEVEL_COLORS[kind],
+          lineWidth: 2,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: `${kind === 'stops' ? 'Stop' : 'Target'} ×${l.contracts}`,
+        }));
+      });
+    }
+  }, [JSON.stringify(levels), built]);
 
   return <div className="chart" ref={container} />;
+}
+
+/** Side panel section for placing stops and targets and reading the R they give. */
+function RiskPanel({ trade, levels, placing, onPlacing, onChange, canMeasure, rr, prices }: {
+  trade: Trade;
+  levels: Levels;
+  placing: LevelKind | null;
+  onPlacing: (kind: LevelKind | null) => void;
+  onChange: (kind: LevelKind, index: number, patch: Partial<PriceLevel> | null) => void;
+  canMeasure: boolean;
+  rr: ReturnType<typeof riskReward>;
+  prices: LevelPrices | null;
+}) {
+  // Only use prices that line up with the current lines (they arrive a moment after a change).
+  const matched = prices && prices.stops.length === levels.stops.length && prices.targets.length === levels.targets.length ? prices : null;
+  const dollars = matched ? dollarRiskReward(trade, levels.stops, matched.stops, levels.targets, matched.targets) : null;
+  if (!canMeasure) return <div className="risk muted small">R needs the underlying's price at your entry, which isn't available for this trade.</div>;
+  const losing = trade.status === 'CLOSED' && trade.netPnl < 0;
+  return (
+    <div className="risk">
+      <div className="fill-list-head">Risk and reward</div>
+      <div className="risk-buttons">
+        {(['stops', 'targets'] as const).map((kind) => (
+          <button key={kind} className={`${placing === kind ? 'active' : ''} ${kind}`} onClick={() => onPlacing(placing === kind ? null : kind)}>
+            + {kind === 'stops' ? 'Stop' : 'Target'}
+          </button>
+        ))}
+      </div>
+      {(['stops', 'targets'] as const).flatMap((kind) => levels[kind].map((l, i) => (
+        <div className={`level-row ${kind}`} key={`${kind}${i}`}>
+          <span className="level-name">{kind === 'stops' ? 'Stop' : 'Target'}</span>
+          <span className="level-price">
+            {usd(l.price)}
+            {matched?.[kind][i] && (
+              <span
+                className="level-option"
+                title={matched[kind][i]!.source === 'market'
+                  ? 'The option\'s real price when the underlying reached this line'
+                  : 'Estimated with Black-Scholes from your entry\'s implied volatility, as if reached at your exit'}
+              >
+                {matched[kind][i]!.source === 'market' ? '' : '≈'}{usd(matched[kind][i]!.optionPrice * 100)}
+              </span>
+            )}
+          </span>
+          <input
+            type="number"
+            min={1}
+            value={l.contracts}
+            title="Contracts at this level"
+            onChange={(e) => { const n = Math.max(1, Math.round(Number(e.target.value) || 1)); onChange(kind, i, { contracts: n }); }}
+          />
+          <span className="muted">ct</span>
+          <button className="danger-link" aria-label="Remove" onClick={() => onChange(kind, i, null)}>×</button>
+        </div>
+      )))}
+      {rr ? (
+        <div className="rr-summary">
+          <div><span className="muted">Risk</span> {usd(rr.risk)} <span className="muted">on {trade.underlying}</span></div>
+          {rr.realizedR !== undefined && <div><span className="muted">Result</span> <b className={pnlClass(rr.realizedR)}>{formatR(rr.realizedR)}</b></div>}
+          {rr.plannedR !== undefined && <div><span className="muted">Planned R:R</span> <b>1 : {rr.plannedR.toFixed(1)}</b></div>}
+          {dollars?.risk !== undefined && (
+            <div className="rr-dollars">
+              <div>
+                <span className="muted">Option risk</span> <b className="loss">{usd(dollars.risk)}</b>
+                {dollars.reward !== undefined && <> · <span className="muted">reward</span> <b className={pnlClass(dollars.reward)}>{signedUsd(dollars.reward)}</b></>}
+              </div>
+              {dollars.ratio !== undefined && <div><span className="muted">Option R:R</span> <b>1 : {dollars.ratio.toFixed(1)}</b></div>}
+            </div>
+          )}
+        </div>
+      ) : levels.stops.length ? (
+        <div className="muted small">That stop is on the winning side of your entry, so it doesn't measure risk. Drag it past your entry.</div>
+      ) : (
+        <div className="muted small">Add a stop to measure this trade in R.</div>
+      )}
+      {rr && losing && !levels.targets.length && <div className="muted small">Losing trade: add the target you were aiming for to see its planned R:R.</div>}
+      {levels.stops.length + levels.targets.length > 0 && (
+        <div className="muted small">Drag a line on the chart to move it. Option prices marked ≈ are estimates; the rest are what the option traded at when the underlying got there.</div>
+      )}
+    </div>
+  );
 }
