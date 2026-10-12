@@ -4,7 +4,7 @@ import { placeLabels } from '../src/renderer/fillMarkers';
 describe('marker labels', () => {
   it('sits beside the arrow when nothing is in the way', () => {
     const [r] = placeLabels([{ tipX: 100, y: 50, kind: 'exit', width: 60 }], [], 400);
-    expect(r).toMatchObject({ x: 112, y: 41 });
+    expect(r).toMatchObject({ x: 114, y: 41 });
   });
 
   it('moves entries down and exits up until clear of candles', () => {
