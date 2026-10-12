@@ -7,6 +7,7 @@ const api: JournalApi = {
   getJournal: () => ipcRenderer.invoke('journal:get'),
   importThinkorswim: () => ipcRenderer.invoke('journal:importTos'),
   getTradeChart: (tradeId) => ipcRenderer.invoke('market:tradeChart', tradeId),
+  getLevelPrices: (tradeId, stops, targets) => ipcRenderer.invoke('market:levelPrices', tradeId, stops, targets),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveAlpacaKeys: (keys) => ipcRenderer.invoke('settings:saveAlpaca', keys),
   setTimeZone: (tz) => ipcRenderer.invoke('settings:setTimeZone', tz),

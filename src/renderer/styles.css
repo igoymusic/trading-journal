@@ -68,7 +68,7 @@ td { padding: 6px 8px; border-bottom: 1px solid #22262f; white-space: nowrap; }
 .chart { position: absolute; inset: 0; }
 .chart-message { padding: 40px; text-align: center; color: var(--muted); }
 .chart-message p { margin-bottom: 14px; }
-.fill-list { width: 250px; border-left: 1px solid var(--border); overflow: auto; padding: 8px 12px; }
+.fill-list { width: 290px; border-left: 1px solid var(--border); overflow: auto; padding: 8px 12px; }
 .fill-list-head { color: var(--muted); font-size: 12px; margin-bottom: 6px; }
 .fill-item { padding: 6px 0; border-bottom: 1px solid #22262f; font-variant-numeric: tabular-nums; }
 .underlying-price { color: var(--text); }
@@ -205,3 +205,6 @@ button.link { background: none; border: none; color: var(--blue); padding: 6px; 
 .level-price { flex: 1; }
 .level-row input { width: 44px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 2px 4px; font: inherit; }
 .rr-summary { margin: 8px 0 4px; display: grid; gap: 2px; }
+.level-option { margin-left: 6px; color: var(--muted); font-size: 12px; }
+.rr-dollars { margin-top: 4px; }
+.fill-list { width: 290px; }

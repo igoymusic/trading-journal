@@ -5,12 +5,12 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseTosStatement } from '../core/tosCsv';
 import { buildTrades, summarizeTrades } from '../core/trades';
-import type { MistakeTag, Setup, TradeJournal } from '../core/types';
+import type { MistakeTag, PriceLevel, Setup, TradeJournal } from '../core/types';
 import type { ImportResult, JournalData, TradeChart } from '../shared/api';
 import { AlpacaClient } from '../core/alpaca';
 import { JournalDb } from './db';
 import { moveDataFromOldName } from './migrate';
-import { buildTradeChart } from './market';
+import { buildTradeChart, levelOptionPrices } from './market';
 import { Settings } from './settings';
 
 let db: JournalDb;
@@ -93,6 +93,16 @@ app.whenReady().then(async () => {
       return await buildTradeChart(trade, db, settings);
     } catch (err) {
       return { status: 'error', message: (err as Error).message };
+    }
+  });
+
+  ipcMain.handle('market:levelPrices', async (_event, tradeId: string, stops: PriceLevel[], targets: PriceLevel[]) => {
+    const trade = buildTrades(db.allFills()).find((t) => t.id === tradeId);
+    if (!trade) return null;
+    try {
+      return await levelOptionPrices(trade, stops, targets, db, settings);
+    } catch {
+      return null;
     }
   });
 

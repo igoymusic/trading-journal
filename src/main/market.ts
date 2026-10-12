@@ -1,10 +1,11 @@
 // Builds everything a trade's chart needs: the underlying's minute candles for each day the trade
 // spans, and the underlying's exact price at every fill. Results are cached in the database.
 
-import { AlpacaClient, type Bar } from '../core/alpaca';
+import { AlpacaClient, type Bar, occSymbol } from '../core/alpaca';
+import { type LevelPrice, priceLevels } from '../core/optionLevels';
 import { zonedToUtcMillis } from '../core/time';
-import type { Trade } from '../core/types';
-import type { TradeChart } from '../shared/api';
+import type { PriceLevel, Trade } from '../core/types';
+import type { LevelPrices, TradeChart } from '../shared/api';
 import type { JournalDb } from './db';
 import type { Settings } from './settings';
 
@@ -14,7 +15,7 @@ const SESSION_END = '20:00:00';
 /** Alpaca's free plan can't serve the most recent 15 minutes. */
 const FREE_PLAN_DELAY_MS = 16 * 60_000;
 
-function tradingDays(trade: Trade): string[] {
+export function tradingDays(trade: Trade): string[] {
   const first = trade.openTime.slice(0, 10);
   const last = (trade.closeTime ?? trade.openTime).slice(0, 10);
   const days: string[] = [];
@@ -68,4 +69,54 @@ export async function buildTradeChart(trade: Trade, db: JournalDb, settings: Set
   }
 
   return { status: 'ok', symbol, timeZone: tz, feed, bars, fills };
+}
+
+/** Alpaca's option history starts here. */
+const OPTION_DATA_START = Date.UTC(2024, 1, 1);
+
+/** The option's own minute candles over the trade's days, cached like the underlying's. Empty if unavailable. */
+async function optionBars(trade: Trade, client: AlpacaClient, db: JournalDb): Promise<Bar[]> {
+  const occ = occSymbol(trade.underlying, trade.expiry, trade.putCall, trade.strike);
+  const key = `O:${occ}`;
+  const now = Date.now();
+  const out: Bar[] = [];
+  for (const day of tradingDays(trade)) {
+    const start = zonedToUtcMillis(`${day}T${SESSION_START}`, 'America/New_York');
+    const fullEnd = zonedToUtcMillis(`${day}T${SESSION_END}`, 'America/New_York');
+    if (start < OPTION_DATA_START) continue;
+    if (db.barDay(key, day)) {
+      out.push(...db.minuteBars(key, start, fullEnd));
+      continue;
+    }
+    const end = Math.min(fullEnd, now - FREE_PLAN_DELAY_MS);
+    try {
+      const bars = await client.optionMinuteBars(occ, start, end);
+      if (end === fullEnd) db.saveBarDay(key, day, 'opra', bars);
+      out.push(...bars);
+    } catch {
+      // No option data on this plan or for this contract: the estimate covers it.
+    }
+  }
+  return out;
+}
+
+/** Option prices at each stop and target line. Null when the chart or entry price isn't available. */
+export async function levelOptionPrices(trade: Trade, stops: PriceLevel[], targets: PriceLevel[], db: JournalDb, settings: Settings, fetchFn?: typeof fetch): Promise<LevelPrices | null> {
+  const chart = await buildTradeChart(trade, db, settings, fetchFn);
+  if (chart.status !== 'ok') return null;
+  const entrySide = trade.direction === 'LONG' ? 'BUY' : 'SELL';
+  const entryFill = trade.fills.find((f) => f.side === entrySide);
+  const point = chart.fills.find((p) => p.fillId === entryFill?.id);
+  if (!entryFill || point?.underlyingPrice === undefined) return null;
+
+  const client = new AlpacaClient(settings.alpacaCredentials()!, fetchFn as any, process.env.TJ_ALPACA_BASE_URL || undefined);
+  const common = {
+    trade,
+    bars: chart.bars,
+    entry: { time: point.time, underlying: point.underlyingPrice, optionPrice: entryFill.price },
+    exitTime: trade.closeTime ? zonedToUtcMillis(trade.closeTime, settings.timeZone) : Date.now(),
+    expiryTime: zonedToUtcMillis(`${trade.expiry}T16:00:00`, 'America/New_York'),
+    optionBars: await optionBars(trade, client, db),
+  };
+  return { stops: priceLevels({ ...common, levels: stops }), targets: priceLevels({ ...common, levels: targets }) };
 }

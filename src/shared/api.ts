@@ -1,7 +1,8 @@
 // The contract between the screens (renderer) and the main process.
 
 import type { Bar } from '../core/alpaca';
-import type { MistakeTag, Setup, Trade, TradeJournal } from '../core/types';
+import type { LevelPrice } from '../core/optionLevels';
+import type { MistakeTag, PriceLevel, Setup, Trade, TradeJournal } from '../core/types';
 import type { Summary } from '../core/trades';
 
 export interface JournalData {
@@ -37,6 +38,12 @@ export type TradeChart =
   | { status: 'error'; message: string }
   | { status: 'ok'; symbol: string; timeZone: string; feed: string; bars: Bar[]; fills: FillPoint[] };
 
+/** Option prices at a trade's stop and target lines, in the same order as the lines. */
+export interface LevelPrices {
+  stops: (LevelPrice | null)[];
+  targets: (LevelPrice | null)[];
+}
+
 export interface SettingsView {
   timeZone: string;
   hasAlpacaKey: boolean;
@@ -49,6 +56,7 @@ export interface JournalApi {
   /** Opens a file picker; resolves to null if the user cancels. */
   importThinkorswim(): Promise<ImportResult | null>;
   getTradeChart(tradeId: string): Promise<TradeChart>;
+  getLevelPrices(tradeId: string, stops: PriceLevel[], targets: PriceLevel[]): Promise<LevelPrices | null>;
   getSettings(): Promise<SettingsView>;
   /** Saves (or clears, with null) the Alpaca keys after checking they work. */
   saveAlpacaKeys(keys: { keyId: string; secretKey: string } | null): Promise<{ ok: boolean; message: string }>;

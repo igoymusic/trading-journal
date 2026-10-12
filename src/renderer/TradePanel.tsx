@@ -4,9 +4,10 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import type { Bar } from '../core/alpaca';
 import { chartTime } from '../core/time';
+import { dollarRiskReward } from '../core/optionLevels';
 import { averageUnderlying, formatR, riskReward } from '../core/rr';
 import { EMPTY_JOURNAL, type PriceLevel, type Trade } from '../core/types';
-import type { TradeChart } from '../shared/api';
+import type { LevelPrices, TradeChart } from '../shared/api';
 import { type FillMarker, FillMarkersPrimitive } from './fillMarkers';
 import { holdTime, pnlClass, shortDate, signedUsd, usd } from './format';
 import { useJournal } from './journal';
@@ -66,6 +67,18 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
   const underlyingEntry = averageUnderlying(withPrices.filter((f) => f.side === entrySide));
   const underlyingExit = trade.status === 'CLOSED' ? averageUnderlying(withPrices.filter((f) => f.side !== entrySide)) : undefined;
   const rr = riskReward(trade, journal);
+
+  // What the option would have been worth at each line (real price or estimate), for dollar risk.
+  const [levelPrices, setLevelPrices] = useState<LevelPrices | null>(null);
+  const levelsKey = JSON.stringify(levels);
+  useEffect(() => {
+    if (chart?.status !== 'ok' || !levels.stops.length && !levels.targets.length) { setLevelPrices(null); return; }
+    let current = true;
+    const timer = setTimeout(() => {
+      window.journal.getLevelPrices(trade.id, levels.stops, levels.targets).then((p) => { if (current) setLevelPrices(p); });
+    }, 250);
+    return () => { current = false; clearTimeout(timer); };
+  }, [chart, levelsKey]);
 
   function saveLevels(next: Levels) {
     saveTrade(trade.id, {
@@ -163,6 +176,7 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
               onChange={changeLevel}
               canMeasure={underlyingEntry !== undefined}
               rr={rr}
+              prices={levelPrices}
             />
           )}
           {chart?.status === 'ok' && chart.feed === 'iex' && (
@@ -332,7 +346,7 @@ function PriceChart({ trade, chart, interval, levels, placing, onPlace, onMove }
 }
 
 /** Side panel section for placing stops and targets and reading the R they give. */
-function RiskPanel({ trade, levels, placing, onPlacing, onChange, canMeasure, rr }: {
+function RiskPanel({ trade, levels, placing, onPlacing, onChange, canMeasure, rr, prices }: {
   trade: Trade;
   levels: Levels;
   placing: LevelKind | null;
@@ -340,7 +354,11 @@ function RiskPanel({ trade, levels, placing, onPlacing, onChange, canMeasure, rr
   onChange: (kind: LevelKind, index: number, patch: Partial<PriceLevel> | null) => void;
   canMeasure: boolean;
   rr: ReturnType<typeof riskReward>;
+  prices: LevelPrices | null;
 }) {
+  // Only use prices that line up with the current lines (they arrive a moment after a change).
+  const matched = prices && prices.stops.length === levels.stops.length && prices.targets.length === levels.targets.length ? prices : null;
+  const dollars = matched ? dollarRiskReward(trade, levels.stops, matched.stops, levels.targets, matched.targets) : null;
   if (!canMeasure) return <div className="risk muted small">R needs the underlying's price at your entry, which isn't available for this trade.</div>;
   const losing = trade.status === 'CLOSED' && trade.netPnl < 0;
   return (
@@ -356,7 +374,19 @@ function RiskPanel({ trade, levels, placing, onPlacing, onChange, canMeasure, rr
       {(['stops', 'targets'] as const).flatMap((kind) => levels[kind].map((l, i) => (
         <div className={`level-row ${kind}`} key={`${kind}${i}`}>
           <span className="level-name">{kind === 'stops' ? 'Stop' : 'Target'}</span>
-          <span className="level-price">{usd(l.price)}</span>
+          <span className="level-price">
+            {usd(l.price)}
+            {matched?.[kind][i] && (
+              <span
+                className="level-option"
+                title={matched[kind][i]!.source === 'market'
+                  ? 'The option\'s real price when the underlying reached this line'
+                  : 'Estimated with Black-Scholes from your entry\'s implied volatility, as if reached at your exit'}
+              >
+                {matched[kind][i]!.source === 'market' ? '' : '≈'}{usd(matched[kind][i]!.optionPrice * 100)}
+              </span>
+            )}
+          </span>
           <input
             type="number"
             min={1}
@@ -373,6 +403,15 @@ function RiskPanel({ trade, levels, placing, onPlacing, onChange, canMeasure, rr
           <div><span className="muted">Risk</span> {usd(rr.risk)} <span className="muted">on {trade.underlying}</span></div>
           {rr.realizedR !== undefined && <div><span className="muted">Result</span> <b className={pnlClass(rr.realizedR)}>{formatR(rr.realizedR)}</b></div>}
           {rr.plannedR !== undefined && <div><span className="muted">Planned R:R</span> <b>1 : {rr.plannedR.toFixed(1)}</b></div>}
+          {dollars?.risk !== undefined && (
+            <div className="rr-dollars">
+              <div>
+                <span className="muted">Option risk</span> <b className="loss">{usd(dollars.risk)}</b>
+                {dollars.reward !== undefined && <> · <span className="muted">reward</span> <b className={pnlClass(dollars.reward)}>{signedUsd(dollars.reward)}</b></>}
+              </div>
+              {dollars.ratio !== undefined && <div><span className="muted">Option R:R</span> <b>1 : {dollars.ratio.toFixed(1)}</b></div>}
+            </div>
+          )}
         </div>
       ) : levels.stops.length ? (
         <div className="muted small">That stop is on the winning side of your entry, so it doesn't measure risk. Drag it past your entry.</div>
@@ -380,7 +419,9 @@ function RiskPanel({ trade, levels, placing, onPlacing, onChange, canMeasure, rr
         <div className="muted small">Add a stop to measure this trade in R.</div>
       )}
       {rr && losing && !levels.targets.length && <div className="muted small">Losing trade: add the target you were aiming for to see its planned R:R.</div>}
-      {levels.stops.length + levels.targets.length > 0 && <div className="muted small">Drag a line on the chart to move it.</div>}
+      {levels.stops.length + levels.targets.length > 0 && (
+        <div className="muted small">Drag a line on the chart to move it. Option prices marked ≈ are estimates; the rest are what the option traded at when the underlying got there.</div>
+      )}
     </div>
   );
 }
