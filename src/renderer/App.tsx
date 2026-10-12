@@ -24,6 +24,8 @@ export function App() {
   const [showSettings, setShowSettings] = useState(false);
   // Bumped when Settings closes so an open chart reloads with new keys or time zone.
   const [settingsVersion, setSettingsVersion] = useState(0);
+  // Which trades have their chart open on each day, so a Day tab remembers it while you switch tabs.
+  const [openCharts, setOpenCharts] = useState<Record<string, string[]>>({});
   const selected = data?.trades.find((t) => t.id === selectedId) ?? null;
   const activeDay = tabs.active.startsWith('day:') ? tabs.active.slice(4) : null;
   const activeMonth = tabs.active.startsWith('month:')
@@ -129,7 +131,18 @@ export function App() {
             />
           )}
           {activeDay && (
-            <DayView key={activeDay} trades={data.trades} date={activeDay} chartVersion={settingsVersion} onOpenSettings={() => setShowSettings(true)} />
+            <DayView
+              key={activeDay}
+              trades={data.trades}
+              date={activeDay}
+              chartVersion={settingsVersion}
+              expanded={new Set(openCharts[activeDay] ?? [])}
+              onToggle={(id) => setOpenCharts((all) => {
+                const cur = all[activeDay] ?? [];
+                return { ...all, [activeDay]: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] };
+              })}
+              onOpenSettings={() => setShowSettings(true)}
+            />
           )}
           {tabs.active === 'trades' && (
             <>

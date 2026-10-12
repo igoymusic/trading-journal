@@ -134,7 +134,10 @@ button.link { background: none; border: none; color: var(--blue); padding: 6px; 
 
 .month, .day { padding: 0 20px 20px; }
 .day .trades { padding: 0 0 12px; }
-.day .trade-panel { margin: 0 0 12px; }
+.day .trade-panel { margin: 4px 0 10px; }
+.chev-col { width: 22px; padding-right: 0; text-align: center; }
+.detail-row > td { padding: 0 0 0 22px; background: var(--bg); white-space: normal; }
+.detail-row:hover td { background: var(--bg); }
 .day-empty { padding: 20px 0; }
 .month-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .month-nav { display: flex; align-items: center; gap: 10px; }
