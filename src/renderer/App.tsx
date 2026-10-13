@@ -12,8 +12,10 @@ import { pnlClass, signedUsd, usd } from './format';
 import { MonthView } from './MonthView';
 import { PnlChart } from './PnlChart';
 import { ReportsView } from './ReportsView';
+import { AccountPicker, accountOf, accountsIn } from './AccountPicker';
 import { describeSync } from './BrokersSettings';
 import { SettingsDialog } from './SettingsDialog';
+import { ErrorBoundary } from './ErrorBoundary';
 import { TradePanel } from './TradePanel';
 import { type ActiveTab, initialTabs, monthKey, tabsReducer } from './tabs';
 import { TradeTable } from './TradeTable';
@@ -22,7 +24,20 @@ import { YearView } from './YearView';
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export function App() {
-  const [data, setData] = useState<JournalData | null>(null);
+  const [allData, setData] = useState<JournalData | null>(null);
+  // Accounts left out of every number on screen, from the picker next to the app name.
+  const [hiddenAccounts, setHiddenAccounts] = useState<string[]>([]);
+  useEffect(() => { window.journal.getSettings().then((s) => setHiddenAccounts(s.hiddenAccounts)); }, []);
+  const accounts = useMemo(() => accountsIn(allData?.trades ?? []), [allData]);
+  const data = useMemo(() => {
+    if (!allData || !hiddenAccounts.length) return allData;
+    const trades = allData.trades.filter((t) => !hiddenAccounts.includes(accountOf(t)));
+    return { ...allData, trades, summary: summarizeTrades(trades) };
+  }, [allData, hiddenAccounts]);
+  function changeHiddenAccounts(names: string[]) {
+    setHiddenAccounts(names);
+    window.journal.setHiddenAccounts(names);
+  }
   const [tabs, dispatch] = useReducer(tabsReducer, new Date(), initialTabs);
   // The Home calendar starts on this month and can be paged on its own.
   const [homeMonth, setHomeMonth] = useState(() => ({ year: new Date().getFullYear(), month: new Date().getMonth() + 1 }));
@@ -86,7 +101,7 @@ export function App() {
   const [syncing, setSyncing] = useState(false);
   const afterSync = (result: SyncResult) => {
     if (result.added || result.errors.length) setNotice(describeSync(result));
-    if (result.added) load();
+    load();
   };
   async function syncBrokers(force: boolean) {
     setSyncing(true);
@@ -137,7 +152,10 @@ export function App() {
     <JournalContext.Provider value={journalApi}>
     <div className="app">
       <header className="topbar">
-        <h1>Moon Journal</h1>
+        <div className="topbar-title">
+          <h1>Moon Journal</h1>
+          {accounts.length > 1 && <AccountPicker accounts={accounts} hidden={hiddenAccounts} onChange={changeHiddenAccounts} />}
+        </div>
         <div className="topbar-actions">
           {brokerConnected && (
             <button disabled={syncing} onClick={() => syncBrokers(true)} title="Bring in new trades from your brokers">
@@ -239,7 +257,9 @@ export function App() {
             <>
               {selected && (
                 <div className="selected-trade">
-                  <TradePanel key={`${selected.id}:${settingsVersion}`} trade={selected} onClose={() => setSelectedId(null)} onOpenSettings={() => setShowSettings(true)} />
+                  <ErrorBoundary key={`${selected.id}:${settingsVersion}`} label="this trade" onClose={() => setSelectedId(null)}>
+                    <TradePanel trade={selected} onClose={() => setSelectedId(null)} onOpenSettings={() => setShowSettings(true)} />
+                  </ErrorBoundary>
                   <TradeJournalEditor key={selected.id} trade={selected} />
                 </div>
               )}

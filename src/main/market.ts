@@ -27,6 +27,9 @@ export function tradingDays(trade: Trade): string[] {
   return days;
 }
 
+/** Index underlyings (SPXW options trade on SPX) that stock market data doesn't carry. */
+const INDEXES = new Set(['SPX', 'SPXW', 'NDX', 'NDXP', 'RUT', 'RUTW', 'VIX', 'XSP', 'DJX']);
+
 export async function buildTradeChart(trade: Trade, db: JournalDb, settings: Settings, fetchFn?: typeof fetch): Promise<TradeChart> {
   const creds = settings.alpacaCredentials();
   if (!creds) return { status: 'needs-key' };
@@ -52,6 +55,12 @@ export async function buildTradeChart(trade: Trade, db: JournalDb, settings: Set
       bars.push(...db.minuteBars(symbol, start, end));
       if (cached.feed === 'iex') feed = 'iex';
     }
+  }
+
+  // Nothing to chart, e.g. SPX: Alpaca's stock data has no index prices.
+  if (!bars.length) {
+    const index = INDEXES.has(symbol) ? ` ${symbol} is an index, and Alpaca's market data only covers stocks and ETFs.` : '';
+    return { status: 'error', message: `No ${symbol} prices for this trade's days.${index}` };
   }
 
   const fills = [];

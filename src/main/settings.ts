@@ -17,6 +17,8 @@ interface StoredSettings {
   relayUrl?: string;
   /** This person's SnapTrade sign-in: the user id, and the secret encrypted like the Alpaca keys. */
   snaptrade?: { userId: string; secret: string };
+  /** Accounts left out of the journal's numbers (by name). */
+  hiddenAccounts?: string[];
   /** When broker sync last ran (ISO time). */
   lastBrokerSync?: string;
   /** Base64 of the encrypted "keyId\nsecretKey". */
@@ -82,6 +84,15 @@ export class Settings {
 
   set relayUrl(url: string) {
     this.data.relayUrl = url.trim() || undefined;
+    this.save();
+  }
+
+  get hiddenAccounts(): string[] {
+    return this.data.hiddenAccounts ?? [];
+  }
+
+  set hiddenAccounts(names: string[]) {
+    this.data.hiddenAccounts = names.length ? names : undefined;
     this.save();
   }
 

@@ -54,6 +54,8 @@ export interface Trade {
   fees: number;
   netPnl: number;
   fills: Fill[];
+  /** The brokerage account it was traded in, when known (broker sync names it). */
+  account?: string;
   /** Your notes and labels for this trade, if you've added any. */
   journal?: TradeJournal;
 }

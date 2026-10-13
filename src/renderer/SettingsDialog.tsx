@@ -19,6 +19,7 @@ export function SettingsDialog({ onClose, onSynced }: { onClose: () => void; onS
   const [secretKey, setSecretKey] = useState('');
   const [status, setStatus] = useState<{ ok: boolean; message: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [removed, setRemoved] = useState<string | null>(null);
 
   const load = () => window.journal.getSettings().then(setSettings);
   useEffect(() => { load(); }, []);
@@ -39,6 +40,16 @@ export function SettingsDialog({ onClose, onSynced }: { onClose: () => void; onS
   async function removeKeys() {
     setStatus(await window.journal.saveAlpacaKeys(null));
     load();
+  }
+
+  async function removeImported() {
+    if (!confirm('Remove all trades imported from thinkorswim CSV files? This can\'t be undone, but you can import the files again.')) return;
+    setBusy(true);
+    const { removed, sync } = await window.journal.removeImported();
+    setBusy(false);
+    setRemoved(`Removed ${removed} imported fills.${sync ? ` ${sync.added} fills synced from your brokers.` : ''}`);
+    if (sync) onSynced(sync);
+    else onSynced({ added: 0, accounts: 0, errors: [] });
   }
 
   async function changeZone(tz: string) {
@@ -79,6 +90,14 @@ export function SettingsDialog({ onClose, onSynced }: { onClose: () => void; onS
 
         <SetupsEditor />
         <MistakesEditor />
+
+        <h3>Imported files</h3>
+        <p className="muted">
+          Remove every trade imported from thinkorswim CSV files. If a broker is connected, its full history is synced
+          again right after. Your setups, mistakes and goals stay.
+        </p>
+        <button disabled={busy} onClick={removeImported}>Remove imported CSV trades</button>
+        {removed && <p className="win">{removed}</p>}
 
         <h3>Time zone of your broker exports</h3>
         <p className="muted">thinkorswim exports times in your computer's time zone without saying which one.</p>

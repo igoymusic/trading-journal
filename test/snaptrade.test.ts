@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { newFills, sameFill } from '../src/core/fills';
+import { matchFills, newFills, sameFill } from '../src/core/fills';
+import { buildTrades } from '../src/core/trades';
 import { activitiesToFills, parseOcc, type StActivity, toWallClock } from '../src/core/snaptrade';
 import type { Fill } from '../src/core/types';
 
@@ -71,5 +72,13 @@ describe('the same fill from two sources', () => {
     const first = { ...synced, execTime: '2026-09-15T12:00:00', timeExact: false };
     expect(newFills([first, second], [tos]).map((f) => f.id)).toEqual(['snaptrade:acc:a2']);
     expect(newFills([tos], [tos])).toEqual([]);
+  });
+
+  it('says which CSV fill a synced fill matched, so the trade learns its account', () => {
+    const { fresh, matched } = matchFills([synced], [tos]);
+    expect(fresh).toEqual([]);
+    expect(matched).toEqual([{ existing: tos, incoming: synced }]);
+    expect(buildTrades([synced])[0].account).toBe('Schwab Individual');
+    expect(buildTrades([tos])[0].account).toBeUndefined();
   });
 });

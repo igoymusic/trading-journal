@@ -73,6 +73,8 @@ export interface SettingsView {
   tradeColumns?: string[];
   goals: Goals;
   reportsLayout?: { columns: string[][]; collapsed: string[] };
+  /** Accounts left out of the journal's numbers. */
+  hiddenAccounts: string[];
 }
 
 export interface JournalApi {
@@ -88,6 +90,8 @@ export interface JournalApi {
   /** Saves the trade table's columns; null restores the defaults. */
   setTradeColumns(ids: string[] | null): Promise<void>;
   setGoals(goals: Goals): Promise<void>;
+  /** Deletes every thinkorswim CSV import, then re-syncs brokers from the start. */
+  removeImported(): Promise<{ removed: number; sync: SyncResult | null }>;
   brokerStatus(): Promise<BrokerStatus>;
   brokerAccounts(): Promise<BrokerAccount[]>;
   /** Opens the broker sign-in; syncs when it's done. Null if the window was closed first. */
@@ -97,6 +101,7 @@ export interface JournalApi {
   syncBrokersIfDue(): Promise<SyncResult | null>;
   disconnectBrokers(): Promise<void>;
   setRelayUrl(url: string): Promise<void>;
+  setHiddenAccounts(names: string[]): Promise<void>;
   setReportsLayout(layout: { columns: string[][]; collapsed: string[] }): Promise<void>;
   saveTradeJournal(tradeId: string, journal: TradeJournal): Promise<void>;
   saveSetups(setups: Setup[]): Promise<void>;

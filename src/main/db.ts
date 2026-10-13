@@ -1,7 +1,7 @@
 // Local database: one SQLite file in the app's data folder, using the SQLite built into Electron's Node.
 
 import { DatabaseSync } from 'node:sqlite';
-import { newFills } from '../core/fills';
+import { matchFills } from '../core/fills';
 import type { Bar } from '../core/alpaca';
 import type { Fill, MistakeTag, Setup, TradeJournal } from '../core/types';
 
@@ -110,7 +110,9 @@ export class JournalDb {
         (id, broker, exec_time, underlying, expiry, strike, put_call, side, quantity, position_effect, price, order_type, spread, fees, account, time_exact)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
     let added = 0;
-    const fresh = newFills(fills, this.allFills());
+    const { fresh, matched } = matchFills(fills, this.allFills());
+    // A CSV fill that broker sync also reported learns which account it came from.
+    const label = this.db.prepare('UPDATE fills SET account = ? WHERE id = ? AND account IS NULL');
     this.db.exec('BEGIN');
     try {
       for (const f of fresh) {
@@ -118,12 +120,18 @@ export class JournalDb {
           f.quantity, f.positionEffect, f.price, f.orderType, f.spread, f.fees, f.account ?? null, f.timeExact === false ? 0 : 1);
         added += Number(result.changes);
       }
+      for (const m of matched) if (m.incoming.account && !m.existing.account) label.run(m.incoming.account, m.existing.id);
       this.db.exec('COMMIT');
     } catch (err) {
       this.db.exec('ROLLBACK');
       throw err;
     }
     return added;
+  }
+
+  /** Deletes every fill that came from one source, e.g. all thinkorswim CSV imports. Returns how many. */
+  removeFills(broker: Fill['broker']): number {
+    return Number(this.db.prepare('DELETE FROM fills WHERE broker = ?').run(broker).changes);
   }
 
   allFills(): Fill[] {

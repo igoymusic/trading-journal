@@ -115,8 +115,18 @@ app.whenReady().then(async () => {
   ipcMain.handle('settings:get', () => ({
     timeZone: settings.timeZone, hasAlpacaKey: settings.alpacaCredentials() !== null, tradeColumns: settings.tradeColumns, goals: settings.goals,
     reportsLayout: settings.reportsLayout,
+    hiddenAccounts: settings.hiddenAccounts,
   }));
+  ipcMain.handle('settings:setHiddenAccounts', (_event, names: string[]) => { settings.hiddenAccounts = names; });
   ipcMain.handle('settings:setReportsLayout', (_event, layout: { columns: string[][]; collapsed: string[] }) => { settings.reportsLayout = layout; });
+  // Removes CSV-imported fills, then re-reads the brokers' full history, since sync skipped
+  // everything the CSV already had.
+  ipcMain.handle('journal:removeImported', async () => {
+    const removed = db.removeFills('thinkorswim');
+    settings.lastBrokerSync = undefined;
+    const sync = brokers.status().connected ? await brokers.sync().catch(() => null) : null;
+    return { removed, sync };
+  });
   ipcMain.handle('broker:status', () => brokers.status());
   ipcMain.handle('broker:accounts', () => brokers.accounts());
   ipcMain.handle('broker:connect', async (event) => {

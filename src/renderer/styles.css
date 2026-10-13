@@ -305,3 +305,13 @@ th.sorted { color: var(--text); }
 .advanced summary { cursor: pointer; color: var(--muted, #8a93a6); font-size: 13px; }
 .advanced input { flex: 1; }
 .modal .row.broker-actions { justify-content: flex-start; gap: 8px; }
+.error-box { padding: 24px; }
+
+/* Account picker beside the app name */
+.topbar-title { display: flex; align-items: center; gap: 14px; }
+.account-picker { position: relative; }
+.account-picker > button { background: transparent; }
+.account-menu { position: absolute; top: calc(100% + 4px); left: 0; z-index: 50; min-width: 260px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+.account-menu-actions { display: flex; gap: 6px; margin-bottom: 6px; }
+.account-menu-actions button { flex: 1; padding: 4px 8px; font-size: 12px; }
+.account-menu label { display: flex; align-items: center; gap: 8px; padding: 5px 4px; cursor: pointer; white-space: nowrap; }
