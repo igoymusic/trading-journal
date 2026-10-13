@@ -69,6 +69,20 @@ export function TradeTable({ trades, selectedId, onSelect, expanded, renderDetai
     onDragEnd: () => setDragging(null),
   });
 
+  function dayBar(day: string, dayTrades: Trade[]) {
+    const dayPnl = Math.round(dayTrades.reduce((a, t) => a + t.netPnl, 0) * 100) / 100;
+    const wins = dayTrades.filter((t) => t.netPnl > 0).length;
+    return (
+      <tr className="day-row" key={`bar:${day}`}>
+        <td colSpan={Math.max(1, pnlAt + lead)}>
+          {longDate(day)} <span className="muted">· {plural(dayTrades.length, 'trade')} · {plural(wins, 'win')}</span>
+        </td>
+        <td className={`num ${pnlClass(dayPnl)}`}>{signedUsd(dayPnl)}</td>
+        {pnlAt < columns.length - 1 && <td colSpan={columns.length - 1 - pnlAt} />}
+      </tr>
+    );
+  }
+
   /** `flat`: shown outside its day group, so times also show the date. */
   function row(t: Trade, flat: boolean) {
     const open = !!expanded?.has(t.id);
@@ -104,6 +118,8 @@ export function TradeTable({ trades, selectedId, onSelect, expanded, renderDetai
       </div>
       <table>
         <thead>
+          {/* A single day's summary bar sits above the column labels. Several days each get one in the list, or none when sorted. */}
+          {days.length === 1 && dayBar(days[0][0], days[0][1])}
           <tr>
             {lead > 0 && <th className="chev-col" />}
             {columns.map((c) => (
@@ -120,23 +136,12 @@ export function TradeTable({ trades, selectedId, onSelect, expanded, renderDetai
           </tr>
         </thead>
         <tbody>
-          {/* Sorting several days makes one list; a single day keeps its summary bar on top. */}
-          {sorted && days.length > 1 ? sorted.map((t) => row(t, true)) : days.map(([day, dayTrades]) => {
-            const dayPnl = Math.round(dayTrades.reduce((a, t) => a + t.netPnl, 0) * 100) / 100;
-            const wins = dayTrades.filter((t) => t.netPnl > 0).length;
-            return (
-              <Fragment key={day}>
-                <tr className="day-row">
-                  <td colSpan={Math.max(1, pnlAt + lead)}>
-                    {longDate(day)} <span className="muted">· {plural(dayTrades.length, 'trade')} · {plural(wins, 'win')}</span>
-                  </td>
-                  <td className={`num ${pnlClass(dayPnl)}`}>{signedUsd(dayPnl)}</td>
-                  {pnlAt < columns.length - 1 && <td colSpan={columns.length - 1 - pnlAt} />}
-                </tr>
-                {(sorted ?? dayTrades).map((t) => row(t, false))}
-              </Fragment>
-            );
-          })}
+          {sorted && days.length > 1 ? sorted.map((t) => row(t, true)) : days.map(([day, dayTrades]) => (
+            <Fragment key={day}>
+              {days.length > 1 && dayBar(day, dayTrades)}
+              {(sorted ?? dayTrades).map((t) => row(t, false))}
+            </Fragment>
+          ))}
         </tbody>
       </table>
     </section>
