@@ -320,3 +320,9 @@ th.sorted { color: var(--text); }
 .empty h3 { margin: 22px 0 6px; }
 .empty details { margin-top: 12px; }
 .empty summary { cursor: pointer; color: var(--muted, #8a93a6); }
+
+/* A trade without charts (no market data key): fills only, no fixed chart height. */
+.trade-panel:has(.charts-off) { height: auto; }
+.panel-body.charts-off .fill-list { width: 100%; max-width: none; border-left: none; }
+.charts-off-hint { margin-top: 8px; }
+.charts-off-hint button.link { width: auto; padding: 0; display: inline; }

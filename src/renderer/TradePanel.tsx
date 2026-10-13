@@ -57,6 +57,8 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
   }, [trade.id]);
 
   const bars = chart?.status === 'ok' ? chart.bars : [];
+  // Without a market data key the app works without charts: no chart, prices or R, just a hint.
+  const chartsOff = chart?.status === 'needs-key';
   const playing = !!replay?.playing;
   useEffect(() => {
     if (!replay?.playing) return;
@@ -169,22 +171,16 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
               {replay ? 'End replay' : '▶ Replay'}
             </button>
           )}
-          {[1, 5, 15].map((m) => (
+          {!chartsOff && [1, 5, 15].map((m) => (
             <button key={m} className={interval === m ? 'active' : ''} onClick={() => setInterval(m as Interval)}>{m}m</button>
           ))}
           {onClose && <button onClick={onClose} aria-label="Close">✕</button>}
         </div>
       </div>
 
-      <div className="panel-body">
-        <div className={`chart-area ${replay ? 'replaying' : ''}`}>
+      <div className={`panel-body ${chartsOff ? 'charts-off' : ''}`}>
+        {!chartsOff && <div className={`chart-area ${replay ? 'replaying' : ''}`}>
           {!chart && <div className="chart-message">Loading {trade.underlying} prices…</div>}
-          {chart?.status === 'needs-key' && (
-            <div className="chart-message">
-              <p>Add your Alpaca market data key to see {trade.underlying}'s chart with your entries and exits.</p>
-              <button className="primary" onClick={onOpenSettings}>Open Settings</button>
-            </div>
-          )}
           {chart?.status === 'error' && <div className="chart-message loss">Couldn't load prices: {chart.message}</div>}
           {chart?.status === 'ok' && (
             <PriceChart
@@ -213,7 +209,7 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
             />
           )}
           {placing && <div className="placing-hint">Click the chart where your {placing === 'stops' ? 'stop' : 'target'} is. Press Esc to cancel.</div>}
-        </div>
+        </div>}
 
         <div className="fill-list">
           <div className="fill-list-head">Fills</div>
@@ -257,6 +253,12 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
           )}
           {chart?.status === 'ok' && chart.feed === 'iex' && (
             <div className="muted small">Some prices come from the IEX exchange only, so they can differ by a cent or two.</div>
+          )}
+          {chartsOff && (
+            <div className="muted small charts-off-hint">
+              Charts are off. Add a free Alpaca market data key to see the chart, the underlying's price at each fill, and R.{' '}
+              <button className="link" onClick={onOpenSettings}>Open Settings</button>
+            </div>
           )}
         </div>
       </div>
