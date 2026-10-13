@@ -125,7 +125,11 @@ export class JournalDb {
         added += Number(result.changes);
       }
       for (const f of fills) if (f.timeExact !== false && known.get(f.id)?.timeExact === false) retime.run(f.execTime, f.id);
-      for (const m of matched) if (m.incoming.account && !m.existing.account) label.run(m.incoming.account, m.existing.id);
+      for (const m of matched) {
+        if (m.incoming.account && !m.existing.account) label.run(m.incoming.account, m.existing.id);
+        // A synced fill with only its date takes the exact time from the same fill in a CSV import.
+        if (m.existing.timeExact === false && m.incoming.timeExact !== false) retime.run(m.incoming.execTime, m.existing.id);
+      }
       this.db.exec('COMMIT');
     } catch (err) {
       this.db.exec('ROLLBACK');

@@ -83,6 +83,11 @@ describe('the same fill from two sources', () => {
     expect(newFills([tos], [tos])).toEqual([]);
   });
 
+  it('matches a date-only synced fill to the CSV fill that has its time', () => {
+    const dateOnly = { ...synced, execTime: '2026-09-15T12:00:00', timeExact: false };
+    expect(matchFills([tos], [dateOnly]).matched).toEqual([{ existing: dateOnly, incoming: tos }]);
+  });
+
   it('says which CSV fill a synced fill matched, so the trade learns its account', () => {
     const { fresh, matched } = matchFills([synced], [tos]);
     expect(fresh).toEqual([]);

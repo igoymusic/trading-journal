@@ -47,3 +47,17 @@ describe('journal storage', () => {
     expect(db.dayNotes()).toEqual({ '2026-09-15': 'Choppy open, waited for the trend' });
   });
 });
+
+describe('fills from two sources', () => {
+  const base = {
+    underlying: 'SPY', expiry: '2026-09-15', strike: 776, putCall: 'CALL' as const, side: 'BUY' as const, quantity: 1,
+    positionEffect: 'OPEN' as const, price: 1.36, orderType: 'MARKET', spread: 'SINGLE', fees: 0.65,
+  };
+  it('gives a date-only synced fill its exact time and keeps its account when a CSV has it', () => {
+    const db = new JournalDb(':memory:');
+    db.addFills([{ ...base, id: 'snaptrade:a:1', broker: 'snaptrade', account: 'Schwab · Trading', execTime: '2026-09-15T12:00:00', timeExact: false }]);
+    expect(db.addFills([{ ...base, id: 'tos:1', broker: 'thinkorswim', execTime: '2026-09-15T10:31:05' }])).toBe(0);
+    expect(db.allFills()).toMatchObject([{ id: 'snaptrade:a:1', execTime: '2026-09-15T10:31:05', account: 'Schwab · Trading' }]);
+    expect(db.allFills()[0].timeExact).toBeUndefined();
+  });
+});

@@ -72,6 +72,12 @@ export function BrokersSettings({ onSynced }: { onSynced: (result: SyncResult) =
           </>
         )}
       </div>
+      {status?.connected && (
+        <p className="muted small">
+          Some brokers, like Schwab, only report the day of each trade, not the time. To add exact times (needed for
+          charts and R), also import a thinkorswim Account Statement CSV now and then; matching trades take its times.
+        </p>
+      )}
       {status?.lastSync && <p className="muted">Last synced {new Date(status.lastSync).toLocaleString()}</p>}
       {message && <p className={message.ok ? 'win' : 'loss'}>{message.text}</p>}
       <details className="advanced">
