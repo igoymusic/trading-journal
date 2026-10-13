@@ -74,6 +74,8 @@ export interface SchwabStatus {
   /** When Schwab's 7-day sign-in runs out. */
   signInExpires?: string;
   lastSync?: string;
+  /** The Schwab app has market data but not "Accounts and Trading", so no trade times. */
+  marketDataOnly?: boolean;
 }
 
 export interface BrokerStatus {

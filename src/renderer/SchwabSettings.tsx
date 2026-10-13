@@ -71,6 +71,13 @@ export function SchwabSettings({ onSynced }: { onSynced: (result: SyncResult) =>
               ? <><span className="win">●</span> Signed in. Schwab asks you to sign in again every 7 days{expires ? `; this one lasts until ${expires.toLocaleString()}` : ''}.</>
               : <><span className="loss">●</span> Not signed in{expires ? ` (the last sign-in ran out ${expires.toLocaleString()})` : ''}.</>}
           </p>
+          {status.signedIn && status.marketDataOnly && (
+            <p className="muted small">
+              Your Schwab app only has Market Data, so it gives real SPX charts but not trade times. For exact times, add
+              the "Accounts and Trading Production" product to your app on developer.schwab.com, then sign in again here
+              once Schwab approves it.
+            </p>
+          )}
           <div className="row broker-actions">
             <button className="primary" disabled={!!busy} onClick={signIn}>
               {busy === 'connect' ? 'Waiting for sign-in…' : status.signedIn ? 'Sign in again' : 'Sign in to Schwab'}

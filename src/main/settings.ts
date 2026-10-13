@@ -24,7 +24,7 @@ interface StoredSettings {
   /** Base64 of the encrypted "keyId\nsecretKey". */
   alpaca?: string;
   /** Your own Schwab developer app: key and secret encrypted together, plus its callback address. */
-  schwab?: { app: string; callbackUrl: string; tokens?: string; signedInAt?: string; lastSync?: string };
+  schwab?: { app: string; callbackUrl: string; tokens?: string; signedInAt?: string; lastSync?: string; marketDataOnly?: boolean };
 }
 
 export interface SchwabApp { appKey: string; secret: string; callbackUrl: string }
@@ -213,6 +213,17 @@ export class Settings {
 
   get schwabSignedInAt() {
     return this.data.schwab?.signedInAt;
+  }
+
+  /** True when the Schwab app can read market data but not accounts. */
+  get schwabMarketDataOnly() {
+    return !!this.data.schwab?.marketDataOnly;
+  }
+
+  set schwabMarketDataOnly(v: boolean) {
+    if (!this.data.schwab) return;
+    this.data.schwab.marketDataOnly = v || undefined;
+    this.save();
   }
 
   get schwabLastSync() {

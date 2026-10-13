@@ -33,6 +33,7 @@ export class SchwabSync {
       signedIn: this.settings.schwabTokens() !== null && !!expires && expires > Date.now(),
       signInExpires: expires ? new Date(expires).toISOString() : undefined,
       lastSync: this.settings.schwabLastSync,
+      marketDataOnly: this.settings.schwabMarketDataOnly,
     };
   }
 
@@ -151,7 +152,17 @@ export class SchwabSync {
    * trades in), Schwab only fills in their exact times; otherwise it brings in the trades too.
    */
   async sync(opts: { addNew: boolean }): Promise<SyncResult & { retimed: number }> {
-    const numbers = await this.get<{ accountNumber: string; hashValue: string }[]>('/trader/v1/accounts/accountNumbers');
+    let numbers: { accountNumber: string; hashValue: string }[];
+    try {
+      numbers = await this.get('/trader/v1/accounts/accountNumbers');
+      this.settings.schwabMarketDataOnly = false;
+    } catch (err) {
+      // An app with only the Market Data product can't read accounts. That's fine: it still
+      // gives real index charts, so skip trades quietly instead of failing every sync.
+      if (!/answered 40[13]/.test((err as Error).message)) throw err;
+      this.settings.schwabMarketDataOnly = true;
+      return { added: 0, retimed: 0, accounts: 0, errors: [] };
+    }
     const prefs = await this.get<any>('/trader/v1/userPreference').catch(() => null);
     const prefAccounts: any[] = (Array.isArray(prefs) ? prefs.flatMap((p) => p.accounts ?? []) : prefs?.accounts) ?? [];
     const now = Date.now();
