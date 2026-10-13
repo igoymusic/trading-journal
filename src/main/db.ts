@@ -155,6 +155,17 @@ export class JournalDb {
     this.db.prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
   }
 
+  /** How many fills each account has; null is fills with no account (CSV imports). */
+  accountFillCounts(): { account: string | null; fills: number }[] {
+    return this.db.prepare('SELECT account, COUNT(*) AS fills FROM fills GROUP BY account ORDER BY account').all() as any;
+  }
+
+  /** Deletes every fill from one account (null: the ones with no account). Returns how many. */
+  removeAccountFills(account: string | null): number {
+    const sql = account === null ? 'DELETE FROM fills WHERE account IS NULL' : 'DELETE FROM fills WHERE account = ?';
+    return Number(this.db.prepare(sql).run(...(account === null ? [] : [account])).changes);
+  }
+
   /** Deletes every fill that came from one source, e.g. all thinkorswim CSV imports. Returns how many. */
   removeFills(broker: Fill['broker']): number {
     return Number(this.db.prepare('DELETE FROM fills WHERE broker = ?').run(broker).changes);

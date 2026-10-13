@@ -60,4 +60,18 @@ describe('fills from two sources', () => {
     expect(db.allFills()).toMatchObject([{ id: 'snaptrade:a:1', execTime: '2026-09-15T10:31:05', account: 'Schwab · Trading' }]);
     expect(db.allFills()[0].timeExact).toBeUndefined();
   });
+
+  it('removes one account\'s fills and leaves the rest', () => {
+    const db = new JournalDb(':memory:');
+    db.addFills([
+      { ...base, id: 'snaptrade:a:1', broker: 'snaptrade', account: 'Schwab · Old', execTime: '2026-09-15T10:00:00' },
+      { ...base, id: 'snaptrade:b:1', broker: 'snaptrade', account: 'Schwab · Trading', execTime: '2026-09-16T10:00:00' },
+      { ...base, id: 'tos:1', broker: 'thinkorswim', execTime: '2026-09-17T10:00:00' },
+    ]);
+    expect(db.accountFillCounts()).toEqual([{ account: null, fills: 1 }, { account: 'Schwab · Old', fills: 1 }, { account: 'Schwab · Trading', fills: 1 }].map((c) => expect.objectContaining(c)));
+    expect(db.removeAccountFills('Schwab · Old')).toBe(1);
+    expect(db.removeAccountFills(null)).toBe(1);
+    expect(db.allFills().map((f) => f.id)).toEqual(['snaptrade:b:1']);
+  });
 });
+

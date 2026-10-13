@@ -3,6 +3,7 @@ import type { Goals } from '../core/goals';
 import type { PlaybookRule } from '../core/types';
 import type { SettingsView, SyncResult } from '../shared/api';
 import { BrokersSettings } from './BrokersSettings';
+import { NO_ACCOUNT } from './AccountPicker';
 import { SchwabSettings } from './SchwabSettings';
 import { newId, SETUP_COLORS, useJournal } from './journal';
 
@@ -93,6 +94,8 @@ export function SettingsDialog({ onClose, onSynced }: { onClose: () => void; onS
 
         <SetupsEditor />
         <MistakesEditor />
+
+        <AccountTrades onChanged={() => onSynced({ added: 0, accounts: 0, errors: [] })} />
 
         <h3>Imported files</h3>
         <p className="muted">
@@ -262,5 +265,39 @@ export function AlpacaSteps() {
       <li>On your Alpaca home page, find <b>API Keys</b> on the right and click <b>Generate New Keys</b>.</li>
       <li>Copy the <b>Key</b> and the <b>Secret</b> into the two boxes below and click <b>Connect</b>. Alpaca only shows the Secret once.</li>
     </ol>
+  );
+}
+
+/** Every account with trades in the journal, each with a button to remove its trades. */
+function AccountTrades({ onChanged }: { onChanged: () => void }) {
+  const [counts, setCounts] = useState<{ account: string | null; fills: number }[] | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const load = () => window.journal.accountFillCounts().then(setCounts);
+  useEffect(() => { load(); }, []);
+
+  async function remove(account: string | null) {
+    const name = account ?? NO_ACCOUNT;
+    if (!confirm(`Remove all ${name} trades from your journal? If this account is still connected, its trades come back on the next sync, so disconnect it at your broker first.`)) return;
+    const removed = await window.journal.removeAccount(account);
+    setMessage(`Removed ${removed} fills from ${name}.`);
+    load();
+    onChanged();
+  }
+
+  if (!counts?.length) return null;
+  return (
+    <>
+      <h3>Trades by account</h3>
+      <p className="muted">Remove the trades of an account you no longer use, for example one you disconnected.</p>
+      <ul className="broker-accounts">
+        {counts.map((c) => (
+          <li key={c.account ?? ''} className="row">
+            <span>{c.account ?? NO_ACCOUNT} <span className="muted">({c.fills} fills)</span></span>
+            <button onClick={() => remove(c.account)}>Remove trades</button>
+          </li>
+        ))}
+      </ul>
+      {message && <p className="win">{message}</p>}
+    </>
   );
 }

@@ -110,6 +110,12 @@ export interface JournalApi {
   setGoals(goals: Goals): Promise<void>;
   /** Deletes every thinkorswim CSV import, then re-syncs brokers from the start. */
   removeImported(): Promise<{ removed: number; sync: SyncResult | null }>;
+  /** Each account in the journal with how many fills it has; null is CSV imports with no account. */
+  accountFillCounts(): Promise<{ account: string | null; fills: number }[]>;
+  /** Deletes one account's fills; returns how many. */
+  removeAccount(account: string | null): Promise<number>;
+  /** Deletes every fill broker sync brought in (SnapTrade and Schwab); returns how many. */
+  removeSynced(): Promise<number>;
   brokerStatus(): Promise<BrokerStatus>;
   brokerAccounts(): Promise<BrokerAccount[]>;
   /** Opens the broker sign-in; syncs when it's done. Null if the window was closed first. */

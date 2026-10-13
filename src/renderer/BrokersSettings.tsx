@@ -39,7 +39,13 @@ export function BrokersSettings({ onSynced }: { onSynced: (result: SyncResult) =
     setBusy('disconnect');
     try {
       await window.journal.disconnectBrokers();
-      setMessage({ ok: true, text: 'Brokers disconnected.' });
+      let text = 'Brokers disconnected.';
+      if (confirm('Also remove the trades your brokers brought in? Your notes and trades imported from CSV files stay.')) {
+        const removed = await window.journal.removeSynced();
+        text += ` Removed ${removed} synced fills.`;
+        onSynced({ added: 0, accounts: 0, errors: [] });
+      }
+      setMessage({ ok: true, text });
     } catch (err) {
       setMessage({ ok: false, text: (err as Error).message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') });
     }

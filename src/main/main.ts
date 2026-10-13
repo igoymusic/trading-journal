@@ -148,6 +148,14 @@ app.whenReady().then(async () => {
     const sync = brokers.status().connected || schwab.status().signedIn ? await brokers.sync().catch(() => null) : null;
     return { removed, sync };
   });
+  ipcMain.handle('journal:accountFillCounts', () => db.accountFillCounts());
+  ipcMain.handle('journal:removeAccount', (_event, account: string | null) => db.removeAccountFills(account));
+  ipcMain.handle('journal:removeSynced', () => {
+    const removed = db.removeFills('snaptrade') + db.removeFills('schwab');
+    settings.lastBrokerSync = undefined;
+    settings.schwabLastSync = undefined;
+    return removed;
+  });
   ipcMain.handle('broker:status', () => brokers.status());
   ipcMain.handle('broker:accounts', () => brokers.accounts());
   ipcMain.handle('broker:connect', async (event) => {
