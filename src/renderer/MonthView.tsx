@@ -1,4 +1,5 @@
 import { buildMonth, shiftMonth } from '../core/calendar';
+import { brokeLimit, checkDay, type Goals } from '../core/goals';
 import type { Trade } from '../core/types';
 import { pnlClass, signedUsd } from './format';
 
@@ -14,8 +15,10 @@ function compactUsd(n: number): string {
 }
 
 /** P&L calendar for one month. Each day shows its P&L; the right column totals each week. */
-export function MonthView({ trades, year, month, compact, onMonthChange, onOpenDay }: {
+export function MonthView({ trades, year, month, compact, goals = {}, onMonthChange, onOpenDay }: {
   trades: Trade[];
+  /** Days that hit the daily target get a check, days that broke a limit a warning. */
+  goals?: Goals;
   /** Smaller version for the Home page. */
   compact?: boolean;
   year: number;
@@ -50,6 +53,8 @@ export function MonthView({ trades, year, month, compact, onMonthChange, onOpenD
             {w.days.map((d) => {
               const traded = d.inMonth && d.trades > 0;
               const tone = traded ? pnlClass(d.netPnl) : '';
+              const check = traded ? checkDay(d, goals) : {};
+              const broken = [check.overMaxLoss && 'lost more than your max', check.overTrades && 'more trades than your max'].filter(Boolean);
               return (
                 <div
                   key={d.date}
@@ -57,7 +62,11 @@ export function MonthView({ trades, year, month, compact, onMonthChange, onOpenD
                   onClick={traded ? () => onOpenDay(d.date) : undefined}
                   title={traded ? 'Open this day' : undefined}
                 >
-                  <div className="cal-date">{Number(d.date.slice(8))}</div>
+                  <div className="cal-date">
+                    {Number(d.date.slice(8))}
+                    {brokeLimit(check) && <span className="goal-flag loss" title={`Broke a limit: ${broken.join(' and ')}`}>⚠</span>}
+                    {!brokeLimit(check) && check.hitTarget && <span className="goal-flag win" title="Hit your daily target">✓</span>}
+                  </div>
                   {traded && (
                     <>
                       <div className={`cal-pnl ${tone}`}>{compactUsd(d.netPnl)}</div>

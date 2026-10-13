@@ -270,3 +270,19 @@ th.sorted { color: var(--text); }
 .playbook label.followed { color: var(--text); }
 .report td.report-label { white-space: normal; min-width: 190px; }
 .report { overflow: hidden; }
+
+/* Goals */
+.home-side { display: flex; flex-direction: column; gap: 12px; }
+.goals { padding: 12px 14px; }
+.goals-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.goals-head h3 { margin: 0; font-size: 14px; }
+.goals p { margin: 4px 0 10px; }
+.goal-progress { margin-bottom: 10px; }
+.goal-progress-label { display: flex; justify-content: space-between; margin-bottom: 5px; }
+.goal-track { height: 8px; border-radius: 4px; background: var(--panel-2); overflow: hidden; }
+.goal-fill { height: 100%; border-radius: 4px; }
+.goal-row { display: flex; justify-content: space-between; padding: 6px 0; border-top: 1px solid #22262f; }
+.goal-flag { margin-left: 4px; font-size: 11px; }
+.goal-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; }
+.goal-input { display: flex; align-items: center; gap: 4px; }
+.goal-input input { width: 100%; }

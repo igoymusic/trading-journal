@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { Goals } from '../core/goals';
 import type { PlaybookRule } from '../core/types';
 import type { SettingsView } from '../shared/api';
 import { newId, SETUP_COLORS, useJournal } from './journal';
@@ -71,6 +72,8 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
         )}
         {status && <p className={status.ok ? 'win' : 'loss'}>{status.message}</p>}
 
+        {settings && <GoalsEditor initial={settings.goals} />}
+
         <SetupsEditor />
         <MistakesEditor />
 
@@ -81,6 +84,47 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
         </select>
       </div>
     </div>
+  );
+}
+
+const GOAL_FIELDS: { key: keyof Goals; label: string; hint: string; dollars: boolean }[] = [
+  { key: 'dailyTarget', label: 'Daily profit target', hint: 'A day at or above this counts as hitting your target.', dollars: true },
+  { key: 'dailyMaxLoss', label: 'Max loss per day', hint: 'Days that lose more than this get flagged.', dollars: true },
+  { key: 'maxTradesPerDay', label: 'Max trades per day', hint: 'Days with more trades than this get flagged.', dollars: false },
+  { key: 'monthlyTarget', label: 'Monthly profit target', hint: 'Shown as a progress bar on Home.', dollars: true },
+];
+
+/** Goals and limits, saved as you type. Leave a box empty to not track that goal. */
+function GoalsEditor({ initial }: { initial: Goals }) {
+  const [goals, setGoals] = useState<Record<string, string>>(
+    Object.fromEntries(GOAL_FIELDS.map((f) => [f.key, initial[f.key] === undefined ? '' : String(initial[f.key])])),
+  );
+  function change(key: keyof Goals, text: string) {
+    const next = { ...goals, [key]: text };
+    setGoals(next);
+    const parsed: Goals = {};
+    for (const f of GOAL_FIELDS) {
+      const n = Number(next[f.key]);
+      if (next[f.key].trim() !== '' && Number.isFinite(n) && n > 0) parsed[f.key] = f.dollars ? n : Math.round(n);
+    }
+    window.journal.setGoals(parsed);
+  }
+  return (
+    <>
+      <h3>Goals</h3>
+      <p className="muted">Targets and limits for your trading. Home shows how this month is going, and the calendar marks days that hit the target or broke a limit. Leave a box empty to skip it.</p>
+      <div className="goal-fields">
+        {GOAL_FIELDS.map((f) => (
+          <label key={f.key} title={f.hint}>
+            {f.label}
+            <span className="goal-input">
+              {f.dollars && <span className="muted">$</span>}
+              <input type="number" min={0} step={f.dollars ? 10 : 1} value={goals[f.key]} onChange={(e) => change(f.key, e.target.value)} />
+            </span>
+          </label>
+        ))}
+      </div>
+    </>
   );
 }
 

@@ -4,11 +4,13 @@
 import { safeStorage } from 'electron';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import type { AlpacaCredentials } from '../core/alpaca';
+import type { Goals } from '../core/goals';
 
 interface StoredSettings {
   timeZone: string;
   /** Trade table columns, in display order. */
   tradeColumns?: string[];
+  goals?: Goals;
   /** Base64 of the encrypted "keyId\nsecretKey". */
   alpaca?: string;
 }
@@ -41,6 +43,15 @@ export class Settings {
 
   set tradeColumns(ids: string[] | undefined) {
     this.data.tradeColumns = ids;
+    this.save();
+  }
+
+  get goals(): Goals {
+    return this.data.goals ?? {};
+  }
+
+  set goals(g: Goals) {
+    this.data.goals = g;
     this.save();
   }
 

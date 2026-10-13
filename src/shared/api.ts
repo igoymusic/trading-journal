@@ -1,6 +1,7 @@
 // The contract between the screens (renderer) and the main process.
 
 import type { Bar } from '../core/alpaca';
+import type { Goals } from '../core/goals';
 import type { LevelPrice } from '../core/optionLevels';
 import type { MistakeTag, PriceLevel, Setup, Trade, TradeJournal } from '../core/types';
 import type { Summary } from '../core/trades';
@@ -49,6 +50,7 @@ export interface SettingsView {
   hasAlpacaKey: boolean;
   /** Visible trade table columns in order; undefined means the defaults. */
   tradeColumns?: string[];
+  goals: Goals;
 }
 
 export interface JournalApi {
@@ -63,6 +65,7 @@ export interface JournalApi {
   setTimeZone(timeZone: string): Promise<void>;
   /** Saves the trade table's columns; null restores the defaults. */
   setTradeColumns(ids: string[] | null): Promise<void>;
+  setGoals(goals: Goals): Promise<void>;
   saveTradeJournal(tradeId: string, journal: TradeJournal): Promise<void>;
   saveSetups(setups: Setup[]): Promise<void>;
   saveMistakes(mistakes: MistakeTag[]): Promise<void>;

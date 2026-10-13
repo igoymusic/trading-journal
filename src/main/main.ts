@@ -8,6 +8,7 @@ import { buildTrades, summarizeTrades } from '../core/trades';
 import type { MistakeTag, PriceLevel, Setup, TradeJournal } from '../core/types';
 import type { ImportResult, JournalData, TradeChart } from '../shared/api';
 import { AlpacaClient } from '../core/alpaca';
+import type { Goals } from '../core/goals';
 import { JournalDb } from './db';
 import { moveDataFromOldName } from './migrate';
 import { buildTradeChart, levelOptionPrices } from './market';
@@ -106,7 +107,10 @@ app.whenReady().then(async () => {
     }
   });
 
-  ipcMain.handle('settings:get', () => ({ timeZone: settings.timeZone, hasAlpacaKey: settings.alpacaCredentials() !== null, tradeColumns: settings.tradeColumns }));
+  ipcMain.handle('settings:get', () => ({
+    timeZone: settings.timeZone, hasAlpacaKey: settings.alpacaCredentials() !== null, tradeColumns: settings.tradeColumns, goals: settings.goals,
+  }));
+  ipcMain.handle('settings:setGoals', (_event, goals: Goals) => { settings.goals = goals; });
   ipcMain.handle('settings:setTimeZone', (_event, tz: string) => { settings.timeZone = tz; });
   ipcMain.handle('settings:setTradeColumns', (_event, ids: string[] | null) => { settings.tradeColumns = ids ?? undefined; });
   ipcMain.handle('settings:saveAlpaca', async (_event, keys: { keyId: string; secretKey: string } | null) => {
