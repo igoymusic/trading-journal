@@ -84,17 +84,18 @@ export class Screenshots {
    */
   async readPaste(): Promise<PasteResult> {
     const { texts, image } = await this.clipboardContents();
-    const drawings = parseTradingViewClipboard(...Object.values(texts));
+    const { drawings, skipped } = parseTradingViewClipboard(...Object.values(texts));
     let sampleSaved = false;
-    // Only copies that came from TradingView are saved, never anything else you copied (like a key).
-    if (!drawings.length && !image && Object.values(texts).some((t) => /tradingview/i.test(t))) {
+    // A TradingView copy is kept (the latest one only) so new drawing types can be added from it.
+    // Nothing else you copied is ever saved, since it could be a password or key.
+    if (!image && Object.values(texts).some((t) => /tradingview/i.test(t))) {
       try {
-        const sample = Object.fromEntries(Object.entries(texts).map(([k, v]) => [k, v.slice(0, 200_000)]));
+        const sample = Object.fromEntries(Object.entries(texts).map(([k, v]) => [k, v.slice(0, 2_000_000)]));
         writeFileSync(this.sampleFile, JSON.stringify({ when: new Date().toISOString(), formats: Object.keys(texts), ...sample }, null, 1));
         sampleSaved = true;
       } catch { /* not important */ }
     }
-    return { drawings, hasImage: !!image, sampleSaved };
+    return { drawings, skipped, hasImage: !!image, sampleSaved };
   }
 
   async addFromClipboard(tradeId: string): Promise<boolean> {

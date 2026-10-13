@@ -125,8 +125,10 @@ export interface TradeImage {
 
 export interface PasteResult {
   drawings: PastedDrawing[];
+  /** TradingView drawing types on the clipboard that can't be drawn here yet. */
+  skipped: string[];
   hasImage: boolean;
-  /** True when the clipboard had something we couldn't read, and a copy was saved to look at. */
+  /** True when a TradingView copy was saved to clipboard-sample.json. */
   sampleSaved: boolean;
 }
 

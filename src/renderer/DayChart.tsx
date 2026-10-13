@@ -4,7 +4,7 @@ import { dayChartTrade, dayTickers } from '../core/dayChart';
 import type { Trade } from '../core/types';
 import type { TradeChart } from '../shared/api';
 import { signedUsd, pnlClass } from './format';
-import { type Interval, PriceChart } from './TradePanel';
+import { type Interval, PriceChart, useFullscreen } from './TradePanel';
 import { DrawToolbar, pasteIntoChart, useDrawings } from './drawings';
 
 const NO_LEVELS = { stops: [], targets: [] };
@@ -27,6 +27,7 @@ export function DayChart({ trades, date, version }: { trades: Trade[]; date: str
   const bars = chart?.status === 'ok' ? chart.bars : [];
   const draw = useDrawings(shown ?? '', bars[0]?.time, bars[bars.length - 1]?.time);
   const [hint, setHint] = useState('');
+  const [fullscreen, setFullscreen] = useFullscreen();
   useEffect(() => {
     if (!hint) return;
     const t = window.setTimeout(() => setHint(''), 5000);
@@ -45,7 +46,7 @@ export function DayChart({ trades, date, version }: { trades: Trade[]; date: str
 
   return (
     <section
-      className={`trade-panel day-chart ${collapsed ? 'collapsed' : ''}`}
+      className={`trade-panel day-chart ${collapsed ? 'collapsed' : ''} ${fullscreen ? 'fullscreen' : ''}`}
       tabIndex={-1}
       onMouseDownCapture={(e) => { if (!(e.target as HTMLElement).closest('input, textarea, select, button')) (e.currentTarget as HTMLElement).focus({ preventScroll: true }); }}
       onPaste={(e) => { if (!(e.target as HTMLElement).closest('input, textarea')) { e.preventDefault(); paste(); } }}
@@ -65,6 +66,7 @@ export function DayChart({ trades, date, version }: { trades: Trade[]; date: str
           {[1, 5, 15].map((m) => (
             <button key={m} className={interval === m ? 'active' : ''} onClick={() => setInterval(m as Interval)}>{m}m</button>
           ))}
+          {!collapsed && <button onClick={() => setFullscreen(!fullscreen)} title={fullscreen ? 'Exit full screen (Esc)' : 'Full screen'}>{fullscreen ? '🗗' : '⛶'}</button>}
         </div>
       </div>
       {!collapsed && <div className="panel-body">

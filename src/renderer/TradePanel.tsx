@@ -11,8 +11,8 @@ import { averageUnderlying, formatR, levelsFromExits, riskReward } from '../core
 import { EMPTY_JOURNAL, type PriceLevel, type Trade } from '../core/types';
 import type { LevelPrices, TradeChart } from '../shared/api';
 import { type FillMarker, FillMarkersPrimitive } from './fillMarkers';
-import { type Drawing, type ChartPoint, shiftDrawing } from '../core/drawings';
-import { DrawToolbar, type DrawingState, pasteIntoChart, useDrawings } from './drawings';
+import { type Drawing, type ChartPoint, drawingStart, moveHandle, shiftDrawing } from '../core/drawings';
+import { DrawToolbar, type DrawingState, finishShape, pasteIntoChart, shapeFor, useDrawings } from './drawings';
 import { ScreenshotGallery, useScreenshotCount } from './Screenshots';
 import { DrawingsPrimitive, type Xy } from './drawingsPrimitive';
 import { holdTime, pnlClass, shortDate, signedUsd, usd } from './format';
@@ -51,6 +51,7 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
   // Replay: which minute bar is showing, whether it's playing, and how many candles a second.
   const [replay, setReplay] = useState<{ index: number; playing: boolean; speed: number } | null>(null);
   const [tab, setTab] = useState<'chart' | 'shots'>('chart');
+  const [fullscreen, setFullscreen] = useFullscreen();
   const [hint, setHint] = useState('');
   const shotCount = useScreenshotCount(trade.id);
   const { saveTrade } = useJournal();
@@ -176,7 +177,7 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
 
   return (
     <section
-      className="trade-panel"
+      className={`trade-panel ${fullscreen ? 'fullscreen' : ''}`}
       ref={sectionRef}
       tabIndex={-1}
       // Clicking anywhere in the panel lets Ctrl+V paste into it.
@@ -209,6 +210,7 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
           {tab === 'chart' && !chartsOff && [1, 5, 15].map((m) => (
             <button key={m} className={interval === m ? 'active' : ''} onClick={() => setInterval(m as Interval)}>{m}m</button>
           ))}
+          <button onClick={() => setFullscreen(!fullscreen)} title={fullscreen ? 'Exit full screen (Esc)' : 'Full screen'}>{fullscreen ? '🗗' : '⛶'}</button>
           {onClose && <button onClick={onClose} aria-label="Close">✕</button>}
         </div>
       </div>
@@ -308,6 +310,22 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
   );
 }
 
+/** Full screen for a chart panel; Esc leaves it. */
+export function useFullscreen(): [boolean, (on: boolean) => void] {
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    if (!on) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || (e.target as HTMLElement).closest?.('input, textarea')) return;
+      setOn(false);
+    };
+    window.addEventListener('keydown', onKey);
+    document.body.classList.add('has-fullscreen');
+    return () => { window.removeEventListener('keydown', onKey); document.body.classList.remove('has-fullscreen'); };
+  }, [on]);
+  return [on, setOn];
+}
+
 export function PriceChart({ trade, chart, interval, levels, placing, onPlace, onMove, replayAt, fillInfo, draw }: {
   trade: Trade;
   /** Drawing tools and the drawings to show; leave out for a chart without them. */
@@ -403,7 +421,7 @@ export function PriceChart({ trade, chart, interval, levels, placing, onPlace, o
     let drag: { kind: LevelKind; index: number; price: number } | null = null;
     // Drawing a line or box: where it started. Moving a drawing: what was grabbed and where.
     let creating: { a: ChartPoint; start: Xy; moved: boolean; clicks: number } | null = null;
-    let moving: { original: Drawing; point?: 'a' | 'b'; from: ChartPoint; start: Xy; moved: boolean } | null = null;
+    let moving: { original: Drawing; handle?: string; from: ChartPoint; start: Xy; moved: boolean } | null = null;
     const lock = (on: boolean) => c.applyOptions({ handleScroll: !on, handleScale: !on });
     const draft = (): Drawing | null => drawings.preview;
     const setDraft = (d: Drawing | null) => { drawings.preview = d; drawings.update(); };
@@ -420,13 +438,17 @@ export function PriceChart({ trade, chart, interval, levels, placing, onPlace, o
         if (!hit) { if (d.selected) d.setSelected(null); return false; }
         const original = d.list.find((x) => x.id === hit.id)!;
         d.setSelected(hit.id);
-        moving = { original, point: hit.point, from: point, start: at, moved: false };
+        moving = { original, handle: hit.handle, from: point, start: at, moved: false };
         return true;
       }
       if (creating) { creating.clicks++; return true; }
       const base = { id: d.newId(), day: d.dayFor(point.time), color: d.color };
       if (d.tool === 'hline') {
-        d.put({ ...base, kind: 'hline', price: round2(point.price) });
+        d.put({ ...base, ...d.style, kind: 'hline', price: round2(point.price) });
+        d.setSelected(base.id);
+        d.setTool('select');
+      } else if (d.tool === 'vline') {
+        d.put({ ...base, kind: 'vline', time: point.time });
         d.setSelected(base.id);
         d.setTool('select');
       } else if (d.tool === 'text') {
@@ -434,7 +456,7 @@ export function PriceChart({ trade, chart, interval, levels, placing, onPlace, o
         d.setTool('select');
       } else {
         creating = { a: point, start: at, moved: false, clicks: 1 };
-        setDraft({ ...base, kind: d.tool, a: point, b: point });
+        setDraft(shapeFor(d.tool, base, point, point, d.style));
       }
       return true;
     };
@@ -457,14 +479,15 @@ export function PriceChart({ trade, chart, interval, levels, placing, onPlace, o
         if (!point) return;
         if (creating) {
           const d = draft();
+          const tool = live.current.draw?.tool;
           if (Math.hypot(at.x - creating.start.x, at.y - creating.start.y) > 4) creating.moved = true;
-          if (d && d.kind !== 'hline' && d.kind !== 'text') setDraft({ ...d, b: point });
+          if (d && tool && tool !== 'select') setDraft(shapeFor(tool, d, creating.a, point, live.current.draw!.style));
         } else if (moving) {
           if (Math.hypot(at.x - moving.start.x, at.y - moving.start.y) > 2) moving.moved = true;
           if (!moving.moved) return;
           const o = moving.original;
-          const next = moving.point && o.kind !== 'hline' && o.kind !== 'text'
-            ? { ...o, [moving.point]: point }
+          const next = moving.handle
+            ? moveHandle(o, moving.handle, point)
             : shiftDrawing(o, point.time - moving.from.time, point.price - moving.from.price);
           setDraft(next);
         }
@@ -490,10 +513,16 @@ export function PriceChart({ trade, chart, interval, levels, placing, onPlace, o
         // A click without dragging starts a line; the next click finishes it.
         if (!creating.moved && creating.clicks < 2) return;
         const shape = draft();
+        const creatingStart = creating.a.time;
         creating = null;
         setDraft(null);
         lock(false);
-        if (shape && d) { d.put({ ...shape, day: d.dayFor(Math.min((shape as { a: ChartPoint }).a.time, (shape as { b: ChartPoint }).b.time)) }); d.setSelected(shape.id); d.setTool('select'); }
+        if (shape && d) {
+          const done = finishShape(shape, drawings.step * 1000);
+          d.put({ ...done, day: d.dayFor(drawingStart(done) ?? creatingStart) });
+          d.setSelected(shape.id);
+          d.setTool('select');
+        }
         return;
       }
       if (moving) {
@@ -503,8 +532,9 @@ export function PriceChart({ trade, chart, interval, levels, placing, onPlace, o
         setDraft(null);
         lock(false);
         if (wasMoved && shape && d) {
+          const start = drawingStart(shape);
           if (shape.kind === 'hline') d.put({ ...shape, price: round2(shape.price) });
-          else d.put({ ...shape, day: d.dayFor(shape.kind === 'text' ? shape.a.time : Math.min(shape.a.time, shape.b.time)) });
+          else d.put(start === null ? shape : { ...shape, day: d.dayFor(start) });
         }
         return;
       }
