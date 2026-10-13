@@ -110,7 +110,11 @@ export class JournalDb {
         (id, broker, exec_time, underlying, expiry, strike, put_call, side, quantity, position_effect, price, order_type, spread, fees, account, time_exact)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
     let added = 0;
-    const { fresh, matched } = matchFills(fills, this.allFills());
+    const existing = this.allFills();
+    // A fill synced earlier with only its date gets its exact time once the broker's orders give it.
+    const known = new Map(existing.map((f) => [f.id, f]));
+    const retime = this.db.prepare('UPDATE fills SET exec_time = ?, time_exact = 1 WHERE id = ? AND time_exact = 0');
+    const { fresh, matched } = matchFills(fills, existing);
     // A CSV fill that broker sync also reported learns which account it came from.
     const label = this.db.prepare('UPDATE fills SET account = ? WHERE id = ? AND account IS NULL');
     this.db.exec('BEGIN');
@@ -120,6 +124,7 @@ export class JournalDb {
           f.quantity, f.positionEffect, f.price, f.orderType, f.spread, f.fees, f.account ?? null, f.timeExact === false ? 0 : 1);
         added += Number(result.changes);
       }
+      for (const f of fills) if (f.timeExact !== false && known.get(f.id)?.timeExact === false) retime.run(f.execTime, f.id);
       for (const m of matched) if (m.incoming.account && !m.existing.account) label.run(m.incoming.account, m.existing.id);
       this.db.exec('COMMIT');
     } catch (err) {

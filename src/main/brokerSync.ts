@@ -1,6 +1,7 @@
 // Broker sync through SnapTrade, by way of the relay that holds the SnapTrade key. Brings in
 // option fills from every connected account, skipping ones already in the journal.
 
+import { writeFileSync } from 'node:fs';
 import { BrowserWindow, safeStorage } from 'electron';
 import { activitiesToFills, type StActivity, type StOrder } from '../core/snaptrade';
 import type { BrokerAccount, SyncResult } from '../shared/api';
@@ -12,8 +13,13 @@ const DONE_URL = 'https://moonjournal.invalid/connected';
 
 /** Re-reads this many days before the last sync, in case the broker filled in late activity. */
 const OVERLAP_DAYS = 7;
+/** How far back the broker's order list (with exact fill times) goes. */
+const ORDER_DAYS = 90;
 
 export class BrokerSync {
+  /** Where a short, anonymized sample of the last sync is written, to diagnose broker data. */
+  debugFile?: string;
+
   constructor(private db: JournalDb, private settings: Settings, private fetchFn: typeof fetch = fetch) {}
 
   private async relay<T>(path: string, body: Record<string, unknown> = {}): Promise<T> {
@@ -84,9 +90,12 @@ export class BrokerSync {
   async sync(): Promise<SyncResult> {
     const accounts = await this.accounts();
     const last = this.settings.lastBrokerSync;
-    const startDate = last ? new Date(Date.parse(last) - OVERLAP_DAYS * 86_400_000).toISOString().slice(0, 10) : undefined;
+    // Re-read at least the last 90 days: that's how far back orders give exact fill times.
+    const since = last ? Math.min(Date.parse(last) - OVERLAP_DAYS * 86_400_000, Date.now() - ORDER_DAYS * 86_400_000) : undefined;
+    const startDate = since === undefined ? undefined : new Date(since).toISOString().slice(0, 10);
     let added = 0;
     const errors: string[] = [];
+    const debug: unknown[] = [];
     for (const account of accounts) {
       try {
         const activities: StActivity[] = [];
@@ -98,7 +107,17 @@ export class BrokerSync {
           if (rows.length < 1000 || (total !== undefined && activities.length >= total)) break;
         }
         // Orders give exact fill times for the last 90 days; not every broker reports them.
-        const orders = await this.relay<StOrder[]>('/orders', { accountId: account.id, days: 90 }).catch(() => []);
+        let ordersError: string | undefined;
+        const orders = await this.relay<StOrder[]>('/orders', { accountId: account.id, days: ORDER_DAYS })
+          .catch((err) => { ordersError = (err as Error).message; return []; });
+        debug.push({
+          account: account.institution,
+          activities: activities.length,
+          activitySample: activities.filter((a) => a.option_symbol).slice(0, 3).map(sample),
+          ordersError,
+          orders: Array.isArray(orders) ? orders.length : typeof orders,
+          orderSample: (Array.isArray(orders) ? orders : []).slice(0, 3).map(sample),
+        });
         const fills = activitiesToFills(activities, Array.isArray(orders) ? orders : [], {
           accountId: account.id, accountName: account.name, timeZone: this.settings.timeZone, existing: this.db.allFills(),
         });
@@ -108,6 +127,9 @@ export class BrokerSync {
       }
     }
     if (!errors.length || added) this.settings.lastBrokerSync = new Date().toISOString();
+    if (this.debugFile) {
+      try { writeFileSync(this.debugFile, JSON.stringify({ at: new Date().toISOString(), accounts: debug }, null, 2)); } catch { /* best effort */ }
+    }
     return { added, accounts: accounts.length, errors };
   }
 
@@ -125,4 +147,17 @@ export class BrokerSync {
     await this.relay('/unregister');
     this.settings.setSnaptradeUser(null);
   }
+}
+
+/** A copy of a broker record with ids and account details removed, for the sync sample file. */
+function sample(record: unknown): unknown {
+  const drop = /^(id|account|account_id|brokerage_order_id|number|institution|description|external_reference_id)$/i;
+  const walk = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(walk);
+    if (v && typeof v === 'object') {
+      return Object.fromEntries(Object.entries(v).filter(([k]) => !drop.test(k)).map(([k, x]) => [k, walk(x)]));
+    }
+    return v;
+  };
+  return walk(record);
 }

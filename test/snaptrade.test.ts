@@ -34,6 +34,15 @@ describe('SnapTrade fills', () => {
     expect(g).toMatchObject({ execTime: '2026-09-15T12:00:00', timeExact: false });
   });
 
+  it('times partial fills from one order, even without its price', () => {
+    const day = '2026-09-15T00:00:00.000Z';
+    const a1 = act({ id: 'p1', units: 1, trade_date: day });
+    const a2 = act({ id: 'p2', units: 1, trade_date: day });
+    const order = { status: 'EXECUTED', action: 'BUY_OPEN', option_symbol: { ...spy, ticker: 'SPY260915C00776000' }, total_quantity: 2, execution_price: null, time_executed: null, time_updated: '2026-09-15T14:31:05Z' };
+    const fills = activitiesToFills([a1, a2], [order], opts);
+    expect(fills.map((f) => [f.execTime, f.timeExact])).toEqual([['2026-09-15T10:31:05', true], ['2026-09-15T10:31:05', true]]);
+  });
+
   it('closes whatever was open when an option expires', () => {
     const buy = act({});
     const expired = act({ id: 'x', type: 'OPTIONEXPIRATION', option_type: null, units: 2, price: 0, fee: 0, trade_date: '2026-09-15T00:00:00Z' });

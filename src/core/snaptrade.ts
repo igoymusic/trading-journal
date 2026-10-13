@@ -34,8 +34,10 @@ export interface StOrder {
   action: string;
   option_symbol?: StOptionSymbol | null;
   filled_quantity?: string | number | null;
+  total_quantity?: string | number | null;
   execution_price?: string | number | null;
   time_executed?: string | null;
+  time_updated?: string | null;
 }
 
 const TRADE_TYPES = new Set(['BUY', 'SELL']);
@@ -76,10 +78,12 @@ export function activitiesToFills(activities: StActivity[], orders: StOrder[], o
   timeZone: string;
   existing?: Fill[];
 }): Fill[] {
-  // Executed option orders with an exact time, each usable once.
+  // Executed option orders with a time. An order filled in pieces can time several activities, so
+  // each keeps track of how many contracts it still has to give.
   const timed = orders
-    .filter((o) => o.option_symbol && o.time_executed && Number(o.filled_quantity) > 0)
-    .map((o) => ({ o, used: false }));
+    .map((o) => ({ o, time: o.time_executed || (/EXECUTED|FILLED/i.test(o.status) ? o.time_updated : null), qty: Number(o.filled_quantity || o.total_quantity) }))
+    .filter((x) => x.o.option_symbol && x.time && x.qty > 0)
+    .map((x) => ({ ...x, left: x.qty, contract: contract(x.o.option_symbol!) }));
 
   const fills: Fill[] = [];
   for (const a of activities) {
@@ -99,15 +103,18 @@ export function activitiesToFills(activities: StActivity[], orders: StOrder[], o
     } else {
       // Borrow the time from the order that matches it, if there is one.
       const day = a.trade_date.slice(0, 10);
-      const match = !closeKind && timed.find(({ o: ord, used }) => !used
-        && ord.option_symbol!.ticker.replace(/\s+/g, '') === o.ticker.replace(/\s+/g, '')
-        && (ord.action.toUpperCase().startsWith('BUY') ? 'BUY' : 'SELL') === side
-        && Number(ord.filled_quantity) === qty
-        && Math.abs(Number(ord.execution_price) - a.price) < 0.006
-        && toWallClock(Date.parse(ord.time_executed!), opts.timeZone).slice(0, 10) === day);
+      const c0 = contract(o);
+      const candidates = closeKind ? [] : timed.filter((t) => t.left >= qty
+        && t.contract.expiry === c0.expiry && t.contract.strike === c0.strike && t.contract.putCall === c0.putCall
+        && (t.o.action.toUpperCase().startsWith('BUY') ? 'BUY' : 'SELL') === side
+        && toWallClock(Date.parse(t.time!), 'America/New_York').slice(0, 10) === day);
+      // Prefer the order filled at this price; brokers that leave the price out still match on the rest.
+      const priced = (t: (typeof candidates)[number]) => t.o.execution_price != null && t.o.execution_price !== ''
+        ? Math.abs(Number(t.o.execution_price) - Math.abs(a.price)) < 0.006 : null;
+      const match = candidates.find((t) => priced(t) === true) ?? candidates.find((t) => priced(t) === null);
       if (match) {
-        match.used = true;
-        execTime = toWallClock(Date.parse(match.o.time_executed!), opts.timeZone);
+        match.left -= qty;
+        execTime = toWallClock(Date.parse(match.time!), opts.timeZone);
       } else {
         // No time known: put it at the expiration (4pm) for expirations, otherwise midday.
         execTime = `${day}T${closeKind ? '16:00:00' : '12:00:00'}`;

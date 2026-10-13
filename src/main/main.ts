@@ -79,6 +79,7 @@ app.whenReady().then(async () => {
   db = new JournalDb(path.join(app.getPath('userData'), 'journal.sqlite'));
   settings = new Settings(path.join(app.getPath('userData'), 'settings.json'));
   brokers = new BrokerSync(db, settings);
+  brokers.debugFile = path.join(app.getPath('userData'), 'sync-sample.json');
   if (process.env.TJ_IMPORT_FILE) importFile(process.env.TJ_IMPORT_FILE);
 
   ipcMain.handle('journal:get', () => journalData());

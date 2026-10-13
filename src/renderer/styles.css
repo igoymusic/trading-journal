@@ -331,3 +331,8 @@ th.sorted { color: var(--text); }
 .trade-panel.day-chart { margin: 0 0 14px; }
 .panel-actions .divider { width: 1px; align-self: stretch; background: var(--border); margin: 0 4px; }
 .day-chart-note { padding: 4px 12px 8px; }
+
+.panel-head.clickable { cursor: pointer; user-select: none; }
+.collapse-arrow { display: inline-block; width: 16px; color: var(--muted); }
+.trade-panel.day-chart.collapsed { height: auto; }
+.trade-panel.day-chart.collapsed .panel-head { border-bottom: none; }

@@ -14,6 +14,12 @@ export function DayChart({ trades, date, version }: { trades: Trade[]; date: str
   const [ticker, setTicker] = useState(tickers[0]);
   const [interval, setInterval] = useState<Interval>(1);
   const [chart, setChart] = useState<TradeChart | null>(null);
+  // Click the bar to fold the chart away; remembered across days and restarts.
+  const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem('dayChartCollapsed') === '1'; } catch { return false; } });
+  const toggle = () => setCollapsed((c) => {
+    try { localStorage.setItem('dayChartCollapsed', c ? '0' : '1'); } catch { /* not saved; fine */ }
+    return !c;
+  });
   const shown = tickers.includes(ticker) ? ticker : tickers[0];
   const day = useMemo(() => (shown ? dayChartTrade(trades, date, shown) : null), [trades, date, shown]);
 
@@ -27,14 +33,15 @@ export function DayChart({ trades, date, version }: { trades: Trade[]; date: str
   const count = trades.filter((t) => t.underlying === shown && tradeDay(t) === date).length;
 
   return (
-    <section className="trade-panel day-chart">
-      <div className="panel-head">
+    <section className={`trade-panel day-chart ${collapsed ? 'collapsed' : ''}`}>
+      <div className="panel-head clickable" onClick={toggle} title={collapsed ? 'Show the chart' : 'Hide the chart'}>
         <div>
+          <span className="collapse-arrow">{collapsed ? '▸' : '▾'}</span>
           <span className="panel-title">{shown} · all trades</span>
           <span className="muted"> · {count} trade{count === 1 ? '' : 's'}</span>
           <span className={`panel-pnl ${pnlClass(day.trade.netPnl)}`}>{signedUsd(day.trade.netPnl)}</span>
         </div>
-        <div className="panel-actions">
+        <div className="panel-actions" onClick={(e) => e.stopPropagation()}>
           {tickers.length > 1 && tickers.map((t) => (
             <button key={t} className={t === shown ? 'active' : ''} onClick={() => setTicker(t)}>{t}</button>
           ))}
@@ -44,7 +51,7 @@ export function DayChart({ trades, date, version }: { trades: Trade[]; date: str
           ))}
         </div>
       </div>
-      <div className="panel-body">
+      {!collapsed && <div className="panel-body">
         <div className="chart-area">
           {!chart && <div className="chart-message">Loading {shown} prices…</div>}
           {chart?.status === 'error' && <div className="chart-message loss">Couldn't load prices: {chart.message}</div>}
@@ -63,8 +70,8 @@ export function DayChart({ trades, date, version }: { trades: Trade[]; date: str
             />
           )}
         </div>
-      </div>
-      {chart?.status === 'ok' && chart.estimatedFrom && (
+      </div>}
+      {!collapsed && chart?.status === 'ok' && chart.estimatedFrom && (
         <div className="muted small day-chart-note">≈ {chart.symbol} estimated from {chart.estimatedFrom} scaled by each day's closing prices.</div>
       )}
     </section>
