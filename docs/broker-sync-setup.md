@@ -48,10 +48,9 @@ The address is not a secret; it's fine to send it in chat.
 
 Either way works:
 
-- **Built into the installer (best for your friend):** in GitHub, open the repository's
-  **Settings → Secrets and variables → Actions → Variables**, add a variable named
-  `MOON_RELAY_URL` with the address, and rebuild. Every installer after that already knows it.
-  (Or send Claude the address and it will set this for you.)
+- **Built into the installer (best for your friend):** the address is set in
+  `.github/workflows/build.yml` (currently `https://moon-relay.igoymusic.workers.dev`). A repository
+  variable named `MOON_RELAY_URL` overrides it. Every installer built after that already knows it.
 - **By hand:** in Moon Journal open **Settings → Brokers → Relay address**, paste it, and Save.
 
 ## 4. Connect

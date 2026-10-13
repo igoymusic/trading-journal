@@ -31,7 +31,7 @@ jobs:
       - run: npm ci
       - run: npm run dist
         env:
-          MOON_RELAY_URL: ${{ vars.MOON_RELAY_URL }}
+          MOON_RELAY_URL: ${{ vars.MOON_RELAY_URL || 'https://moon-relay.igoymusic.workers.dev' }}
       - uses: actions/upload-artifact@v4
         with:
           name: Moon-Journal-Windows-Installer
