@@ -62,6 +62,18 @@ export interface SyncResult {
   accounts: number;
   /** Accounts that couldn't be read, with why. */
   errors: string[];
+  /** Trades that got their exact time from Schwab. */
+  retimed?: number;
+}
+
+export interface SchwabStatus {
+  /** App Key, Secret and Callback URL are saved. */
+  configured: boolean;
+  callbackUrl?: string;
+  signedIn: boolean;
+  /** When Schwab's 7-day sign-in runs out. */
+  signInExpires?: string;
+  lastSync?: string;
 }
 
 export interface BrokerStatus {
@@ -107,6 +119,12 @@ export interface JournalApi {
   syncBrokersIfDue(): Promise<SyncResult | null>;
   disconnectBrokers(): Promise<void>;
   setRelayUrl(url: string): Promise<void>;
+  schwabStatus(): Promise<SchwabStatus>;
+  /** Saves (or with null, forgets) your Schwab developer app. */
+  saveSchwabApp(app: { appKey: string; secret: string; callbackUrl: string } | null): Promise<void>;
+  /** Opens Schwab's sign-in, then syncs. Null if the window was closed first. */
+  connectSchwab(): Promise<SyncResult | null>;
+  disconnectSchwab(): Promise<void>;
   setHiddenAccounts(names: string[]): Promise<void>;
   setReportsLayout(layout: { columns: string[][]; collapsed: string[] }): Promise<void>;
   saveTradeJournal(tradeId: string, journal: TradeJournal): Promise<void>;

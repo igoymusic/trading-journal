@@ -113,3 +113,38 @@ describe('index prices from the ETF', async () => {
     expect(indexProxy('SPY')).toBeUndefined();
   });
 });
+
+describe('Schwab transactions', async () => {
+  const { transactionsToFills } = await import('../src/core/schwab');
+  const { JournalDb } = await import('../src/main/db');
+  const leg = (amount: number, price: number, effect: string) => ({
+    instrument: { assetType: 'OPTION', symbol: 'SPXW  261009C06750000', underlyingSymbol: '$SPX', putCall: 'CALL', strikePrice: 6750 },
+    amount, price, cost: -amount * price * 100, positionEffect: effect,
+  });
+  const fee = { instrument: { assetType: 'CURRENCY', symbol: 'CURRENCY_USD' }, amount: 0, cost: -0.65, feeType: 'COMMISSION' };
+  const txs = [
+    { activityId: 1, type: 'TRADE', status: 'VALID', time: '2026-10-09T14:31:05+0000', orderId: 10, transferItems: [fee, leg(2, 4.1, 'OPENING')] },
+    { activityId: 2, type: 'TRADE', status: 'VALID', time: '2026-10-09T00:00:00+0000', orderId: 11, transferItems: [leg(-2, 5.3, 'CLOSING')] },
+  ];
+  const orders = [{ orderId: 11, orderActivityCollection: [{ executionLegs: [{ time: '2026-10-09T15:02:40+0000', price: 5.3, quantity: 2 }] }] }];
+
+  it('turns trades into fills at their exact time, borrowing it from the order when needed', () => {
+    const fills = transactionsToFills(txs, orders, { account: 'Schwab · Trading', timeZone: 'America/New_York' });
+    expect(fills).toMatchObject([
+      { id: 'schwab:1:0', underlying: 'SPXW', expiry: '2026-10-09', strike: 6750, putCall: 'CALL', side: 'BUY', quantity: 2, price: 4.1, execTime: '2026-10-09T10:31:05', fees: 0.65, positionEffect: 'OPEN' },
+      { id: 'schwab:2:0', side: 'SELL', price: 5.3, execTime: '2026-10-09T11:02:40', positionEffect: 'CLOSE' },
+    ]);
+    expect(fills[0].timeExact).toBeUndefined();
+  });
+
+  it('only fills in times for trades SnapTrade already brought in', () => {
+    const db = new JournalDb(':memory:');
+    const base = { broker: 'snaptrade' as const, account: 'Schwab · Trading', underlying: 'SPXW', expiry: '2026-10-09', strike: 6750, putCall: 'CALL' as const,
+      quantity: 2, orderType: 'MARKET', spread: 'SINGLE', fees: 0.65, execTime: '2026-10-09T12:00:00', timeExact: false };
+    db.addFills([{ ...base, id: 'snaptrade:a:1', side: 'BUY', positionEffect: 'OPEN', price: 4.1 }]);
+    const fills = transactionsToFills(txs, orders, { account: 'Schwab · Trading', timeZone: 'America/New_York' });
+    expect(db.addFills(fills, { addNew: false })).toBe(0);
+    expect(db.lastRetimed).toBe(1);
+    expect(db.allFills().map((f) => [f.id, f.execTime])).toEqual([['snaptrade:a:1', '2026-10-09T10:31:05']]);
+  });
+});

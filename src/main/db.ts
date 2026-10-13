@@ -104,12 +104,20 @@ export class JournalDb {
    * Saves fills, skipping ones already in the journal, including the same execution reported by
    * another source (a CSV and broker sync). Returns how many were new.
    */
-  addFills(fills: Fill[]): number {
+  /** How many date-only fills the last `addFills` gave an exact time. */
+  lastRetimed = 0;
+
+  /**
+   * Adds fills not already in the journal and returns how many. With `addNew: false` it only uses
+   * them to give exact times (and account names) to fills already there.
+   */
+  addFills(fills: Fill[], opts: { addNew?: boolean } = {}): number {
     const insert = this.db.prepare(`
       INSERT OR IGNORE INTO fills
         (id, broker, exec_time, underlying, expiry, strike, put_call, side, quantity, position_effect, price, order_type, spread, fees, account, time_exact)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
     let added = 0;
+    let retimed = 0;
     const existing = this.allFills();
     // A fill synced earlier with only its date gets its exact time once the broker's orders give it.
     const known = new Map(existing.map((f) => [f.id, f]));
@@ -119,22 +127,23 @@ export class JournalDb {
     const label = this.db.prepare('UPDATE fills SET account = ? WHERE id = ? AND account IS NULL');
     this.db.exec('BEGIN');
     try {
-      for (const f of fresh) {
+      for (const f of opts.addNew === false ? [] : fresh) {
         const result = insert.run(f.id, f.broker, f.execTime, f.underlying, f.expiry, f.strike, f.putCall, f.side,
           f.quantity, f.positionEffect, f.price, f.orderType, f.spread, f.fees, f.account ?? null, f.timeExact === false ? 0 : 1);
         added += Number(result.changes);
       }
-      for (const f of fills) if (f.timeExact !== false && known.get(f.id)?.timeExact === false) retime.run(f.execTime, f.id);
+      for (const f of fills) if (f.timeExact !== false && known.get(f.id)?.timeExact === false) retimed += Number(retime.run(f.execTime, f.id).changes);
       for (const m of matched) {
         if (m.incoming.account && !m.existing.account) label.run(m.incoming.account, m.existing.id);
         // A synced fill with only its date takes the exact time from the same fill in a CSV import.
-        if (m.existing.timeExact === false && m.incoming.timeExact !== false) retime.run(m.incoming.execTime, m.existing.id);
+        if (m.existing.timeExact === false && m.incoming.timeExact !== false) retimed += Number(retime.run(m.incoming.execTime, m.existing.id).changes);
       }
       this.db.exec('COMMIT');
     } catch (err) {
       this.db.exec('ROLLBACK');
       throw err;
     }
+    this.lastRetimed = retimed;
     return added;
   }
 

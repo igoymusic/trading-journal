@@ -142,7 +142,7 @@ export function activitiesToFills(activities: StActivity[], orders: StOrder[], o
 }
 
 /** Expirations, assignments and exercises close whatever was open: sell a long, buy back a short. */
-function closeSides(fills: Fill[], existing: Fill[]): Fill[] {
+export function closeSides(fills: Fill[], existing: Fill[]): Fill[] {
   const key = (f: Fill) => `${f.underlying}|${f.expiry}|${f.strike}|${f.putCall}`;
   const all = [...existing.filter((e) => !fills.some((f) => sameFill(e, f))), ...fills].sort((a, b) => a.execTime.localeCompare(b.execTime));
   const position = new Map<string, number>();

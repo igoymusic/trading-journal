@@ -6,6 +6,7 @@ import { BrowserWindow, safeStorage } from 'electron';
 import { activitiesToFills, type StActivity, type StOrder } from '../core/snaptrade';
 import type { BrokerAccount, SyncResult } from '../shared/api';
 import type { JournalDb } from './db';
+import type { SchwabSync } from './schwab';
 import type { Settings } from './settings';
 
 /** Where the broker sign-in page sends you when you're done; the window closes when it gets there. */
@@ -19,6 +20,8 @@ const ORDER_DAYS = 90;
 export class BrokerSync {
   /** Where a short, anonymized sample of the last sync is written, to diagnose broker data. */
   debugFile?: string;
+  /** Your own Schwab connection, when set up: gives exact fill times. */
+  schwab?: SchwabSync;
 
   constructor(private db: JournalDb, private settings: Settings, private fetchFn: typeof fetch = fetch) {}
 
@@ -86,8 +89,25 @@ export class BrokerSync {
     });
   }
 
-  /** Pulls fills from every connected account. */
+  /** Pulls fills from SnapTrade, then (if signed in) times and trades from Schwab directly. */
   async sync(): Promise<SyncResult> {
+    const snap = this.settings.snaptradeUser();
+    const result: SyncResult = snap ? await this.syncSnaptrade() : { added: 0, accounts: 0, errors: [] };
+    if (this.schwab?.status().signedIn) {
+      try {
+        const s = await this.schwab.sync({ addNew: !snap });
+        result.added += s.added;
+        result.retimed = s.retimed;
+        result.errors.push(...s.errors);
+        if (!snap) result.accounts = s.accounts;
+      } catch (err) {
+        result.errors.push(`Schwab: ${(err as Error).message}`);
+      }
+    }
+    return result;
+  }
+
+  private async syncSnaptrade(): Promise<SyncResult> {
     const accounts = await this.accounts();
     const last = this.settings.lastBrokerSync;
     // Re-read at least the last 90 days: that's how far back orders give exact fill times.
@@ -135,11 +155,10 @@ export class BrokerSync {
 
   /** True when sync hasn't run yet today (in the journal's time zone). */
   dueToday(): boolean {
-    if (!this.settings.snaptradeUser()) return false;
-    const last = this.settings.lastBrokerSync;
-    if (!last) return true;
     const day = (iso: string) => new Date(iso).toLocaleDateString('en-CA', { timeZone: this.settings.timeZone });
-    return day(last) !== day(new Date().toISOString());
+    const due = (last?: string) => !last || day(last) !== day(new Date().toISOString());
+    return (!!this.settings.snaptradeUser() && due(this.settings.lastBrokerSync))
+      || (!!this.schwab?.status().signedIn && due(this.settings.schwabLastSync));
   }
 
   /** Removes the SnapTrade sign-in (and its broker links) and forgets it on this computer. */

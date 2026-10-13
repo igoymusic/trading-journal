@@ -23,7 +23,12 @@ interface StoredSettings {
   lastBrokerSync?: string;
   /** Base64 of the encrypted "keyId\nsecretKey". */
   alpaca?: string;
+  /** Your own Schwab developer app: key and secret encrypted together, plus its callback address. */
+  schwab?: { app: string; callbackUrl: string; tokens?: string; signedInAt?: string; lastSync?: string };
 }
+
+export interface SchwabApp { appKey: string; secret: string; callbackUrl: string }
+export interface SchwabTokens { refreshToken: string; accessToken?: string; accessExpires?: number }
 
 /** Filled in at build time from the MOON_RELAY_URL repository variable once the relay is deployed. */
 declare const __MOON_RELAY_URL__: string | undefined;
@@ -155,6 +160,68 @@ export class Settings {
       if (!safeStorage.isEncryptionAvailable()) throw new Error('Secure storage is not available on this computer, so the keys were not saved.');
       this.data.alpaca = safeStorage.encryptString(`${creds.keyId.trim()}\n${creds.secretKey.trim()}`).toString('base64');
     }
+    this.save();
+  }
+
+  private decrypt(b64: string): string | null {
+    if (!safeStorage.isEncryptionAvailable()) return null;
+    try {
+      return safeStorage.decryptString(Buffer.from(b64, 'base64'));
+    } catch {
+      return null;
+    }
+  }
+
+  private encrypt(plain: string): string {
+    if (!safeStorage.isEncryptionAvailable()) throw new Error('Secure storage is not available on this computer, so the keys were not saved.');
+    return safeStorage.encryptString(plain).toString('base64');
+  }
+
+  /** The Schwab developer app entered in Settings, or null. */
+  schwabApp(): SchwabApp | null {
+    const s = this.data.schwab;
+    const plain = s && this.decrypt(s.app);
+    if (!s || !plain) return null;
+    const [appKey, secret] = plain.split('\n');
+    return appKey && secret ? { appKey, secret, callbackUrl: s.callbackUrl } : null;
+  }
+
+  setSchwabApp(app: SchwabApp | null) {
+    if (!app) delete this.data.schwab;
+    else this.data.schwab = { app: this.encrypt(`${app.appKey.trim()}\n${app.secret.trim()}`), callbackUrl: app.callbackUrl.trim() };
+    this.save();
+  }
+
+  schwabTokens(): SchwabTokens | null {
+    const t = this.data.schwab?.tokens;
+    const plain = t && this.decrypt(t);
+    return plain ? JSON.parse(plain) : null;
+  }
+
+  /** Saves new tokens; `signedIn` marks a fresh sign-in, which starts Schwab's 7-day clock. */
+  setSchwabTokens(tokens: SchwabTokens | null, signedIn = false) {
+    if (!this.data.schwab) return;
+    if (!tokens) {
+      delete this.data.schwab.tokens;
+      delete this.data.schwab.signedInAt;
+    } else {
+      this.data.schwab.tokens = this.encrypt(JSON.stringify(tokens));
+      if (signedIn) this.data.schwab.signedInAt = new Date().toISOString();
+    }
+    this.save();
+  }
+
+  get schwabSignedInAt() {
+    return this.data.schwab?.signedInAt;
+  }
+
+  get schwabLastSync() {
+    return this.data.schwab?.lastSync;
+  }
+
+  set schwabLastSync(iso: string | undefined) {
+    if (!this.data.schwab) return;
+    this.data.schwab.lastSync = iso;
     this.save();
   }
 }

@@ -8,6 +8,7 @@ import { zonedToUtcMillis } from '../core/time';
 import type { PriceLevel, Trade } from '../core/types';
 import type { LevelPrices, TradeChart } from '../shared/api';
 import type { JournalDb } from './db';
+import type { SchwabSync } from './schwab';
 import type { Settings } from './settings';
 
 /** Pre-market through after-hours, in New York time. */
@@ -31,7 +32,18 @@ export function tradingDays(trade: Trade): string[] {
 /** Index underlyings (SPXW options trade on SPX) that stock market data doesn't carry. */
 const INDEXES = new Set(['SPX', 'SPXW', 'NDX', 'NDXP', 'RUT', 'RUTW', 'VIX', 'XSP', 'DJX']);
 
-export async function buildTradeChart(trade: Trade, db: JournalDb, settings: Settings, fetchFn?: typeof fetch): Promise<TradeChart> {
+/** Schwab's names for the indexes that index options trade on. */
+const SCHWAB_INDEX: Record<string, string> = {
+  SPX: '$SPX', SPXW: '$SPX', XSP: '$XSP', NDX: '$NDX', NDXP: '$NDX', RUT: '$RUT', RUTW: '$RUT', VIX: '$VIX', DJX: '$DJX',
+};
+
+export async function buildTradeChart(trade: Trade, db: JournalDb, settings: Settings, fetchFn?: typeof fetch, schwab?: SchwabSync): Promise<TradeChart> {
+  // Index options chart the real index when Schwab is signed in and has its minutes.
+  const schwabSymbol = SCHWAB_INDEX[trade.underlying];
+  if (schwabSymbol && schwab?.status().signedIn) {
+    const chart = await schwabIndexChart(trade, schwabSymbol, db, settings, schwab).catch(() => null);
+    if (chart) return chart;
+  }
   const creds = settings.alpacaCredentials();
   if (!creds) return { status: 'needs-key' };
   const client = new AlpacaClient(creds, fetchFn as any, process.env.TJ_ALPACA_BASE_URL || undefined);
@@ -100,6 +112,32 @@ export async function buildTradeChart(trade: Trade, db: JournalDb, settings: Set
     status: 'ok', symbol: proxy ? trade.underlying : symbol, timeZone: tz, feed, bars: proxy ? bars.map(scale) : bars, fills,
     ...(proxy ? { estimatedFrom: proxy.etf } : {}),
   };
+}
+
+/** The trade on the index's own one-minute prices from Schwab; null if Schwab doesn't have every day. */
+async function schwabIndexChart(trade: Trade, symbol: string, db: JournalDb, settings: Settings, schwab: SchwabSync): Promise<TradeChart | null> {
+  const bars: Bar[] = [];
+  for (const day of tradingDays(trade)) {
+    const start = zonedToUtcMillis(`${day}T${SESSION_START}`, 'America/New_York');
+    const end = zonedToUtcMillis(`${day}T${SESSION_END}`, 'America/New_York');
+    if (db.barDay(symbol, day)) {
+      bars.push(...db.minuteBars(symbol, start, end));
+      continue;
+    }
+    const fetched = await schwab.indexBars(symbol, start, end);
+    if (!fetched) return null;
+    if (end < Date.now()) db.saveBarDay(symbol, day, 'schwab', fetched);
+    bars.push(...fetched);
+  }
+  const tz = settings.timeZone;
+  const fills = trade.fills.map((fill) => {
+    const time = zonedToUtcMillis(fill.execTime, tz);
+    // An index has no trades of its own: read the price partway through the minute the fill was in.
+    const bar = fill.timeExact === false ? undefined : bars.find((b) => b.time <= time && time < b.time + 60_000);
+    const underlyingPrice = bar ? Math.round((bar.open + ((bar.close - bar.open) * (time - bar.time)) / 60_000) * 100) / 100 : undefined;
+    return { fillId: fill.id, time, underlyingPrice, priceTime: bar ? time : undefined };
+  });
+  return { status: 'ok', symbol: trade.underlying, timeZone: tz, feed: 'schwab', bars, fills };
 }
 
 /** The index's daily closes from FRED (free, no account), cached; refetched when a newer day is needed. */

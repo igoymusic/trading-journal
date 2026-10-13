@@ -11,6 +11,7 @@ import { AlpacaClient } from '../core/alpaca';
 import type { Goals } from '../core/goals';
 import { dayChartTrade } from '../core/dayChart';
 import { BrokerSync } from './brokerSync';
+import { SchwabSync } from './schwab';
 import { JournalDb } from './db';
 import { moveDataFromOldName } from './migrate';
 import { buildTradeChart, levelOptionPrices } from './market';
@@ -19,6 +20,7 @@ import { Settings } from './settings';
 let db: JournalDb;
 let settings: Settings;
 let brokers: BrokerSync;
+let schwab: SchwabSync;
 
 function importFile(file: string): ImportResult {
   const { fills, skipped, unmatchedFees } = parseTosStatement(readFileSync(file, 'utf8'));
@@ -79,6 +81,8 @@ app.whenReady().then(async () => {
   db = new JournalDb(path.join(app.getPath('userData'), 'journal.sqlite'));
   settings = new Settings(path.join(app.getPath('userData'), 'settings.json'));
   brokers = new BrokerSync(db, settings);
+  schwab = new SchwabSync(db, settings);
+  brokers.schwab = schwab;
   brokers.debugFile = path.join(app.getPath('userData'), 'sync-sample.json');
   if (process.env.TJ_IMPORT_FILE) importFile(process.env.TJ_IMPORT_FILE);
 
@@ -103,7 +107,7 @@ app.whenReady().then(async () => {
     const day = dayChartTrade(buildTrades(db.allFills()), date, underlying);
     if (!day) return { status: 'error', message: 'No trades on this day.' };
     try {
-      return await buildTradeChart(day.trade, db, settings);
+      return await buildTradeChart(day.trade, db, settings, undefined, schwab);
     } catch (err) {
       return { status: 'error', message: (err as Error).message };
     }
@@ -112,7 +116,7 @@ app.whenReady().then(async () => {
     const trade = buildTrades(db.allFills()).find((t) => t.id === tradeId);
     if (!trade) return { status: 'error', message: 'Trade not found.' };
     try {
-      return await buildTradeChart(trade, db, settings);
+      return await buildTradeChart(trade, db, settings, undefined, schwab);
     } catch (err) {
       return { status: 'error', message: (err as Error).message };
     }
@@ -140,7 +144,8 @@ app.whenReady().then(async () => {
   ipcMain.handle('journal:removeImported', async () => {
     const removed = db.removeFills('thinkorswim');
     settings.lastBrokerSync = undefined;
-    const sync = brokers.status().connected ? await brokers.sync().catch(() => null) : null;
+    settings.schwabLastSync = undefined;
+    const sync = brokers.status().connected || schwab.status().signedIn ? await brokers.sync().catch(() => null) : null;
     return { removed, sync };
   });
   ipcMain.handle('broker:status', () => brokers.status());
@@ -152,6 +157,15 @@ app.whenReady().then(async () => {
   ipcMain.handle('broker:sync', () => brokers.sync());
   ipcMain.handle('broker:syncIfDue', () => (brokers.dueToday() ? brokers.sync() : null));
   ipcMain.handle('broker:disconnect', () => brokers.disconnect());
+  ipcMain.handle('schwab:status', () => schwab.status());
+  ipcMain.handle('schwab:saveApp', (_event, app: { appKey: string; secret: string; callbackUrl: string } | null) => schwab.saveApp(app));
+  ipcMain.handle('schwab:connect', async (event) => {
+    const connected = await schwab.connect(BrowserWindow.fromWebContents(event.sender));
+    if (!connected) return null;
+    settings.schwabLastSync = undefined;
+    return brokers.sync();
+  });
+  ipcMain.handle('schwab:disconnect', () => schwab.disconnect(true));
   ipcMain.handle('broker:setRelayUrl', (_event, url: string) => { settings.relayUrl = url; });
   ipcMain.handle('settings:setGoals', (_event, goals: Goals) => { settings.goals = goals; });
   ipcMain.handle('settings:setTimeZone', (_event, tz: string) => { settings.timeZone = tz; });

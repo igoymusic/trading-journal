@@ -74,8 +74,8 @@ export function BrokersSettings({ onSynced }: { onSynced: (result: SyncResult) =
       </div>
       {status?.connected && (
         <p className="muted small">
-          Some brokers, like Schwab, only report the day of each trade, not the time. To add exact times (needed for
-          charts and R), also import a thinkorswim Account Statement CSV now and then; matching trades take its times.
+          Some brokers, like Schwab, only report the day of each trade, not the time. For exact times (needed for
+          charts and R), sign in to Schwab below, or import a thinkorswim Account Statement CSV now and then.
         </p>
       )}
       {status?.lastSync && <p className="muted">Last synced {new Date(status.lastSync).toLocaleString()}</p>}
@@ -94,6 +94,7 @@ export function BrokersSettings({ onSynced }: { onSynced: (result: SyncResult) =
 
 export function describeSync(r: SyncResult): string {
   const parts = [r.added ? `${r.added} new fills from your broker${r.accounts === 1 ? '' : 's'}` : 'Broker sync: no new trades'];
+  if (r.retimed) parts.push(`exact times for ${r.retimed} fill${r.retimed === 1 ? '' : 's'} from Schwab`);
   for (const e of r.errors) parts.push(`couldn't read ${e}`);
   return parts.join(' · ');
 }

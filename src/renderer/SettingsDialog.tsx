@@ -3,6 +3,7 @@ import type { Goals } from '../core/goals';
 import type { PlaybookRule } from '../core/types';
 import type { SettingsView, SyncResult } from '../shared/api';
 import { BrokersSettings } from './BrokersSettings';
+import { SchwabSettings } from './SchwabSettings';
 import { newId, SETUP_COLORS, useJournal } from './journal';
 
 const TIME_ZONES = [
@@ -66,6 +67,7 @@ export function SettingsDialog({ onClose, onSynced }: { onClose: () => void; onS
         </div>
 
         <BrokersSettings onSynced={onSynced} />
+        <SchwabSettings onSynced={onSynced} />
 
         <h3>Market data (Alpaca)</h3>
         <p className="muted">

@@ -100,7 +100,7 @@ export function App() {
   const [brokerConnected, setBrokerConnected] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const afterSync = (result: SyncResult) => {
-    if (result.added || result.errors.length) setNotice(describeSync(result));
+    if (result.added || result.retimed || result.errors.length) setNotice(describeSync(result));
     load();
   };
   async function syncBrokers(force: boolean) {
@@ -108,16 +108,19 @@ export function App() {
     try {
       const result = force ? await window.journal.syncBrokers() : await window.journal.syncBrokersIfDue();
       if (result) afterSync(result);
-      if (force && result && !result.added && !result.errors.length) setNotice(describeSync(result));
+      if (force && result && !result.added && !result.retimed && !result.errors.length) setNotice(describeSync(result));
     } catch (err) {
       setNotice(`Broker sync failed: ${(err as Error).message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`);
     }
     setSyncing(false);
   }
   useEffect(() => {
-    window.journal.brokerStatus().then((s) => {
-      setBrokerConnected(s.connected);
-      if (s.connected) syncBrokers(false);
+    Promise.all([window.journal.brokerStatus(), window.journal.schwabStatus()]).then(([s, schwab]) => {
+      const connected = s.connected || schwab.signedIn;
+      setBrokerConnected(connected);
+      if (connected) syncBrokers(false);
+      // Schwab's sign-in only lasts a week, so say when it needs doing again.
+      if (schwab.configured && !schwab.signedIn) setNotice('Your Schwab sign-in has run out (Schwab makes it last 7 days). Open Settings and press "Sign in to Schwab" for exact trade times.');
     });
   }, [settingsVersion]);
 
