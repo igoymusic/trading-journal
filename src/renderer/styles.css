@@ -315,3 +315,8 @@ th.sorted { color: var(--text); }
 .account-menu-actions { display: flex; gap: 6px; margin-bottom: 6px; }
 .account-menu-actions button { flex: 1; padding: 4px 8px; font-size: 12px; }
 .account-menu label { display: flex; align-items: center; gap: 8px; padding: 5px 4px; cursor: pointer; white-space: nowrap; }
+.setup-steps { margin: 4px 0 12px; padding-left: 20px; line-height: 1.6; }
+.setup-steps a { color: var(--blue); }
+.empty h3 { margin: 22px 0 6px; }
+.empty details { margin-top: 12px; }
+.empty summary { cursor: pointer; color: var(--muted, #8a93a6); }

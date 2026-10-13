@@ -72,6 +72,7 @@ export function SettingsDialog({ onClose, onSynced }: { onClose: () => void; onS
           Used to draw the underlying's chart and find its exact price at each of your fills.
           A free Alpaca account works. Keys are stored encrypted on this computer only.
         </p>
+        {!settings?.hasAlpacaKey && <AlpacaSteps />}
         {settings?.hasAlpacaKey ? (
           <div className="row">
             <span className="win">● Connected</span>
@@ -246,4 +247,18 @@ function RenameInput({ value, onSave }: { value: string; onSave: (v: string) => 
   useEffect(() => setText(value), [value]);
   const commit = () => { if (text.trim() && text.trim() !== value) onSave(text.trim()); else setText(value); };
   return <input value={text} onChange={(e) => setText(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />;
+}
+
+/** How to get a free Alpaca key, for people setting up the app for the first time. */
+export function AlpacaSteps() {
+  return (
+    <ol className="setup-steps">
+      <li>
+        Make a free account at <a href="https://app.alpaca.markets/signup" target="_blank" rel="noreferrer">alpaca.markets</a>.
+        You don't need to fund it or trade there.
+      </li>
+      <li>On your Alpaca home page, find <b>API Keys</b> on the right and click <b>Generate New Keys</b>.</li>
+      <li>Copy the <b>Key</b> and the <b>Secret</b> into the two boxes below and click <b>Connect</b>. Alpaca only shows the Secret once.</li>
+    </ol>
+  );
 }

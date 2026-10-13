@@ -1,6 +1,6 @@
 // Electron main process: owns the window, the database and file access.
 
-import { app, BrowserWindow, dialog, ipcMain, safeStorage } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electron';
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseTosStatement } from '../core/tosCsv';
@@ -40,6 +40,11 @@ async function createWindow() {
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true },
   });
   win.setMenuBarVisibility(false);
+  // Help links (like Alpaca's sign-up page) open in the normal web browser, and only those sites.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https:\/\/([a-z0-9-]+\.)*(alpaca\.markets|snaptrade\.com)\//.test(url)) shell.openExternal(url);
+    return { action: 'deny' };
+  });
   await win.loadFile(path.join(__dirname, '../renderer/index.html'));
 
   // Used for automated screenshots: TJ_SCREENSHOT=out.png saves the window once it has drawn, then quits.

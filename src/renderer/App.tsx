@@ -194,7 +194,7 @@ export function App() {
         </nav>
       )}
       {notice && <div className="notice" onClick={() => setNotice(null)}>{notice}</div>}
-      {!data ? null : !hasTrades ? <EmptyState onImport={importCsv} /> : (
+      {!data ? null : !hasTrades ? <EmptyState onImport={importCsv} onOpenSettings={() => setShowSettings(true)} /> : (
         <main className="view">
           {filterTab && <FilterBar trades={data.trades} filter={filter} onChange={setFilter} shown={filtered.length} />}
           {scoped && <SummaryBar s={scoped} />}
@@ -318,16 +318,24 @@ function describeImport(r: ImportResult): string {
   return parts.join(' · ');
 }
 
-function EmptyState({ onImport }: { onImport: () => void }) {
+function EmptyState({ onImport, onOpenSettings }: { onImport: () => void; onOpenSettings: () => void }) {
   return (
     <div className="empty">
-      <h2>Import your trades</h2>
-      <ol>
-        <li>In thinkorswim, open <b>Monitor</b> then <b>Account Statement</b>.</li>
-        <li>Pick a date range and click <b>Apply</b>.</li>
-        <li>Click the menu icon at the top right and choose <b>Export to File</b>.</li>
-      </ol>
-      <button className="primary" onClick={onImport}>Choose the CSV file</button>
+      <h2>Welcome to Moon Journal</h2>
+      <h3>1. Bring in your trades</h3>
+      <p>Open <b>Settings</b> and click <b>Connect a broker</b>, then sign in to your broker. Your option trades come in on their own from then on.</p>
+      <button className="primary" onClick={onOpenSettings}>Open Settings</button>
+      <details>
+        <summary>Or import a thinkorswim file instead</summary>
+        <ol>
+          <li>In thinkorswim, open <b>Monitor</b> then <b>Account Statement</b>.</li>
+          <li>Pick a date range and click <b>Apply</b>.</li>
+          <li>Click the menu icon at the top right and choose <b>Export to File</b>.</li>
+        </ol>
+        <button onClick={onImport}>Choose the CSV file</button>
+      </details>
+      <h3>2. Turn on charts</h3>
+      <p>Charts use free market data from Alpaca. Settings walks you through getting a key; it takes a couple of minutes.</p>
     </div>
   );
 }
