@@ -250,3 +250,13 @@ button.link { background: none; border: none; color: var(--blue); padding: 6px; 
 th.sortable { cursor: pointer; user-select: none; }
 th.sortable:hover { color: var(--text); }
 th.sorted { color: var(--text); }
+
+/* Trade replay */
+.chart-area.replaying .chart { bottom: 42px; }
+.replay-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 42px; display: flex; align-items: center; gap: 6px; padding: 0 10px; border-top: 1px solid var(--border); background: var(--panel); white-space: nowrap; }
+.replay-bar button { padding: 3px 9px; min-width: 32px; }
+.replay-bar button.play { background: var(--blue); border-color: var(--blue); color: #fff; }
+.replay-bar select { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 3px 4px; font: inherit; }
+.replay-bar input[type=range] { flex: 1; min-width: 80px; accent-color: var(--blue); }
+.replay-clock { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 64px; text-align: right; }
+.replay-pos { min-width: 150px; }
