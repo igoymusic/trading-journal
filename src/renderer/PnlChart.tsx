@@ -1,3 +1,4 @@
+import { colors, withAlpha } from './colors';
 import { BaselineSeries, ColorType, createChart, type Time } from 'lightweight-charts';
 import { useEffect, useRef, useState } from 'react';
 import { equityCurve } from '../core/calendar';
@@ -43,8 +44,8 @@ export function PnlChart({ trades }: { trades: Trade[] }) {
     });
     const series = c.addSeries(BaselineSeries, {
       baseValue: { type: 'price', price: 0 },
-      topLineColor: '#26a69a', topFillColor1: 'rgba(38, 166, 154, 0.35)', topFillColor2: 'rgba(38, 166, 154, 0.02)',
-      bottomLineColor: '#ef5350', bottomFillColor1: 'rgba(239, 83, 80, 0.02)', bottomFillColor2: 'rgba(239, 83, 80, 0.35)',
+      topLineColor: colors().win, topFillColor1: withAlpha(colors().win, 0.35), topFillColor2: withAlpha(colors().win, 0.02),
+      bottomLineColor: colors().loss, bottomFillColor1: withAlpha(colors().loss, 0.02), bottomFillColor2: withAlpha(colors().loss, 0.35),
       lineWidth: 2,
       priceFormat: { type: 'custom', formatter: (v: number) => signedUsd(v) },
     });

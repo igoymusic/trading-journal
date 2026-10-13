@@ -14,6 +14,7 @@ import { PnlChart } from './PnlChart';
 import { ReportsView } from './ReportsView';
 import { AccountPicker, accountOf, accountsIn } from './AccountPicker';
 import { describeSync } from './BrokersSettings';
+import { applyColors } from './colors';
 import { SettingsDialog } from './SettingsDialog';
 import { ErrorBoundary } from './ErrorBoundary';
 import { TradePanel } from './TradePanel';
@@ -28,6 +29,9 @@ export function App() {
   // Accounts left out of every number on screen, from the picker next to the app name.
   const [hiddenAccounts, setHiddenAccounts] = useState<string[]>([]);
   useEffect(() => { window.journal.getSettings().then((s) => setHiddenAccounts(s.hiddenAccounts)); }, []);
+  // Your colors; charts redraw (the view remounts) when they change.
+  const [colorsVersion, setColorsVersion] = useState(0);
+  useEffect(() => { window.journal.getSettings().then((s) => { applyColors(s.colors); setColorsVersion((v) => v + 1); }); }, []);
   const accounts = useMemo(() => accountsIn(allData?.trades ?? []), [allData]);
   const data = useMemo(() => {
     if (!allData || !hiddenAccounts.length) return allData;
@@ -209,7 +213,7 @@ export function App() {
       )}
       {notice && <div className="notice" onClick={() => setNotice(null)}>{notice}</div>}
       {!data ? null : !hasTrades ? <EmptyState onImport={importCsv} onOpenSettings={() => setShowSettings(true)} /> : (
-        <main className="view">
+        <main className="view" key={colorsVersion}>
           {filterTab && <FilterBar trades={data.trades} filter={filter} onChange={setFilter} shown={filtered.length} />}
           {scoped && <SummaryBar s={scoped} />}
           {tabs.active === 'home' && (
@@ -282,7 +286,7 @@ export function App() {
           )}
         </main>
       )}
-      {showSettings && <SettingsDialog onSynced={afterSync} onClose={() => { setShowSettings(false); setSettingsVersion((v) => v + 1); }} />}
+      {showSettings && <SettingsDialog onSynced={afterSync} onColorsChanged={() => setColorsVersion((v) => v + 1)} onClose={() => { setShowSettings(false); setSettingsVersion((v) => v + 1); }} />}
     </div>
     </JournalContext.Provider>
   );

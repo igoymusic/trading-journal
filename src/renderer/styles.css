@@ -153,8 +153,8 @@ button.link { background: none; border: none; color: var(--blue); padding: 6px; 
 .cal-day.outside { opacity: 0.35; }
 .cal-day.traded { cursor: pointer; }
 .cal-day.traded:hover { filter: brightness(1.2); }
-.win-bg { background: rgba(38, 166, 154, 0.16); border-color: rgba(38, 166, 154, 0.55); }
-.loss-bg { background: rgba(239, 83, 80, 0.14); border-color: rgba(239, 83, 80, 0.5); }
+.win-bg { background: color-mix(in srgb, var(--green) 16%, transparent); border-color: color-mix(in srgb, var(--green) 55%, transparent); }
+.loss-bg { background: color-mix(in srgb, var(--red) 14%, transparent); border-color: color-mix(in srgb, var(--red) 50%, transparent); }
 .flat-bg { background: var(--panel-2); }
 .cal-week { background: var(--panel-2); }
 .cal-date { color: var(--muted); font-size: 12px; }
@@ -178,19 +178,19 @@ button.link { background: none; border: none; color: var(--blue); padding: 6px; 
 .journal-field.grow { flex: 1; min-width: 260px; }
 .journal-field select, .quick-add { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 5px 8px; font: inherit; font-size: 13px; min-width: 190px; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.chip { display: inline-flex; align-items: center; gap: 4px; background: rgba(239, 83, 80, 0.14); color: #f5a3a1; border: 1px solid rgba(239, 83, 80, 0.4); border-radius: 12px; padding: 2px 4px 2px 10px; font-size: 12px; }
+.chip { display: inline-flex; align-items: center; gap: 4px; background: color-mix(in srgb, var(--red) 14%, transparent); color: color-mix(in srgb, var(--red) 55%, #fff); border: 1px solid color-mix(in srgb, var(--red) 40%, transparent); border-radius: 12px; padding: 2px 4px 2px 10px; font-size: 12px; }
 .chip button { border: none; background: none; color: inherit; padding: 0 4px; font-size: 14px; line-height: 1; }
 .chips .chip-add { min-width: 0; border-style: dashed; color: var(--muted); }
-.chip.positive { background: rgba(38, 166, 154, 0.14); color: #7fd6cd; border-color: rgba(38, 166, 154, 0.45); }
+.chip.positive { background: color-mix(in srgb, var(--green) 14%, transparent); color: color-mix(in srgb, var(--green) 60%, #fff); border-color: color-mix(in srgb, var(--green) 45%, transparent); }
 .tags-button { padding: 3px 10px; font-size: 12px; }
 .tags-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 4px 0 10px; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); }
 @media (max-width: 760px) { .tags-panel { grid-template-columns: 1fr; } }
 .tag-group-title { font-size: 12px; font-weight: 600; margin-bottom: 6px; }
-.tag-group.positive .tag-group-title { color: #7fd6cd; }
-.tag-group.mistake .tag-group-title { color: #f5a3a1; }
+.tag-group.positive .tag-group-title { color: color-mix(in srgb, var(--green) 60%, #fff); }
+.tag-group.mistake .tag-group-title { color: color-mix(in srgb, var(--red) 55%, #fff); }
 .tag-toggle { padding: 2px 10px; font-size: 12px; border-radius: 12px; background: transparent; color: var(--muted); border: 1px solid var(--border); }
-.tag-group.positive .tag-toggle.on { background: rgba(38, 166, 154, 0.18); color: #7fd6cd; border-color: rgba(38, 166, 154, 0.6); }
-.tag-group.mistake .tag-toggle.on { background: rgba(239, 83, 80, 0.16); color: #f5a3a1; border-color: rgba(239, 83, 80, 0.55); }
+.tag-group.positive .tag-toggle.on { background: color-mix(in srgb, var(--green) 18%, transparent); color: color-mix(in srgb, var(--green) 60%, #fff); border-color: color-mix(in srgb, var(--green) 60%, transparent); }
+.tag-group.mistake .tag-toggle.on { background: color-mix(in srgb, var(--red) 16%, transparent); color: color-mix(in srgb, var(--red) 55%, #fff); border-color: color-mix(in srgb, var(--red) 55%, transparent); }
 .tag-toggle.add { border-style: dashed; }
 .stars { display: inline-flex; gap: 2px; color: #4a4e59; font-size: 20px; line-height: 1; }
 .stars.small { font-size: 13px; }
@@ -355,3 +355,7 @@ th.sorted { color: var(--text); }
 .custom-goal .goal-input { display: inline-flex; align-items: center; gap: 4px; }
 .custom-goal .goal-input input { width: 90px; }
 .custom-goal-name { width: 100%; }
+.color-group { margin-bottom: 10px; }
+.color-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px 12px; margin-top: 4px; }
+.modal .color-pick { display: flex; align-items: center; gap: 8px; cursor: pointer; margin: 2px 0; color: var(--text); }
+.modal .color-pick input[type=color] { width: 32px; height: 24px; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: 4px; background: none; flex: none; }

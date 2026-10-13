@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { type CustomGoal, describeGoal, GOAL_METRICS, type Goals } from '../core/goals';
 import type { PlaybookRule } from '../core/types';
-import type { SettingsView, SyncResult } from '../shared/api';
+import type { ColorScheme, SettingsView, SyncResult } from '../shared/api';
+import { applyColors, COLOR_LABELS, DEFAULT_COLORS } from './colors';
 import { BrokersSettings } from './BrokersSettings';
 import { NO_ACCOUNT } from './AccountPicker';
 import { SchwabSettings } from './SchwabSettings';
@@ -15,7 +16,7 @@ const TIME_ZONES = [
   ['America/Los_Angeles', 'Pacific'],
 ];
 
-export function SettingsDialog({ onClose, onSynced }: { onClose: () => void; onSynced: (result: SyncResult) => void }) {
+export function SettingsDialog({ onClose, onSynced, onColorsChanged }: { onClose: () => void; onSynced: (result: SyncResult) => void; onColorsChanged: () => void }) {
   const [settings, setSettings] = useState<SettingsView | null>(null);
   const [keyId, setKeyId] = useState('');
   const [secretKey, setSecretKey] = useState('');
@@ -108,6 +109,8 @@ export function SettingsDialog({ onClose, onSynced }: { onClose: () => void; onS
         </p>
         <button disabled={busy} onClick={removeImported}>Remove imported CSV trades</button>
         {removed && <p className="win">{removed}</p>}
+
+        {settings && <ColorsEditor initial={settings.colors} onChange={onColorsChanged} />}
 
         <h3>Time zone of your broker exports</h3>
         <p className="muted">thinkorswim exports times in your computer's time zone without saying which one.</p>
@@ -351,3 +354,42 @@ function AccountTrades({ onChanged }: { onChanged: () => void }) {
     </>
   );
 }
+
+/** Your colors for profits, losses, buttons and charts; each change shows right away. */
+function ColorsEditor({ initial, onChange }: { initial?: Partial<ColorScheme>; onChange: () => void }) {
+  const [custom, setCustom] = useState<Partial<ColorScheme>>(initial ?? {});
+  const value = { ...DEFAULT_COLORS, ...custom };
+  function save(next: Partial<ColorScheme>) {
+    setCustom(next);
+    applyColors(next);
+    window.journal.setColors(Object.keys(next).length ? next : null);
+    onChange();
+  }
+  const set = (key: keyof ColorScheme, color: string) => {
+    const next = { ...custom, [key]: color };
+    if (color.toLowerCase() === DEFAULT_COLORS[key].toLowerCase()) delete next[key];
+    save(next);
+  };
+  const groups = [...new Set(COLOR_LABELS.map((c) => c.group))];
+  return (
+    <>
+      <h3>Colors</h3>
+      <p className="muted">Pick your own colors. Changes show right away.</p>
+      {groups.map((g) => (
+        <div key={g} className="color-group">
+          <div className="muted small">{g}</div>
+          <div className="color-grid">
+            {COLOR_LABELS.filter((c) => c.group === g).map((c) => (
+              <label key={c.key} className="color-pick">
+                <input type="color" value={value[c.key]} onChange={(e) => set(c.key, e.target.value)} />
+                {c.label}
+              </label>
+            ))}
+          </div>
+        </div>
+      ))}
+      <button disabled={!Object.keys(custom).length} onClick={() => save({})}>Reset to default colors</button>
+    </>
+  );
+}
+
