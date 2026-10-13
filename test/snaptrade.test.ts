@@ -82,3 +82,20 @@ describe('the same fill from two sources', () => {
     expect(buildTrades([tos])[0].account).toBeUndefined();
   });
 });
+
+describe('index prices from the ETF', async () => {
+  const { indexProxy, parseFredCsv, ratioDay } = await import('../src/core/indexProxy');
+  it('reads FRED closes, skipping missing days', () => {
+    const closes = parseFredCsv('observation_date,SP500\n2026-10-08,6790.10\n2026-10-09,6781.25\n2026-10-12,.\n');
+    expect([...closes]).toEqual([['2026-10-08', 6790.1], ['2026-10-09', 6781.25]]);
+    // Today's close isn't published yet, so the last one sets the ratio.
+    expect(ratioDay('2026-10-12', closes)).toBe('2026-10-09');
+    expect(ratioDay('2026-10-08', closes)).toBe('2026-10-08');
+    expect(ratioDay('2026-10-01', closes)).toBeUndefined();
+  });
+  it('charts SPXW and XSP from SPY', () => {
+    expect(indexProxy('spxw')).toMatchObject({ etf: 'SPY', scale: 1 });
+    expect(indexProxy('XSP')?.scale).toBe(0.1);
+    expect(indexProxy('SPY')).toBeUndefined();
+  });
+});

@@ -2,6 +2,7 @@
 // spans, and the underlying's exact price at every fill. Results are cached in the database.
 
 import { AlpacaClient, type Bar, occSymbol } from '../core/alpaca';
+import { type IndexProxy, indexProxy, parseFredCsv, ratioDay } from '../core/indexProxy';
 import { type LevelPrice, priceLevels } from '../core/optionLevels';
 import { zonedToUtcMillis } from '../core/time';
 import type { PriceLevel, Trade } from '../core/types';
@@ -34,9 +35,25 @@ export async function buildTradeChart(trade: Trade, db: JournalDb, settings: Set
   const creds = settings.alpacaCredentials();
   if (!creds) return { status: 'needs-key' };
   const client = new AlpacaClient(creds, fetchFn as any, process.env.TJ_ALPACA_BASE_URL || undefined);
-  const symbol = trade.underlying;
   const tz = settings.timeZone;
   const now = Date.now();
+  // Index options chart the tracking ETF, scaled to the index each day.
+  const proxy = indexProxy(trade.underlying);
+  const symbol = proxy?.etf ?? trade.underlying;
+  const ratios = new Map<string, number>();
+  if (proxy) {
+    for (const day of tradingDays(trade)) {
+      const r = await indexRatio(proxy, day, client, db, fetchFn ?? fetch).catch(() => undefined);
+      if (r) ratios.set(day, r);
+    }
+    if (!ratios.size) return { status: 'error', message: `Couldn't get ${trade.underlying}'s daily closes to estimate its prices from ${proxy.etf}.` };
+  }
+  const nyDay = (ms: number) => new Date(ms).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+  const ratioAt = (ms: number) => (proxy ? ratios.get(nyDay(ms)) ?? [...ratios.values()][0] : 1);
+  const scale = (b: Bar): Bar => {
+    const r = ratioAt(b.time);
+    return r === 1 ? b : { ...b, open: b.open * r, high: b.high * r, low: b.low * r, close: b.close * r };
+  };
 
   const bars: Bar[] = [];
   let feed = 'sip';
@@ -71,14 +88,54 @@ export async function buildTradeChart(trade: Trade, db: JournalDb, settings: Set
     if (!price && fill.timeExact !== false && fillMillis < now - FREE_PLAN_DELAY_MS) {
       const print = await client.lastTradeAtOrBefore(symbol, fillMillis);
       if (print) {
-        db.saveFillPrice(fill.id, print.price, print.time, print.feed);
-        price = { price: print.price, tradeTime: print.time, feed: print.feed };
+        const p = Math.round(print.price * ratioAt(fillMillis) * 100) / 100;
+        db.saveFillPrice(fill.id, p, print.time, proxy ? `${print.feed}:${proxy.etf}` : print.feed);
+        price = { price: p, tradeTime: print.time, feed: print.feed };
       }
     }
     fills.push({ fillId: fill.id, time: fillMillis, underlyingPrice: price?.price, priceTime: price?.tradeTime });
   }
 
-  return { status: 'ok', symbol, timeZone: tz, feed, bars, fills };
+  return {
+    status: 'ok', symbol: proxy ? trade.underlying : symbol, timeZone: tz, feed, bars: proxy ? bars.map(scale) : bars, fills,
+    ...(proxy ? { estimatedFrom: proxy.etf } : {}),
+  };
+}
+
+/** The index's daily closes from FRED (free, no account), cached; refetched when a newer day is needed. */
+async function indexCloses(series: string, day: string, db: JournalDb, fetchFn: typeof fetch): Promise<Map<string, number>> {
+  const key = `fred:${series}`;
+  const cached = db.getMeta(key);
+  let closes = cached ? new Map<string, number>(JSON.parse(cached).closes) : new Map<string, number>();
+  const fetchedAt = cached ? JSON.parse(cached).fetchedAt as number : 0;
+  const newest = [...closes.keys()].sort().pop() ?? '';
+  if (newest < day && Date.now() - fetchedAt > 60 * 60_000) {
+    const base = process.env.TJ_FRED_URL || 'https://fred.stlouisfed.org/graph/fredgraph.csv';
+    const res = await fetchFn(`${base}?id=${encodeURIComponent(series)}`);
+    if (res.ok) {
+      closes = parseFredCsv(await res.text());
+      db.setMeta(key, JSON.stringify({ fetchedAt: Date.now(), closes: [...closes] }));
+    }
+  }
+  return closes;
+}
+
+/** Index ÷ ETF at the close of the latest published day on or before `day`. */
+async function indexRatio(proxy: IndexProxy, day: string, client: AlpacaClient, db: JournalDb, fetchFn: typeof fetch): Promise<number | undefined> {
+  const closes = await indexCloses(proxy.fredSeries, day, db, fetchFn);
+  const ref = ratioDay(day, closes);
+  if (!ref) return undefined;
+  const cacheKey = `ratio:${proxy.fredSeries}:${proxy.etf}:${ref}`;
+  const cached = db.getMeta(cacheKey);
+  if (cached) return Number(cached) * proxy.scale;
+  // The ETF's last regular-session minute that day.
+  const close = zonedToUtcMillis(`${ref}T16:00:00`, 'America/New_York');
+  const { bars } = await client.minuteBars(proxy.etf, close - 15 * 60_000, close);
+  const last = bars.filter((b) => b.time < close).pop();
+  if (!last) return undefined;
+  const ratio = closes.get(ref)! / last.close;
+  db.setMeta(cacheKey, String(ratio));
+  return ratio * proxy.scale;
 }
 
 /** Alpaca's option history starts here. */

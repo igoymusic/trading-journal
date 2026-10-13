@@ -37,7 +37,11 @@ export interface FillPoint {
 export type TradeChart =
   | { status: 'needs-key' }
   | { status: 'error'; message: string }
-  | { status: 'ok'; symbol: string; timeZone: string; feed: string; bars: Bar[]; fills: FillPoint[] };
+  | {
+    status: 'ok'; symbol: string; timeZone: string; feed: string; bars: Bar[]; fills: FillPoint[];
+    /** Set when the index's prices are estimated from this ETF (e.g. SPX from SPY). */
+    estimatedFrom?: string;
+  };
 
 /** Option prices at a trade's stop and target lines, in the same order as the lines. */
 export interface LevelPrices {

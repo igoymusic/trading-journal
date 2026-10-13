@@ -249,6 +249,12 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
               prices={levelPrices}
             />
           )}
+          {chart?.status === 'ok' && chart.estimatedFrom && (
+            <div className="muted small">
+              ≈ {chart.symbol} has no free minute data, so this chart is {chart.estimatedFrom} scaled to {chart.symbol} by each
+              day's closing prices. Expect it within a point or two of the real index.
+            </div>
+          )}
           {chart?.status === 'ok' && chart.feed === 'iex' && (
             <div className="muted small">Some prices come from the IEX exchange only, so they can differ by a cent or two.</div>
           )}

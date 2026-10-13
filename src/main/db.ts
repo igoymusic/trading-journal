@@ -129,6 +129,14 @@ export class JournalDb {
     return added;
   }
 
+  getMeta(key: string): string | undefined {
+    return (this.db.prepare('SELECT value FROM meta WHERE key = ?').get(key) as { value: string } | undefined)?.value;
+  }
+
+  setMeta(key: string, value: string) {
+    this.db.prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
+  }
+
   /** Deletes every fill that came from one source, e.g. all thinkorswim CSV imports. Returns how many. */
   removeFills(broker: Fill['broker']): number {
     return Number(this.db.prepare('DELETE FROM fills WHERE broker = ?').run(broker).changes);
