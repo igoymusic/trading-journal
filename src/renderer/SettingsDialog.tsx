@@ -68,7 +68,8 @@ export function SettingsDialog({ onClose, onSynced }: { onClose: () => void; onS
         </div>
 
         <BrokersSettings onSynced={onSynced} />
-        <SchwabSettings onSynced={onSynced} />
+        <SchwabSettings slot="trading" onSynced={onSynced} />
+        <SchwabSettings slot="marketData" onSynced={onSynced} />
 
         <h3>Market data (Alpaca)</h3>
         <p className="muted">

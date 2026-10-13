@@ -12,6 +12,7 @@ import type { Goals } from '../core/goals';
 import { dayChartTrade } from '../core/dayChart';
 import { BrokerSync } from './brokerSync';
 import { SchwabSync } from './schwab';
+import type { SchwabSlot } from './settings';
 import { JournalDb } from './db';
 import { moveDataFromOldName } from './migrate';
 import { buildTradeChart, levelOptionPrices } from './market';
@@ -21,6 +22,7 @@ let db: JournalDb;
 let settings: Settings;
 let brokers: BrokerSync;
 let schwab: SchwabSync;
+let schwabData: SchwabSync;
 
 function importFile(file: string): ImportResult {
   const { fills, skipped, unmatchedFees } = parseTosStatement(readFileSync(file, 'utf8'));
@@ -73,6 +75,11 @@ async function createWindow() {
   }
 }
 
+/** Index charts come from the Market Data app when it's signed in, else the trading one (if it has market data). */
+function chartSource() {
+  return schwabData?.status().signedIn ? schwabData : schwab;
+}
+
 moveDataFromOldName(app.getPath('appData'), app.getPath('userData'));
 
 app.whenReady().then(async () => {
@@ -81,7 +88,8 @@ app.whenReady().then(async () => {
   db = new JournalDb(path.join(app.getPath('userData'), 'journal.sqlite'));
   settings = new Settings(path.join(app.getPath('userData'), 'settings.json'));
   brokers = new BrokerSync(db, settings);
-  schwab = new SchwabSync(db, settings);
+  schwab = new SchwabSync(db, settings, 'trading');
+  schwabData = new SchwabSync(db, settings, 'marketData');
   brokers.schwab = schwab;
   brokers.debugFile = path.join(app.getPath('userData'), 'sync-sample.json');
   if (process.env.TJ_IMPORT_FILE) importFile(process.env.TJ_IMPORT_FILE);
@@ -107,7 +115,7 @@ app.whenReady().then(async () => {
     const day = dayChartTrade(buildTrades(db.allFills()), date, underlying);
     if (!day) return { status: 'error', message: 'No trades on this day.' };
     try {
-      return await buildTradeChart(day.trade, db, settings, undefined, schwab);
+      return await buildTradeChart(day.trade, db, settings, undefined, chartSource());
     } catch (err) {
       return { status: 'error', message: (err as Error).message };
     }
@@ -116,7 +124,7 @@ app.whenReady().then(async () => {
     const trade = buildTrades(db.allFills()).find((t) => t.id === tradeId);
     if (!trade) return { status: 'error', message: 'Trade not found.' };
     try {
-      return await buildTradeChart(trade, db, settings, undefined, schwab);
+      return await buildTradeChart(trade, db, settings, undefined, chartSource());
     } catch (err) {
       return { status: 'error', message: (err as Error).message };
     }
@@ -165,15 +173,17 @@ app.whenReady().then(async () => {
   ipcMain.handle('broker:sync', () => brokers.sync());
   ipcMain.handle('broker:syncIfDue', () => (brokers.dueToday() ? brokers.sync() : null));
   ipcMain.handle('broker:disconnect', () => brokers.disconnect());
-  ipcMain.handle('schwab:status', () => schwab.status());
-  ipcMain.handle('schwab:saveApp', (_event, app: { appKey: string; secret: string; callbackUrl: string } | null) => schwab.saveApp(app));
-  ipcMain.handle('schwab:connect', async (event) => {
-    const connected = await schwab.connect(BrowserWindow.fromWebContents(event.sender));
+  const slot = (s: SchwabSlot) => (s === 'marketData' ? schwabData : schwab);
+  ipcMain.handle('schwab:status', (_event, s: SchwabSlot) => slot(s).status());
+  ipcMain.handle('schwab:saveApp', (_event, s: SchwabSlot, app: { appKey: string; secret: string; callbackUrl: string } | null) => slot(s).saveApp(app));
+  ipcMain.handle('schwab:connect', async (event, s: SchwabSlot) => {
+    const connected = await slot(s).connect(BrowserWindow.fromWebContents(event.sender));
     if (!connected) return null;
+    if (s === 'marketData') return { added: 0, accounts: 0, errors: [] };
     settings.schwabLastSync = undefined;
     return brokers.sync();
   });
-  ipcMain.handle('schwab:disconnect', () => schwab.disconnect(true));
+  ipcMain.handle('schwab:disconnect', (_event, s: SchwabSlot) => slot(s).disconnect(true));
   ipcMain.handle('broker:setRelayUrl', (_event, url: string) => { settings.relayUrl = url; });
   ipcMain.handle('settings:setGoals', (_event, goals: Goals) => { settings.goals = goals; });
   ipcMain.handle('settings:setTimeZone', (_event, tz: string) => { settings.timeZone = tz; });

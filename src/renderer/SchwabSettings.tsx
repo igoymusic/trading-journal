@@ -1,11 +1,25 @@
 import { useEffect, useState } from 'react';
-import type { SchwabStatus, SyncResult } from '../shared/api';
+import type { SchwabSlot, SchwabStatus, SyncResult } from '../shared/api';
 import { describeSync } from './BrokersSettings';
 
 const clean = (err: unknown) => (err as Error).message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
 
-/** Settings section for your own Schwab developer app: exact fill times and real index prices. */
-export function SchwabSettings({ onSynced }: { onSynced: (result: SyncResult) => void }) {
+const SLOTS: Record<SchwabSlot, { title: string; about: string; product: string }> = {
+  trading: {
+    title: 'Schwab trades (exact times)',
+    about: 'Optional, for Schwab accounts. Gives the exact second each trade filled, which SnapTrade can\'t get from Schwab. Read-only.',
+    product: 'Accounts and Trading Production',
+  },
+  marketData: {
+    title: 'Schwab market data (real SPX charts)',
+    about: 'Optional. Charts SPX and SPXW trades on the real index instead of an estimate from SPY.',
+    product: 'Market Data Production',
+  },
+};
+
+/** Settings section for one of your own Schwab developer apps. */
+export function SchwabSettings({ slot, onSynced }: { slot: SchwabSlot; onSynced: (result: SyncResult) => void }) {
+  const info = SLOTS[slot];
   const [status, setStatus] = useState<SchwabStatus | null>(null);
   const [appKey, setAppKey] = useState('');
   const [secret, setSecret] = useState('');
@@ -14,7 +28,7 @@ export function SchwabSettings({ onSynced }: { onSynced: (result: SyncResult) =>
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
   async function load() {
-    const s = await window.journal.schwabStatus();
+    const s = await window.journal.schwabStatus(slot);
     setStatus(s);
     if (s.callbackUrl) setCallbackUrl(s.callbackUrl);
   }
@@ -24,9 +38,9 @@ export function SchwabSettings({ onSynced }: { onSynced: (result: SyncResult) =>
     setBusy('connect');
     setMessage(null);
     try {
-      const result = await window.journal.connectSchwab();
+      const result = await window.journal.connectSchwab(slot);
       if (result) {
-        setMessage({ ok: !result.errors.length, text: `Signed in to Schwab. ${describeSync(result)}` });
+        setMessage({ ok: !result.errors.length, text: slot === 'trading' ? `Signed in to Schwab. ${describeSync(result)}` : 'Signed in to Schwab. SPX charts now use the real index.' });
         onSynced(result);
       }
     } catch (err) {
@@ -39,7 +53,7 @@ export function SchwabSettings({ onSynced }: { onSynced: (result: SyncResult) =>
   async function save() {
     setMessage(null);
     try {
-      await window.journal.saveSchwabApp({ appKey, secret, callbackUrl });
+      await window.journal.saveSchwabApp(slot, { appKey, secret, callbackUrl });
       setAppKey('');
       setSecret('');
       await load();
@@ -51,7 +65,7 @@ export function SchwabSettings({ onSynced }: { onSynced: (result: SyncResult) =>
 
   async function remove() {
     if (!confirm('Remove your Schwab app keys and sign-in from Moon Journal? Trades already in your journal stay.')) return;
-    await window.journal.disconnectSchwab();
+    await window.journal.disconnectSchwab(slot);
     setMessage({ ok: true, text: 'Schwab keys removed.' });
     load();
   }
@@ -59,11 +73,8 @@ export function SchwabSettings({ onSynced }: { onSynced: (result: SyncResult) =>
   const expires = status?.signInExpires ? new Date(status.signInExpires) : null;
   return (
     <>
-      <h3>Schwab (exact times)</h3>
-      <p className="muted">
-        Optional, for Schwab accounts. Schwab's own connection gives the exact second each trade filled, and real
-        SPX prices for SPX and SPXW charts. It uses your own app from developer.schwab.com and is read-only.
-      </p>
+      <h3>{info.title}</h3>
+      <p className="muted">{info.about}</p>
       {status?.configured ? (
         <>
           <p>
@@ -73,9 +84,8 @@ export function SchwabSettings({ onSynced }: { onSynced: (result: SyncResult) =>
           </p>
           {status.signedIn && status.marketDataOnly && (
             <p className="muted small">
-              Your Schwab app only has Market Data, so it gives real SPX charts but not trade times. For exact times, add
-              the "Accounts and Trading Production" product to your app on developer.schwab.com, then sign in again here
-              once Schwab approves it.
+              This app only has Market Data, so it can't read your trades. Remove it here and enter your app with
+              Accounts and Trading Production instead; put the Market Data app in the section below.
             </p>
           )}
           <div className="row broker-actions">
@@ -88,7 +98,7 @@ export function SchwabSettings({ onSynced }: { onSynced: (result: SyncResult) =>
         </>
       ) : (
         <>
-          <p className="muted small">Copy these from your app on developer.schwab.com (Dashboard, View Details). They're stored encrypted on this computer.</p>
+          <p className="muted small">Copy these from your app with <b>{info.product}</b> on developer.schwab.com (Dashboard, View Details). They're stored encrypted on this computer.</p>
           <label>App Key<input value={appKey} onChange={(e) => setAppKey(e.target.value)} spellCheck={false} autoComplete="off" /></label>
           <label>Secret<input type="password" value={secret} onChange={(e) => setSecret(e.target.value)} spellCheck={false} autoComplete="off" /></label>
           <label>Callback URL<input value={callbackUrl} onChange={(e) => setCallbackUrl(e.target.value)} spellCheck={false} /></label>

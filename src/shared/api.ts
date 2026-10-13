@@ -66,6 +66,9 @@ export interface SyncResult {
   retimed?: number;
 }
 
+/** Schwab allows one app per product: one reads your accounts, the other market data. */
+export type SchwabSlot = 'trading' | 'marketData';
+
 export interface SchwabStatus {
   /** App Key, Secret and Callback URL are saved. */
   configured: boolean;
@@ -127,12 +130,12 @@ export interface JournalApi {
   syncBrokersIfDue(): Promise<SyncResult | null>;
   disconnectBrokers(): Promise<void>;
   setRelayUrl(url: string): Promise<void>;
-  schwabStatus(): Promise<SchwabStatus>;
-  /** Saves (or with null, forgets) your Schwab developer app. */
-  saveSchwabApp(app: { appKey: string; secret: string; callbackUrl: string } | null): Promise<void>;
-  /** Opens Schwab's sign-in, then syncs. Null if the window was closed first. */
-  connectSchwab(): Promise<SyncResult | null>;
-  disconnectSchwab(): Promise<void>;
+  schwabStatus(slot: SchwabSlot): Promise<SchwabStatus>;
+  /** Saves (or with null, forgets) one of your Schwab developer apps. */
+  saveSchwabApp(slot: SchwabSlot, app: { appKey: string; secret: string; callbackUrl: string } | null): Promise<void>;
+  /** Opens Schwab's sign-in, then (for the trading app) syncs. Null if the window was closed first. */
+  connectSchwab(slot: SchwabSlot): Promise<SyncResult | null>;
+  disconnectSchwab(slot: SchwabSlot): Promise<void>;
   setHiddenAccounts(names: string[]): Promise<void>;
   setReportsLayout(layout: { columns: string[][]; collapsed: string[] }): Promise<void>;
   saveTradeJournal(tradeId: string, journal: TradeJournal): Promise<void>;

@@ -7,7 +7,7 @@ import type { Bar } from '../core/alpaca';
 import { type SchwabOrder, type SchwabTransaction, transactionsToFills } from '../core/schwab';
 import type { SchwabStatus, SyncResult } from '../shared/api';
 import type { JournalDb } from './db';
-import type { SchwabApp, Settings } from './settings';
+import type { SchwabApp, SchwabSlot, Settings } from './settings';
 
 const API = process.env.TJ_SCHWAB_BASE_URL || 'https://api.schwabapi.com';
 const DAY = 86_400_000;
@@ -21,19 +21,19 @@ const OVERLAP_DAYS = 7;
 const ORDER_DAYS = 59;
 
 export class SchwabSync {
-  constructor(private db: JournalDb, private settings: Settings, private fetchFn: typeof fetch = fetch) {}
+  constructor(private db: JournalDb, private settings: Settings, readonly slot: SchwabSlot, private fetchFn: typeof fetch = fetch) {}
 
   status(): SchwabStatus {
-    const app = this.settings.schwabApp();
-    const signedInAt = this.settings.schwabSignedInAt;
+    const app = this.settings.schwabApp(this.slot);
+    const signedInAt = this.settings.schwabSignedInAt(this.slot);
     const expires = signedInAt ? Date.parse(signedInAt) + SIGN_IN_DAYS * DAY : undefined;
     return {
       configured: app !== null,
       callbackUrl: app?.callbackUrl,
-      signedIn: this.settings.schwabTokens() !== null && !!expires && expires > Date.now(),
+      signedIn: this.settings.schwabTokens(this.slot) !== null && !!expires && expires > Date.now(),
       signInExpires: expires ? new Date(expires).toISOString() : undefined,
-      lastSync: this.settings.schwabLastSync,
-      marketDataOnly: this.settings.schwabMarketDataOnly,
+      lastSync: this.slot === 'trading' ? this.settings.schwabLastSync : undefined,
+      marketDataOnly: this.slot === 'trading' && this.settings.schwabMarketDataOnly,
     };
   }
 
@@ -42,17 +42,17 @@ export class SchwabSync {
       const url = new URL(app.callbackUrl.trim());
       if (url.protocol !== 'https:') throw new Error('The callback URL must start with https://, the same as on your Schwab app.');
     }
-    this.settings.setSchwabApp(app);
+    this.settings.setSchwabApp(this.slot, app);
   }
 
   /** Opens Schwab's sign-in page and keeps the tokens it hands back. */
   async connect(parent: BrowserWindow | null): Promise<boolean> {
-    const app = this.settings.schwabApp();
+    const app = this.settings.schwabApp(this.slot);
     if (!app) throw new Error('Enter your Schwab App Key, Secret and Callback URL first.');
     const code = await this.signIn(app, parent);
     if (!code) return false;
     const tokens = await this.tokenRequest(app, { grant_type: 'authorization_code', code, redirect_uri: app.callbackUrl });
-    this.settings.setSchwabTokens(tokens, true);
+    this.settings.setSchwabTokens(this.slot, tokens, true);
     return true;
   }
 
@@ -67,7 +67,7 @@ export class SchwabSync {
       }
     };
     // A private browser session, so signing in never touches anything else.
-    const ses = session.fromPartition('schwab-sign-in');
+    const ses = session.fromPartition(`schwab-sign-in-${this.slot}`);
     return new Promise((resolve) => {
       const win = new BrowserWindow({
         parent: parent ?? undefined, width: 520, height: 760, title: 'Sign in to Schwab', autoHideMenuBar: true,
@@ -117,16 +117,16 @@ export class SchwabSync {
 
   /** A working access token, refreshing it (every 30 minutes) as needed. */
   private async accessToken(): Promise<string> {
-    const app = this.settings.schwabApp();
-    const tokens = this.settings.schwabTokens();
+    const app = this.settings.schwabApp(this.slot);
+    const tokens = this.settings.schwabTokens(this.slot);
     if (!app || !tokens || !this.status().signedIn) throw new Error('Schwab sign-in has expired. Open Settings and press "Sign in to Schwab".');
     if (tokens.accessToken && (tokens.accessExpires ?? 0) > Date.now()) return tokens.accessToken;
     try {
       const fresh = await this.tokenRequest(app, { grant_type: 'refresh_token', refresh_token: tokens.refreshToken });
-      this.settings.setSchwabTokens(fresh);
+      this.settings.setSchwabTokens(this.slot, fresh);
       return fresh.accessToken;
     } catch {
-      this.settings.setSchwabTokens(null);
+      this.settings.setSchwabTokens(this.slot, null);
       throw new Error('Schwab sign-in has expired. Open Settings and press "Sign in to Schwab".');
     }
   }
@@ -218,8 +218,8 @@ export class SchwabSync {
 
   /** Forgets the sign-in; with `everything`, the app key and secret too. */
   disconnect(everything: boolean) {
-    if (everything) this.settings.setSchwabApp(null);
-    else this.settings.setSchwabTokens(null);
-    session.fromPartition('schwab-sign-in').clearStorageData().catch(() => {});
+    if (everything) this.settings.setSchwabApp(this.slot, null);
+    else this.settings.setSchwabTokens(this.slot, null);
+    session.fromPartition(`schwab-sign-in-${this.slot}`).clearStorageData().catch(() => {});
   }
 }

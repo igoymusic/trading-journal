@@ -115,12 +115,13 @@ export function App() {
     setSyncing(false);
   }
   useEffect(() => {
-    Promise.all([window.journal.brokerStatus(), window.journal.schwabStatus()]).then(([s, schwab]) => {
+    Promise.all([window.journal.brokerStatus(), window.journal.schwabStatus('trading'), window.journal.schwabStatus('marketData')]).then(([s, schwab, data]) => {
       const connected = s.connected || schwab.signedIn;
       setBrokerConnected(connected);
       if (connected) syncBrokers(false);
       // Schwab's sign-in only lasts a week, so say when it needs doing again.
-      if (schwab.configured && !schwab.signedIn) setNotice('Your Schwab sign-in has run out (Schwab makes it last 7 days). Open Settings and press "Sign in to Schwab" for exact trade times.');
+      const expired = [schwab.configured && !schwab.signedIn && 'Trading', data.configured && !data.signedIn && 'Market Data'].filter(Boolean);
+      if (expired.length) setNotice(`Your Schwab sign-in has run out for the ${expired.join(' and ')} app (Schwab makes it last 7 days). Open Settings to sign in again.`);
     });
   }, [settingsVersion]);
 

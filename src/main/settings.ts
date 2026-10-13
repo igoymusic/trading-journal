@@ -5,6 +5,7 @@ import { safeStorage } from 'electron';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import type { AlpacaCredentials } from '../core/alpaca';
 import type { Goals } from '../core/goals';
+import type { SchwabSlot } from '../shared/api';
 
 interface StoredSettings {
   timeZone: string;
@@ -24,8 +25,14 @@ interface StoredSettings {
   /** Base64 of the encrypted "keyId\nsecretKey". */
   alpaca?: string;
   /** Your own Schwab developer app: key and secret encrypted together, plus its callback address. */
-  schwab?: { app: string; callbackUrl: string; tokens?: string; signedInAt?: string; lastSync?: string; marketDataOnly?: boolean };
+  schwab?: StoredSchwab;
+  /** A second Schwab app used only for market data (Schwab allows one app per product). */
+  schwabData?: StoredSchwab;
 }
+
+interface StoredSchwab { app: string; callbackUrl: string; tokens?: string; signedInAt?: string; lastSync?: string; marketDataOnly?: boolean }
+
+export type { SchwabSlot };
 
 export interface SchwabApp { appKey: string; secret: string; callbackUrl: string }
 export interface SchwabTokens { refreshToken: string; accessToken?: string; accessExpires?: number }
@@ -41,6 +48,8 @@ export class Settings {
 
   constructor(private file: string) {
     this.data = existsSync(file) ? { ...DEFAULTS, ...JSON.parse(readFileSync(file, 'utf8')) } : { ...DEFAULTS };
+    // A market-data-only app saved in the trading slot by an earlier version moves to its own slot.
+    if (this.data.schwab?.marketDataOnly && !this.data.schwabData) this.schwabMarketDataOnly = true;
   }
 
   private save() {
@@ -177,52 +186,64 @@ export class Settings {
     return safeStorage.encryptString(plain).toString('base64');
   }
 
-  /** The Schwab developer app entered in Settings, or null. */
-  schwabApp(): SchwabApp | null {
-    const s = this.data.schwab;
+  private schwab(slot: SchwabSlot): StoredSchwab | undefined {
+    return slot === 'trading' ? this.data.schwab : this.data.schwabData;
+  }
+
+  /** The Schwab developer app entered in Settings for this slot, or null. */
+  schwabApp(slot: SchwabSlot): SchwabApp | null {
+    const s = this.schwab(slot);
     const plain = s && this.decrypt(s.app);
     if (!s || !plain) return null;
     const [appKey, secret] = plain.split('\n');
     return appKey && secret ? { appKey, secret, callbackUrl: s.callbackUrl } : null;
   }
 
-  setSchwabApp(app: SchwabApp | null) {
-    if (!app) delete this.data.schwab;
-    else this.data.schwab = { app: this.encrypt(`${app.appKey.trim()}\n${app.secret.trim()}`), callbackUrl: app.callbackUrl.trim() };
+  setSchwabApp(slot: SchwabSlot, app: SchwabApp | null) {
+    const stored = app ? { app: this.encrypt(`${app.appKey.trim()}\n${app.secret.trim()}`), callbackUrl: app.callbackUrl.trim() } : undefined;
+    if (slot === 'trading') this.data.schwab = stored;
+    else this.data.schwabData = stored;
     this.save();
   }
 
-  schwabTokens(): SchwabTokens | null {
-    const t = this.data.schwab?.tokens;
+  schwabTokens(slot: SchwabSlot): SchwabTokens | null {
+    const t = this.schwab(slot)?.tokens;
     const plain = t && this.decrypt(t);
     return plain ? JSON.parse(plain) : null;
   }
 
   /** Saves new tokens; `signedIn` marks a fresh sign-in, which starts Schwab's 7-day clock. */
-  setSchwabTokens(tokens: SchwabTokens | null, signedIn = false) {
-    if (!this.data.schwab) return;
+  setSchwabTokens(slot: SchwabSlot, tokens: SchwabTokens | null, signedIn = false) {
+    const s = this.schwab(slot);
+    if (!s) return;
     if (!tokens) {
-      delete this.data.schwab.tokens;
-      delete this.data.schwab.signedInAt;
+      delete s.tokens;
+      delete s.signedInAt;
     } else {
-      this.data.schwab.tokens = this.encrypt(JSON.stringify(tokens));
-      if (signedIn) this.data.schwab.signedInAt = new Date().toISOString();
+      s.tokens = this.encrypt(JSON.stringify(tokens));
+      if (signedIn) s.signedInAt = new Date().toISOString();
     }
     this.save();
   }
 
-  get schwabSignedInAt() {
-    return this.data.schwab?.signedInAt;
+  schwabSignedInAt(slot: SchwabSlot) {
+    return this.schwab(slot)?.signedInAt;
   }
 
-  /** True when the Schwab app can read market data but not accounts. */
+  /** True when the trading slot's app turned out to have only market data. */
   get schwabMarketDataOnly() {
     return !!this.data.schwab?.marketDataOnly;
   }
 
   set schwabMarketDataOnly(v: boolean) {
     if (!this.data.schwab) return;
-    this.data.schwab.marketDataOnly = v || undefined;
+    if (v && !this.data.schwabData) {
+      // It's a market data app: move it to that slot, signed in as it is.
+      this.data.schwabData = { ...this.data.schwab, marketDataOnly: undefined, lastSync: undefined };
+      delete this.data.schwab;
+    } else {
+      this.data.schwab.marketDataOnly = v || undefined;
+    }
     this.save();
   }
 
