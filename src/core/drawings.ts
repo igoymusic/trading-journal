@@ -48,7 +48,12 @@ export type Drawing = DrawingBase & (
   | { kind: 'position'; side: 'long' | 'short'; a: ChartPoint; end: number; stop: number; target: number; stopFill?: string; targetFill?: string }
   /** Two parallel lines: a-b, and the same line moved by `offset` in price. */
   | { kind: 'channel'; a: ChartPoint; b: ChartPoint; offset: number }
-  | { kind: 'path'; points: ChartPoint[]; closed?: boolean }
+  /** Connected points; `brush` is freehand (smoothed, moved as a whole). */
+  | { kind: 'path'; points: ChartPoint[]; closed?: boolean; brush?: boolean }
+  /** A thick filled arrow from `a` to `b`, with optional text at its tail. */
+  | { kind: 'arrow'; a: ChartPoint; b: ChartPoint; text?: string }
+  /** A small arrow icon pointing at a spot. */
+  | { kind: 'mark'; a: ChartPoint; dir: 'up' | 'down' | 'left' | 'right'; text?: string }
   | { kind: 'ellipse'; a: ChartPoint; b: ChartPoint }
 );
 
@@ -59,7 +64,7 @@ export function drawingPoints(d: Drawing): ChartPoint[] {
   switch (d.kind) {
     case 'hline': return [{ time: d.from ?? 0, price: d.price }];
     case 'vline': return [{ time: d.time, price: 0 }];
-    case 'text': return [d.a];
+    case 'text': case 'mark': return [d.a];
     case 'path': return d.points;
     case 'position': return [d.a, { time: d.end, price: d.a.price }];
     default: return [d.a, d.b];
@@ -75,8 +80,8 @@ export function drawingStart(d: Drawing): number | null {
 /** The points you can grab to reshape a drawing. */
 export function drawingHandles(d: Drawing): { key: string; point: ChartPoint }[] {
   switch (d.kind) {
-    case 'hline': case 'vline': case 'text': return [];
-    case 'path': return d.points.map((point, i) => ({ key: String(i), point }));
+    case 'hline': case 'vline': case 'text': case 'mark': return [];
+    case 'path': return d.brush ? [] : d.points.map((point, i) => ({ key: String(i), point }));
     case 'position': return [
       { key: 'a', point: d.a },
       { key: 'stop', point: { time: d.a.time, price: d.stop } },
@@ -104,7 +109,7 @@ export function moveHandle(d: Drawing, key: string, p: ChartPoint): Drawing {
     case 'channel':
       if (key === 'offset') return { ...d, offset: p.price - (d.a.price + d.b.price) / 2 };
       return { ...d, [key]: p };
-    case 'hline': case 'vline': case 'text': return d;
+    case 'hline': case 'vline': case 'text': case 'mark': return d;
     default: return { ...d, [key]: p };
   }
 }
@@ -131,7 +136,7 @@ export function shiftDrawing(d: Drawing, dt: number, dp: number): Drawing {
   switch (d.kind) {
     case 'hline': return { ...d, price: d.price + dp, ...(d.from !== undefined ? { from: d.from + dt } : {}) };
     case 'vline': return { ...d, time: d.time + dt };
-    case 'text': return { ...d, a: move(d.a) };
+    case 'text': case 'mark': return { ...d, a: move(d.a) };
     case 'path': return { ...d, points: d.points.map(move) };
     case 'position': return { ...d, a: move(d.a), end: d.end + dt, stop: d.stop + dp, target: d.target + dp };
     default: return { ...d, a: move(d.a), b: move(d.b) };
@@ -192,6 +197,7 @@ const plainSymbol = (s: unknown) => (typeof s === 'string' && s ? s.split(':').p
 const TREND = new Set(['LineToolTrendLine', 'LineToolRay', 'LineToolExtended', 'LineToolArrow', 'LineToolInfoLine', 'LineToolTrendAngle', 'LineToolCrossLine']);
 const TEXT = new Set(['LineToolText', 'LineToolTextAbsolute', 'LineToolNote', 'LineToolNoteAbsolute', 'LineToolCallout', 'LineToolBalloon', 'LineToolComment', 'LineToolSignpost', 'LineToolFlagMark', 'LineToolPriceNote']);
 const PATH = new Set(['LineToolPath', 'LineToolPolyline', 'LineToolBrush', 'LineToolHighlighter', 'LineToolTriangle']);
+const MARKS: Record<string, 'up' | 'down' | 'left' | 'right'> = { LineToolArrowMarkUp: 'up', LineToolArrowMarkDown: 'down', LineToolArrowMarkLeft: 'left', LineToolArrowMarkRight: 'right' };
 const FIB = new Set(['LineToolFibRetracement', 'LineToolFibChannel', 'LineToolFibTimeZone', 'LineToolFibSpeedResistanceFan', 'LineToolTrendBasedFibExtension']);
 
 /** The opacity TradingView's 0-100 "transparency" leaves. */
@@ -234,7 +240,19 @@ function fromSource(s: any): PastedDrawing | string | null {
   if (type === 'LineToolVertLine') return a ? { kind: 'vline', time: a.time, ...style } : null;
   if (TEXT.has(type)) return a ? { kind: 'text', a, text: text ?? String(s.text ?? ''), ...style, color: toHex(state.textcolor ?? state.color) ?? style.color } : null;
   if (PATH.has(type)) {
-    return pts.length >= 2 ? { kind: 'path', points: pts, ...(type === 'LineToolTriangle' ? { closed: true } : {}), ...(fillOf(state) ? { fill: fillOf(state) } : {}), ...style } : null;
+    const brush = type === 'LineToolBrush' || type === 'LineToolHighlighter';
+    return pts.length >= 2 ? {
+      kind: 'path', points: pts, ...(type === 'LineToolTriangle' ? { closed: true } : {}), ...(brush ? { brush: true } : {}),
+      ...(fillOf(state) && type !== 'LineToolBrush' ? { fill: fillOf(state) } : {}), ...style,
+      // The highlighter is a wide see-through stroke.
+      ...(type === 'LineToolHighlighter' ? { width: Number(state.width ?? state.linewidth) || 20, color: toHex(state.linecolor ?? state.color, 0.35) ?? '#ffeb3b59' } : {}),
+    } : type;
+  }
+  if (MARKS[type]) {
+    return a ? { kind: 'mark', a, dir: MARKS[type], ...(text ? { text } : {}), ...style, color: toHex(state.arrowColor ?? state.color ?? state.backgroundColor) ?? style.color } : null;
+  }
+  if (type === 'LineToolArrowMarker') {
+    return a && b ? { kind: 'arrow', a, b, ...(text ? { text } : {}), ...style, color: toHex(state.backgroundColor ?? state.color ?? state.arrowColor) ?? style.color } : type;
   }
   if (!a || !b) return FIB.has(type) || type.includes('RiskReward') ? type : null;
 

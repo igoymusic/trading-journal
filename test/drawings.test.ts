@@ -43,6 +43,21 @@ describe('drawings', () => {
     expect(drawings[3]).toMatchObject({ kind: 'position', side: 'long', end: 1791920040000, stop: 775.5, target: 780, targetFill: '#08998133', stopFill: '#f2364533' });
   });
 
+  it('reads brushes, arrow markers and arrow marks', () => {
+    const pt = (t: number, price: number) => ({ time_t: t, price });
+    const copied = JSON.stringify({ sources: [
+      { type: 'LineToolBrush', points: [pt(1791556200, 10), pt(1791556260, 11), pt(1791556320, 10.5)], state: { linecolor: '#2962ff', linewidth: 2 } },
+      { type: 'LineToolArrowMarker', points: [pt(1791556200, 10), pt(1791556320, 12)], state: { backgroundColor: '#f23645', text: 'Go' } },
+      { type: 'LineToolArrowMarkDown', points: [pt(1791556200, 12)], state: { arrowColor: '#f23645', text: 'Top' } },
+    ] });
+    const { drawings, skipped } = parseTradingViewClipboard(`tradingview:${copied}`);
+    expect(skipped).toEqual([]);
+    expect(drawings[0]).toMatchObject({ kind: 'path', brush: true });
+    expect((drawings[0] as { points: unknown[] }).points).toHaveLength(3);
+    expect(drawings[1]).toMatchObject({ kind: 'arrow', a: { price: 10 }, b: { price: 12 } });
+    expect(drawings[2]).toMatchObject({ kind: 'mark', dir: 'down', a: { price: 12 } });
+  });
+
   it('shares index drawings and lists days', () => {
     expect(drawingSymbol('SPXW')).toBe('SPX');
     expect(daysBetween('2026-10-30', '2026-11-02')).toEqual(['2026-10-30', '2026-10-31', '2026-11-01', '2026-11-02']);

@@ -119,6 +119,7 @@ export class DrawingsPrimitive implements ISeriesPrimitive<Time> {
       case 'position': pts.push(this.toXy({ time: d.a.time, price: d.stop }), this.toXy({ time: d.end, price: d.target })); break;
       case 'channel': pts.push(this.toXy(d.a), this.toXy(d.b), this.toXy({ ...d.a, price: d.a.price + d.offset }), this.toXy({ ...d.b, price: d.b.price + d.offset })); break;
       case 'rect': case 'range': case 'ellipse': pts.push(this.toXy(d.a), this.toXy(d.b)); break;
+      case 'mark': { const p = this.toXy(d.a); return p && { x1: p.x - 10, x2: p.x + 10, y1: p.y - 22, y2: p.y + 22 }; }
       default: return null;
     }
     if (pts.some((p) => !p)) return null;
@@ -164,6 +165,7 @@ export class DrawingsPrimitive implements ISeriesPrimitive<Time> {
           break;
         }
         case 'trend': hit = near(this.toXy(d.a), this.toXy(d.b), d.extendLeft, d.extendRight); break;
+        case 'arrow': { const a = this.toXy(d.a); const b = this.toXy(d.b); hit = !!a && !!b && segmentDistance(at, a, b) <= 10; break; }
         case 'path': {
           const pts = d.points.map((p) => this.toXy(p));
           hit = pts.some((p, i) => i > 0 && near(pts[i - 1], p)) || (!!d.closed && near(pts[pts.length - 1], pts[0]));
@@ -338,12 +340,60 @@ class Renderer implements IPrimitivePaneRenderer {
         const pts = d.points.map((p) => src.toXy(p)).filter(Boolean) as Xy[];
         if (pts.length < 2) return;
         ctx.beginPath();
-        pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+        if (d.brush) {
+          // Smooth freehand strokes through the midpoints between samples.
+          ctx.moveTo(pts[0].x, pts[0].y);
+          for (let i = 1; i < pts.length - 1; i++) ctx.quadraticCurveTo(pts[i].x, pts[i].y, (pts[i].x + pts[i + 1].x) / 2, (pts[i].y + pts[i + 1].y) / 2);
+          ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+        } else pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
         if (d.closed) ctx.closePath();
         if (d.fill && d.closed) { ctx.fillStyle = d.fill; ctx.fill(); }
         stroke();
         ctx.stroke();
         if (selected) this.handles(ctx, d);
+        break;
+      }
+      case 'arrow': {
+        const a = src.toXy(d.a);
+        const b = src.toXy(d.b);
+        if (!a || !b) return;
+        const len = Math.hypot(b.x - a.x, b.y - a.y);
+        if (len < 2) return;
+        // A fat arrow: shaft then head, drawn along the line from a to b.
+        const ux = (b.x - a.x) / len;
+        const uy = (b.y - a.y) / len;
+        const head = Math.min(22, len * 0.6);
+        const shaft = Math.max(3, head * 0.3);
+        const wing = head * 0.6;
+        const at = (along: number, side: number) => ({ x: a.x + ux * along - uy * side, y: a.y + uy * along + ux * side });
+        const poly = [at(0, -shaft / 2), at(len - head, -shaft / 2), at(len - head, -wing), at(len, 0), at(len - head, wing), at(len - head, shaft / 2), at(0, shaft / 2)];
+        ctx.beginPath();
+        poly.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+        ctx.closePath();
+        ctx.fillStyle = d.color;
+        ctx.fill();
+        if (selected) { ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; ctx.stroke(); }
+        if (d.text) label(d.text, a.x - ux * 6, a.y - uy * 6, d.textColor ?? d.color, ux > 0 ? 'right' : 'left', uy > 0 ? 'bottom' : 'top');
+        if (selected) this.handles(ctx, d);
+        break;
+      }
+      case 'mark': {
+        const p = src.toXy(d.a);
+        if (!p) return;
+        // The arrow's tip sits on the point; it comes from the side it points away from.
+        const rot = { up: 0, right: Math.PI / 2, down: Math.PI, left: -Math.PI / 2 }[d.dir];
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(rot);
+        ctx.beginPath();
+        ctx.moveTo(0, 0); ctx.lineTo(9, 10); ctx.lineTo(4, 10); ctx.lineTo(4, 20); ctx.lineTo(-4, 20); ctx.lineTo(-4, 10); ctx.lineTo(-9, 10); ctx.closePath();
+        ctx.fillStyle = d.color;
+        ctx.fill();
+        if (selected) { ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; ctx.stroke(); }
+        ctx.restore();
+        if (d.text) label(d.text, p.x, p.y + (d.dir === 'up' ? 34 : -24), d.textColor ?? d.color, 'center', d.dir === 'up' ? 'top' : 'bottom');
         break;
       }
       case 'channel': {

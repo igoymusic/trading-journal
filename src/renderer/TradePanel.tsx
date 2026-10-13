@@ -456,7 +456,8 @@ export function PriceChart({ trade, chart, interval, levels, placing, onPlace, o
         d.setTool('select');
       } else {
         creating = { a: point, start: at, moved: false, clicks: 1 };
-        setDraft(shapeFor(d.tool, base, point, point, d.style));
+        const first = shapeFor(d.tool, base, point, point, d.style);
+        setDraft(first.kind === 'path' ? { ...first, points: [point] } : first);
       }
       return true;
     };
@@ -481,7 +482,11 @@ export function PriceChart({ trade, chart, interval, levels, placing, onPlace, o
           const d = draft();
           const tool = live.current.draw?.tool;
           if (Math.hypot(at.x - creating.start.x, at.y - creating.start.y) > 4) creating.moved = true;
-          if (d && tool && tool !== 'select') setDraft(shapeFor(tool, d, creating.a, point, live.current.draw!.style));
+          if (d && tool === 'brush' && d.kind === 'path') {
+            // Freehand: add a point whenever the mouse has moved a few pixels.
+            const last = drawings.toXy(d.points[d.points.length - 1]);
+            if (!last || Math.hypot(at.x - last.x, at.y - last.y) > 3) setDraft({ ...d, points: [...d.points, point] });
+          } else if (d && tool && tool !== 'select') setDraft(shapeFor(tool, d, creating.a, point, live.current.draw!.style));
         } else if (moving) {
           if (Math.hypot(at.x - moving.start.x, at.y - moving.start.y) > 2) moving.moved = true;
           if (!moving.moved) return;
@@ -510,8 +515,10 @@ export function PriceChart({ trade, chart, interval, levels, placing, onPlace, o
     const onUp = () => {
       const d = live.current.draw;
       if (creating) {
-        // A click without dragging starts a line; the next click finishes it.
-        if (!creating.moved && creating.clicks < 2) return;
+        // A click without dragging starts a line; the next click finishes it. A brush stroke ends when you let go.
+        const brushing = d?.tool === 'brush';
+        if (!brushing && !creating.moved && creating.clicks < 2) return;
+        if (brushing && !creating.moved) { creating = null; setDraft(null); lock(false); return; }
         const shape = draft();
         const creatingStart = creating.a.time;
         creating = null;

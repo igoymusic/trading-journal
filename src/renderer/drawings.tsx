@@ -7,7 +7,7 @@ import {
 } from '../core/drawings';
 import { opacityOf, withOpacity } from './drawingsPrimitive';
 
-export type Tool = 'select' | 'hline' | 'vline' | 'trend' | 'rect' | 'range' | 'fib' | 'long' | 'short' | 'text';
+export type Tool = 'select' | 'hline' | 'vline' | 'trend' | 'arrow' | 'brush' | 'rect' | 'range' | 'fib' | 'long' | 'short' | 'text';
 
 /** Formatting for new drawings (and the selected one). */
 export interface DrawStyle { width: number; dash: 'solid' | 'dotted' | 'dashed'; opacity: number; fillOpacity: number }
@@ -119,6 +119,8 @@ export function shapeFor(tool: Exclude<Tool, 'select'>, base: Base, a: ChartPoin
   const s = { ...style, ...b0 } as Base & Partial<Drawing>;
   switch (tool) {
     case 'rect': return { ...s, kind: 'rect', a, b } as Drawing;
+    case 'arrow': return { ...s, fill: undefined, kind: 'arrow', a, b } as Drawing;
+    case 'brush': return { ...s, fill: undefined, kind: 'path', brush: true, points: [a, b] } as Drawing;
     case 'range': return { ...s, kind: 'range', a, b, measure: 'price' } as Drawing;
     case 'fib': return { ...s, kind: 'fib', a, b, levels: FIB_LEVELS, fill: '#ffffff1a' } as Drawing;
     case 'long': case 'short': {
@@ -200,6 +202,8 @@ const TOOLS: { tool: Tool; icon: string; title: string }[] = [
   { tool: 'select', icon: '↖', title: 'Select and move (Esc)' },
   { tool: 'hline', icon: '─', title: 'Price line' },
   { tool: 'trend', icon: '╱', title: 'Trend line' },
+  { tool: 'arrow', icon: '➚', title: 'Arrow marker' },
+  { tool: 'brush', icon: '✎', title: 'Brush (draw freehand)' },
   { tool: 'rect', icon: '▭', title: 'Box' },
   { tool: 'range', icon: '↕', title: 'Price range' },
   { tool: 'fib', icon: 'φ', title: 'Fib retracement' },
