@@ -54,7 +54,7 @@ export function MonthView({ trades, year, month, compact, goals = {}, onMonthCha
               const traded = d.inMonth && d.trades > 0;
               const tone = traded ? pnlClass(d.netPnl) : '';
               const check = traded ? checkDay(d, goals) : {};
-              const broken = [check.overMaxLoss && 'lost more than your max', check.overTrades && 'more trades than your max'].filter(Boolean);
+              const broken = [check.overMaxLoss && 'lost more than your max', check.overTrades && 'more trades than your max', check.overLosses && 'more losing trades than your max'].filter(Boolean);
               return (
                 <div
                   key={d.date}

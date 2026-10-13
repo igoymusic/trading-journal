@@ -9,12 +9,14 @@ export interface Goals {
   dailyTarget?: number;
   dailyMaxLoss?: number;
   maxTradesPerDay?: number;
+  /** Most losing trades you allow yourself in a day. */
+  maxLossesPerDay?: number;
   monthlyTarget?: number;
   /** Goals you make up yourself, e.g. "win rate at least 60% each week". */
   custom?: CustomGoal[];
 }
 
-export type GoalMetric = 'netPnl' | 'winRate' | 'trades' | 'profitFactor' | 'largestLoss' | 'avgWin' | 'avgRating' | 'mistakes' | 'positives';
+export type GoalMetric = 'netPnl' | 'winRate' | 'trades' | 'losingTrades' | 'profitFactor' | 'largestLoss' | 'avgWin' | 'avgRating' | 'mistakes' | 'positives';
 export type GoalPeriod = 'day' | 'week' | 'month';
 
 export interface CustomGoal {
@@ -31,6 +33,7 @@ export const GOAL_METRICS: { key: GoalMetric; label: string; unit: '$' | '%' | '
   { key: 'netPnl', label: 'Net P&L', unit: '$' },
   { key: 'winRate', label: 'Win rate', unit: '%' },
   { key: 'trades', label: 'Number of trades', unit: '' },
+  { key: 'losingTrades', label: 'Losing trades', unit: '' },
   { key: 'profitFactor', label: 'Profit factor', unit: '' },
   { key: 'largestLoss', label: 'Largest loss on one trade', unit: '$' },
   { key: 'avgWin', label: 'Average winner', unit: '$' },
@@ -40,7 +43,7 @@ export const GOAL_METRICS: { key: GoalMetric; label: string; unit: '$' | '%' | '
 ];
 
 export const hasGoals = (g: Goals) =>
-  [g.dailyTarget, g.dailyMaxLoss, g.maxTradesPerDay, g.monthlyTarget].some((v) => v !== undefined) || !!g.custom?.length;
+  [g.dailyTarget, g.dailyMaxLoss, g.maxTradesPerDay, g.maxLossesPerDay, g.monthlyTarget].some((v) => v !== undefined) || !!g.custom?.length;
 
 /** "Win rate at least 60% per week" */
 export function describeGoal(g: CustomGoal): string {
@@ -60,6 +63,7 @@ export function metricValue(trades: Trade[], metric: GoalMetric): number | undef
     case 'netPnl': return Math.round(sum(closed) * 100) / 100;
     case 'winRate': return closed.length ? (wins.length / closed.length) * 100 : undefined;
     case 'trades': return trades.length;
+    case 'losingTrades': return losses.length;
     case 'profitFactor': return losses.length ? sum(wins) / -sum(losses) : wins.length ? Infinity : undefined;
     case 'largestLoss': return closed.length ? Math.max(0, ...losses.map((t) => -t.netPnl)) : undefined;
     case 'avgWin': return wins.length ? sum(wins) / wins.length : undefined;
@@ -111,6 +115,8 @@ export interface DayGoalCheck {
   overMaxLoss?: boolean;
   /** Took more trades than the daily cap. */
   overTrades?: boolean;
+  /** Had more losing trades than the daily cap. */
+  overLosses?: boolean;
 }
 
 export function checkDay(day: DayStats, g: Goals): DayGoalCheck {
@@ -118,11 +124,12 @@ export function checkDay(day: DayStats, g: Goals): DayGoalCheck {
     hitTarget: g.dailyTarget === undefined ? undefined : day.netPnl >= g.dailyTarget,
     overMaxLoss: g.dailyMaxLoss === undefined ? undefined : day.netPnl < -g.dailyMaxLoss,
     overTrades: g.maxTradesPerDay === undefined ? undefined : day.trades > g.maxTradesPerDay,
+    overLosses: g.maxLossesPerDay === undefined ? undefined : day.losses > g.maxLossesPerDay,
   };
 }
 
 /** A day broke one of your limits (max loss or max trades). */
-export const brokeLimit = (c: DayGoalCheck) => !!(c.overMaxLoss || c.overTrades);
+export const brokeLimit = (c: DayGoalCheck) => !!(c.overMaxLoss || c.overTrades || c.overLosses);
 
 export interface MonthGoals {
   netPnl: number;
@@ -132,6 +139,7 @@ export interface MonthGoals {
   daysHitTarget?: number;
   daysWithinMaxLoss?: number;
   daysWithinMaxTrades?: number;
+  daysWithinMaxLosses?: number;
 }
 
 /** How a month ("YYYY-MM") is going against your goals, over the days you traded. */
@@ -148,5 +156,6 @@ export function monthGoals(trades: Trade[], monthKey: string, g: Goals): MonthGo
     daysHitTarget: count((c) => c.hitTarget, g.dailyTarget),
     daysWithinMaxLoss: count((c) => !c.overMaxLoss, g.dailyMaxLoss),
     daysWithinMaxTrades: count((c) => !c.overTrades, g.maxTradesPerDay),
+    daysWithinMaxLosses: count((c) => !c.overLosses, g.maxLossesPerDay),
   };
 }

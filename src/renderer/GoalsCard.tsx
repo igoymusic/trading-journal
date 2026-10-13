@@ -16,7 +16,7 @@ export function GoalsCard({ trades, goals, year, month, onOpenSettings }: {
     return (
       <div className="card goals">
         <div className="goals-head"><h3>Goals</h3></div>
-        <p className="muted">Set a daily target, a max loss, a max number of trades, a monthly target or a goal of your own to track them here.</p>
+        <p className="muted">Set a daily target, a max loss, a max number of trades or losing trades, a monthly target or a goal of your own to track them here.</p>
         <button onClick={onOpenSettings}>Set goals</button>
       </div>
     );
@@ -27,6 +27,7 @@ export function GoalsCard({ trades, goals, year, month, onOpenSettings }: {
     { label: `Hit the ${usd(goals.dailyTarget ?? 0)} daily target`, value: m.daysHitTarget, good: true },
     { label: `Stayed within the ${usd(goals.dailyMaxLoss ?? 0)} max loss`, value: m.daysWithinMaxLoss, good: true },
     { label: `Stayed within ${goals.maxTradesPerDay} trades a day`, value: m.daysWithinMaxTrades, good: true },
+    { label: `Stayed within ${goals.maxLossesPerDay} losing trade${goals.maxLossesPerDay === 1 ? '' : 's'} a day`, value: m.daysWithinMaxLosses, good: true },
   ];
   const pct = m.monthlyProgress === undefined ? 0 : Math.max(0, Math.min(1, m.monthlyProgress));
   return (

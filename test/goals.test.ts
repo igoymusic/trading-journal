@@ -64,3 +64,10 @@ describe('custom goals', async () => {
     expect(describeGoal({ id: 'g', name: '', metric: 'netPnl', op: 'atLeast', value: 500, period: 'week' })).toBe('Net P&L at least $500 per week');
   });
 });
+
+describe('max losing trades per day', () => {
+  it('flags a day with more losing trades than allowed', () => {
+    expect(checkDay({ date: '2026-10-05', netPnl: -90, trades: 4, wins: 1, losses: 3 }, { maxLossesPerDay: 2 }).overLosses).toBe(true);
+    expect(brokeLimit(checkDay({ date: '2026-10-05', netPnl: 10, trades: 3, wins: 1, losses: 2 }, { maxLossesPerDay: 2 }))).toBe(false);
+  });
+});

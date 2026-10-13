@@ -119,10 +119,11 @@ export function SettingsDialog({ onClose, onSynced }: { onClose: () => void; onS
   );
 }
 
-const GOAL_FIELDS: { key: 'dailyTarget' | 'dailyMaxLoss' | 'maxTradesPerDay' | 'monthlyTarget'; label: string; hint: string; dollars: boolean }[] = [
+const GOAL_FIELDS: { key: 'dailyTarget' | 'dailyMaxLoss' | 'maxTradesPerDay' | 'maxLossesPerDay' | 'monthlyTarget'; label: string; hint: string; dollars: boolean }[] = [
   { key: 'dailyTarget', label: 'Daily profit target', hint: 'A day at or above this counts as hitting your target.', dollars: true },
   { key: 'dailyMaxLoss', label: 'Max loss per day', hint: 'Days that lose more than this get flagged.', dollars: true },
   { key: 'maxTradesPerDay', label: 'Max trades per day', hint: 'Days with more trades than this get flagged.', dollars: false },
+  { key: 'maxLossesPerDay', label: 'Max losing trades per day', hint: 'Days with more losing trades than this get flagged.', dollars: false },
   { key: 'monthlyTarget', label: 'Monthly profit target', hint: 'Shown as a progress bar on Home.', dollars: true },
 ];
 
