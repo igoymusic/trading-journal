@@ -135,7 +135,14 @@ export class SchwabSync {
     for (const [k, v] of Object.entries(query)) url.searchParams.set(k, v);
     const res = await this.fetchFn(url.toString(), { headers: { authorization: `Bearer ${await this.accessToken()}`, accept: 'application/json' } });
     const data = await res.json().catch(() => null) as any;
-    if (!res.ok) throw new Error(`Schwab answered ${res.status}${data?.message ? `: ${data.message}` : ''}`);
+    if (!res.ok) {
+      const why = data?.message || data?.error_description || data?.errors?.[0]?.detail || data?.errors?.[0]?.title || '';
+      const what = path.includes('/marketdata/') ? 'market data' : path.split('/').filter((p) => p && !/^[A-F0-9]{20,}$/i.test(p)).pop();
+      const hint = res.status === 401 || res.status === 403
+        ? ' Your Schwab app may not be fully approved yet, or may be missing the "Accounts and Trading Production" API product (developer.schwab.com, Dashboard, View Details).'
+        : '';
+      throw new Error(`Schwab answered ${res.status} when reading ${what}${why ? ` (${why})` : ''}.${hint}`);
+    }
     return data as T;
   }
 
