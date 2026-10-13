@@ -359,3 +359,49 @@ th.sorted { color: var(--text); }
 .color-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px 12px; margin-top: 4px; }
 .modal .color-pick { display: flex; align-items: center; gap: 8px; cursor: pointer; margin: 2px 0; color: var(--text); }
 .modal .color-pick input[type=color] { width: 32px; height: 24px; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: 4px; background: none; flex: none; }
+
+/* Drawing tools */
+.trade-panel:focus { outline: none; }
+.chart-area.with-tools .chart { left: 34px; }
+.draw-tools { position: absolute; left: 0; top: 0; bottom: 0; width: 34px; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 0; border-right: 1px solid var(--border); background: var(--panel); z-index: 2; }
+.chart-area.replaying .draw-tools { bottom: 42px; }
+.draw-tools button { width: 26px; height: 26px; padding: 0; font-size: 14px; line-height: 1; display: flex; align-items: center; justify-content: center; }
+.draw-tools button.active { background: var(--blue); border-color: var(--blue); color: #fff; }
+.draw-spacer { flex: 1; }
+.draw-color-wrap { position: relative; }
+.draw-color span { display: block; width: 14px; height: 14px; border-radius: 3px; border: 1px solid rgba(255, 255, 255, 0.4); }
+.draw-colors { position: absolute; left: 30px; top: 0; display: flex; gap: 4px; padding: 6px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; z-index: 5; }
+.draw-colors button { width: 20px; height: 20px; border-radius: 3px; border: 1px solid rgba(255, 255, 255, 0.3); padding: 0; }
+.draw-colors input[type=color] { width: 24px; height: 22px; padding: 0; border: none; background: none; cursor: pointer; }
+.note-editor { position: absolute; z-index: 4; min-width: 160px; background: var(--panel-2); color: var(--text); border: 1px solid var(--blue); border-radius: 4px; padding: 4px 6px; font: inherit; font-size: 12px; resize: none; }
+
+/* Chart / Screenshots switch */
+.view-tabs { display: flex; margin-right: 8px; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+.panel-actions .view-tabs button { border: none; border-radius: 0; }
+.panel-actions .view-tabs button + button { border-left: 1px solid var(--border); }
+
+/* Screenshot gallery */
+.gallery { position: absolute; inset: 0; overflow: auto; padding: 10px 12px; outline: none; }
+.gallery.dropping { box-shadow: inset 0 0 0 2px var(--blue); background: color-mix(in srgb, var(--blue) 8%, transparent); }
+.gallery-actions { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.gallery-actions button { padding: 4px 10px; font-size: 12px; }
+.small-inline { font-size: 12px; }
+.gallery-message { font-size: 12px; color: var(--text); background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; padding: 3px 8px; }
+.gallery-empty { padding: 40px 20px; text-align: center; }
+.gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.shot { margin: 0; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+.shot img { display: block; width: 100%; height: 140px; object-fit: cover; cursor: zoom-in; }
+.shot figcaption { display: flex; align-items: center; gap: 4px; padding: 4px; }
+.shot figcaption input { flex: 1; min-width: 0; background: transparent; color: var(--text); border: 1px solid transparent; border-radius: 3px; padding: 3px 5px; font: inherit; font-size: 12px; }
+.shot figcaption input:hover, .shot figcaption input:focus { border-color: var(--border); outline: none; }
+.lightbox { position: fixed; inset: 0; z-index: 20; background: rgba(0, 0, 0, 0.85); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 20px; }
+.lightbox img { max-width: 100%; max-height: calc(100% - 50px); object-fit: contain; border-radius: 4px; }
+.lightbox-bar { display: flex; align-items: center; gap: 10px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; }
+.lightbox-bar button { padding: 3px 10px; }
+
+/* Backups */
+.backup-buttons { display: flex; gap: 8px; margin-bottom: 8px; }
+.backup-buttons button { width: auto; }
+.backup-auto button.link { width: auto; padding: 0; display: inline; }
+.backup-auto .path { color: var(--text); font-weight: 500; word-break: break-all; }
+.modal .backup-buttons { justify-content: flex-start; }

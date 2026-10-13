@@ -5,6 +5,7 @@ import type { Trade } from '../core/types';
 import type { TradeChart } from '../shared/api';
 import { signedUsd, pnlClass } from './format';
 import { type Interval, PriceChart } from './TradePanel';
+import { DrawToolbar, pasteIntoChart, useDrawings } from './drawings';
 
 const NO_LEVELS = { stops: [], targets: [] };
 
@@ -23,6 +24,16 @@ export function DayChart({ trades, date, version }: { trades: Trade[]; date: str
   const shown = tickers.includes(ticker) ? ticker : tickers[0];
   const day = useMemo(() => (shown ? dayChartTrade(trades, date, shown) : null), [trades, date, shown]);
 
+  const bars = chart?.status === 'ok' ? chart.bars : [];
+  const draw = useDrawings(shown ?? '', bars[0]?.time, bars[bars.length - 1]?.time);
+  const [hint, setHint] = useState('');
+  useEffect(() => {
+    if (!hint) return;
+    const t = window.setTimeout(() => setHint(''), 5000);
+    return () => window.clearTimeout(t);
+  }, [hint]);
+  const paste = async () => setHint(await pasteIntoChart(draw, chart?.status === 'ok' ? chart.fills[0]?.time ?? Date.now() : Date.now()));
+
   useEffect(() => {
     if (!shown) return;
     setChart(null);
@@ -33,7 +44,12 @@ export function DayChart({ trades, date, version }: { trades: Trade[]; date: str
   const count = trades.filter((t) => t.underlying === shown && tradeDay(t) === date).length;
 
   return (
-    <section className={`trade-panel day-chart ${collapsed ? 'collapsed' : ''}`}>
+    <section
+      className={`trade-panel day-chart ${collapsed ? 'collapsed' : ''}`}
+      tabIndex={-1}
+      onMouseDownCapture={(e) => { if (!(e.target as HTMLElement).closest('input, textarea, select, button')) (e.currentTarget as HTMLElement).focus({ preventScroll: true }); }}
+      onPaste={(e) => { if (!(e.target as HTMLElement).closest('input, textarea')) { e.preventDefault(); paste(); } }}
+    >
       <div className="panel-head clickable" onClick={toggle} title={collapsed ? 'Show the chart' : 'Hide the chart'}>
         <div>
           <span className="collapse-arrow">{collapsed ? '▸' : '▾'}</span>
@@ -52,7 +68,8 @@ export function DayChart({ trades, date, version }: { trades: Trade[]; date: str
         </div>
       </div>
       {!collapsed && <div className="panel-body">
-        <div className="chart-area">
+        <div className={`chart-area ${draw && chart?.status === 'ok' ? 'with-tools' : ''}`}>
+          {draw && chart?.status === 'ok' && <DrawToolbar draw={draw} onPaste={paste} />}
           {!chart && <div className="chart-message">Loading {shown} prices…</div>}
           {chart?.status === 'error' && <div className="chart-message loss">Couldn't load prices: {chart.message}</div>}
           {chart?.status === 'ok' && (
@@ -67,7 +84,12 @@ export function DayChart({ trades, date, version }: { trades: Trade[]; date: str
               onMove={() => {}}
               replayAt={null}
               fillInfo={day}
+              draw={draw}
             />
+          )}
+          {hint && <div className="placing-hint">{hint}</div>}
+          {!hint && draw && draw.tool !== 'select' && (
+            <div className="placing-hint">{draw.tool === 'hline' ? 'Click where the price line goes.' : draw.tool === 'text' ? 'Click where the note goes.' : 'Drag on the chart, or click two points.'} Esc cancels.</div>
           )}
         </div>
       </div>}

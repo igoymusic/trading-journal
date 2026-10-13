@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { type CustomGoal, describeGoal, GOAL_METRICS, type Goals } from '../core/goals';
 import type { PlaybookRule } from '../core/types';
-import type { ColorScheme, SettingsView, SyncResult } from '../shared/api';
+import type { BackupStatus, ColorScheme, SettingsView, SyncResult } from '../shared/api';
 import { applyColors, COLOR_LABELS, DEFAULT_COLORS } from './colors';
 import { BrokersSettings } from './BrokersSettings';
 import { NO_ACCOUNT } from './AccountPicker';
@@ -101,6 +101,8 @@ export function SettingsDialog({ onClose, onSynced, onColorsChanged }: { onClose
         <TagsEditor kind="mistake" />
 
         <AccountTrades onChanged={() => onSynced({ added: 0, accounts: 0, errors: [] })} />
+
+        <BackupsSection />
 
         <h3>Imported files</h3>
         <p className="muted">
@@ -351,6 +353,65 @@ function AccountTrades({ onChanged }: { onChanged: () => void }) {
         ))}
       </ul>
       {message && <p className="win">{message}</p>}
+    </>
+  );
+}
+
+/** Back up the journal, back it up daily to a folder, or restore it on a new computer. */
+function BackupsSection() {
+  const [status, setStatus] = useState<BackupStatus | null>(null);
+  const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { window.journal.backupStatus().then(setStatus); }, []);
+
+  async function run(work: () => Promise<void>) {
+    setBusy(true);
+    setMessage(null);
+    try {
+      await work();
+    } catch (err) {
+      setMessage({ text: (err as Error).message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ''), ok: false });
+    } finally {
+      setBusy(false);
+    }
+  }
+  const save = () => run(async () => {
+    const r = await window.journal.saveBackup();
+    if (r) setMessage({ text: `Saved ${r.file} (${(r.size / 1_048_576).toFixed(1)} MB).`, ok: true });
+  });
+  const choose = () => run(async () => setStatus(await window.journal.chooseBackupFolder()));
+  const restore = () => run(async () => { await window.journal.restoreBackup(); });
+
+  return (
+    <>
+      <h3>Backups and moving computers</h3>
+      <p className="muted">
+        A backup is one file with everything: trades, notes, tags, setups, goals, drawings, screenshots and settings.
+        To move to a new computer, install Moon Journal there, click Restore and pick your latest backup. Your Alpaca key
+        and broker sign-ins aren't in backups (Windows locks them to this computer), so add those again after restoring.
+      </p>
+      <div className="row backup-buttons">
+        <button disabled={busy} onClick={save}>Back up now…</button>
+        <button disabled={busy} onClick={restore}>Restore from a backup…</button>
+      </div>
+      <p className="muted backup-auto">
+        {status?.folder ? (
+          <>
+            Daily backups go to <b className="path">{status.folder}</b>
+            {status.latest && <> · last one {new Date(status.latest.when).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}</>}
+            . The last 14 are kept.{' '}
+            <button className="link" disabled={busy} onClick={choose}>Change folder</button>{' · '}
+            <button className="link" disabled={busy} onClick={() => run(async () => setStatus(await window.journal.stopAutoBackup()))}>Turn off</button>
+          </>
+        ) : (
+          <>
+            Daily backup is off. Pick a folder in OneDrive, Google Drive or Dropbox and a backup is saved there each day
+            you open the app, so it's safe even if this computer isn't.{' '}
+            <button className="link" disabled={busy} onClick={choose}>Turn on daily backup…</button>
+          </>
+        )}
+      </p>
+      {message && <p className={message.ok ? 'win' : 'loss'}>{message.text}</p>}
     </>
   );
 }

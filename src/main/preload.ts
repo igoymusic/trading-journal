@@ -37,6 +37,22 @@ const api: JournalApi = {
   saveMistakes: (mistakes) => ipcRenderer.invoke('journal:saveMistakes', mistakes),
   savePositives: (positives) => ipcRenderer.invoke('journal:savePositives', positives),
   saveDayNote: (date, notes) => ipcRenderer.invoke('journal:saveDayNote', date, notes),
+  getDrawings: (symbol, days) => ipcRenderer.invoke('drawings:get', symbol, days),
+  putDrawing: (symbol, drawing) => ipcRenderer.invoke('drawings:put', symbol, drawing),
+  deleteDrawing: (symbol, id) => ipcRenderer.invoke('drawings:delete', symbol, id),
+  readPaste: () => ipcRenderer.invoke('clipboard:readPaste'),
+  listScreenshots: (tradeId) => ipcRenderer.invoke('shots:list', tradeId),
+  screenshotCounts: () => ipcRenderer.invoke('shots:counts'),
+  pasteScreenshot: (tradeId) => ipcRenderer.invoke('shots:paste', tradeId),
+  pickScreenshots: (tradeId) => ipcRenderer.invoke('shots:pick', tradeId),
+  addScreenshotData: (tradeId, data) => ipcRenderer.invoke('shots:addData', tradeId, data),
+  captionScreenshot: (id, caption) => ipcRenderer.invoke('shots:caption', id, caption),
+  removeScreenshot: (id) => ipcRenderer.invoke('shots:remove', id),
+  backupStatus: () => ipcRenderer.invoke('backup:status'),
+  saveBackup: () => ipcRenderer.invoke('backup:save'),
+  chooseBackupFolder: () => ipcRenderer.invoke('backup:chooseFolder'),
+  stopAutoBackup: () => ipcRenderer.invoke('backup:stopAuto'),
+  restoreBackup: () => ipcRenderer.invoke('backup:restore'),
 };
 
 contextBridge.exposeInMainWorld('journal', api);
