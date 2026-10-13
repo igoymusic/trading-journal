@@ -33,7 +33,7 @@ function importFile(file: string): ImportResult {
 function journalData(): JournalData {
   const journals = db.tradeJournals();
   const trades = buildTrades(db.allFills()).map((t) => ({ ...t, journal: journals.get(t.id) }));
-  return { trades, summary: summarizeTrades(trades), setups: db.setups(), mistakes: db.mistakeTags(), dayNotes: db.dayNotes() };
+  return { trades, summary: summarizeTrades(trades), setups: db.setups(), mistakes: db.mistakeTags(), positives: db.positiveTags(), dayNotes: db.dayNotes() };
 }
 
 async function createWindow() {
@@ -109,6 +109,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('journal:saveTrade', (_event, tradeId: string, journal: TradeJournal) => db.saveTradeJournal(tradeId, journal));
   ipcMain.handle('journal:saveSetups', (_event, setups: Setup[]) => db.saveSetups(setups));
   ipcMain.handle('journal:saveMistakes', (_event, mistakes: MistakeTag[]) => db.saveMistakeTags(mistakes));
+  ipcMain.handle('journal:savePositives', (_event, positives: MistakeTag[]) => db.savePositiveTags(positives));
   ipcMain.handle('journal:saveDayNote', (_event, date: string, notes: string) => db.saveDayNote(date, notes));
 
   ipcMain.handle('market:dayChart', async (_event, date: string, underlying: string): Promise<TradeChart> => {

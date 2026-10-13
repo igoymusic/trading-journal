@@ -39,3 +39,28 @@ describe('goals', () => {
     });
   });
 });
+
+describe('custom goals', async () => {
+  const { customGoalResult, describeGoal, metricValue, periodKey } = await import('../src/core/goals');
+  const trade = (day: string, netPnl: number, extra: Partial<Trade> = {}) => ({
+    id: `${day}-${netPnl}`, status: 'CLOSED', openTime: `${day}T10:00:00`, closeTime: `${day}T10:30:00`, netPnl, ...extra,
+  }) as Trade;
+  const trades = [trade('2026-10-05', 100), trade('2026-10-05', -50), trade('2026-10-07', 80), trade('2026-10-13', -40)];
+
+  it('measures win rate and profit factor', () => {
+    expect(metricValue(trades, 'winRate')).toBe(50);
+    expect(metricValue(trades, 'profitFactor')).toBe(2);
+    expect(metricValue(trades, 'largestLoss')).toBe(50);
+  });
+
+  it('groups by Monday-started weeks and checks each one', () => {
+    expect(periodKey(trades[3], 'week')).toBe('2026-10-12');
+    const r = customGoalResult(trades, { id: 'g', name: '', metric: 'winRate', op: 'atLeast', value: 60, period: 'week' }, '2026-10');
+    expect(r.periods.map((p) => [p.key, p.met])).toEqual([['2026-10-05', true], ['2026-10-12', false]]);
+    expect([r.met, r.measured]).toEqual([1, 2]);
+  });
+
+  it('describes a goal without a name', () => {
+    expect(describeGoal({ id: 'g', name: '', metric: 'netPnl', op: 'atLeast', value: 500, period: 'week' })).toBe('Net P&L at least $500 per week');
+  });
+});

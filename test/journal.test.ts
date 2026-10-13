@@ -11,7 +11,7 @@ describe('journal storage', () => {
     const db = new JournalDb(':memory:');
     db.saveTradeJournal('t1', { notes: 'Good entry', setupId: null, mistakes: [], rating: 4 });
     db.saveTradeJournal('t1', { notes: 'Good entry, late exit', setupId: null, mistakes: ['default-3'], rating: 3 });
-    expect(db.tradeJournals().get('t1')).toEqual({ notes: 'Good entry, late exit', setupId: null, mistakes: ['default-3'], rating: 3 });
+    expect(db.tradeJournals().get('t1')).toEqual({ notes: 'Good entry, late exit', setupId: null, mistakes: ['default-3'], positives: [], rating: 3 });
   });
 
   it('clears a deleted setup or mistake from the trades that used it', () => {
@@ -38,6 +38,16 @@ describe('journal storage', () => {
     db.saveTradeJournal('t1', { notes: '', setupId: 's1', mistakes: [], rating: null, rulesFollowed: ['r2'] });
     expect(db.setups()[0].rules).toEqual(rules);
     expect(db.tradeJournals().get('t1')?.rulesFollowed).toEqual(['r2']);
+  });
+
+  it('starts with positive tags and keeps a trade\'s positives', () => {
+    const db = new JournalDb(':memory:');
+    const good = db.positiveTags();
+    expect(good.map((t) => t.name)).toContain('Followed my plan');
+    expect(db.mistakeTags().map((t) => t.name)).toContain('Overtraded');
+    db.saveTradeJournal('t1', { notes: '', setupId: null, mistakes: [], positives: [good[0].id, good[1].id], rating: null });
+    db.savePositiveTags(good.slice(1));
+    expect(db.tradeJournals().get('t1')?.positives).toEqual([good[1].id]);
   });
 
   it('keeps one note per day', () => {

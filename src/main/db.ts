@@ -71,6 +71,11 @@ export class JournalDb {
         name TEXT NOT NULL,
         position INTEGER NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS positive_tags (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        position INTEGER NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS day_notes (
         date TEXT PRIMARY KEY,
         notes TEXT NOT NULL,
@@ -89,7 +94,23 @@ export class JournalDb {
     if (!cols.includes('rules_followed')) this.db.exec("ALTER TABLE trade_journal ADD COLUMN rules_followed TEXT");
     const setupCols = (this.db.prepare('PRAGMA table_info(setups)').all() as { name: string }[]).map((c) => c.name);
     if (!setupCols.includes('rules')) this.db.exec("ALTER TABLE setups ADD COLUMN rules TEXT NOT NULL DEFAULT '[]'");
+    // Added with positive tags: the things a trade did well.
+    if (!cols.includes('positives')) this.db.exec("ALTER TABLE trade_journal ADD COLUMN positives TEXT NOT NULL DEFAULT '[]'");
     this.seedMistakes();
+    this.seedTags();
+  }
+
+  /** Starter positive tags, and more common mistakes for journals made before them. Added once each. */
+  private seedTags() {
+    const seed = (key: string, names: string[], current: () => MistakeTag[], save: (list: MistakeTag[]) => void, prefix: string) => {
+      if (this.getMeta(key)) return;
+      const have = current();
+      const known = new Set(have.map((t) => t.name.toLowerCase()));
+      save([...have, ...names.filter((n) => !known.has(n.toLowerCase())).map((name, i) => ({ id: `${prefix}-${i + 1}`, name }))]);
+      this.setMeta(key, '1');
+    };
+    seed('seeded_positives', POSITIVE_TAGS, () => this.positiveTags(), (l) => this.savePositiveTags(l), 'positive');
+    seed('seeded_mistakes_2', MORE_MISTAKES, () => this.mistakeTags(), (l) => this.saveMistakeTags(l), 'mistake2');
   }
 
   /** A starter list of common mistakes, added once. Deleting them later is fine. */
@@ -100,10 +121,6 @@ export class JournalDb {
     this.db.prepare("INSERT INTO meta (key, value) VALUES ('seeded_mistakes', '1')").run();
   }
 
-  /**
-   * Saves fills, skipping ones already in the journal, including the same execution reported by
-   * another source (a CSV and broker sync). Returns how many were new.
-   */
   /** How many date-only fills the last `addFills` gave an exact time. */
   lastRetimed = 0;
 
@@ -216,17 +233,17 @@ export class JournalDb {
   tradeJournals(): Map<string, TradeJournal> {
     const rows = this.db.prepare('SELECT * FROM trade_journal').all() as Record<string, any>[];
     return new Map(rows.map((r) => [r.trade_id, {
-      notes: r.notes, setupId: r.setup_id, mistakes: JSON.parse(r.mistakes), rating: r.rating, ...JSON.parse(r.levels),
+      notes: r.notes, setupId: r.setup_id, mistakes: JSON.parse(r.mistakes), positives: JSON.parse(r.positives ?? '[]'), rating: r.rating, ...JSON.parse(r.levels),
       ...(r.rules_followed ? { rulesFollowed: JSON.parse(r.rules_followed) } : {}),
     }]));
   }
 
   saveTradeJournal(tradeId: string, j: TradeJournal) {
     this.db.prepare(`
-      INSERT INTO trade_journal (trade_id, notes, setup_id, mistakes, rating, levels, rules_followed, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
-      ON CONFLICT (trade_id) DO UPDATE SET notes = excluded.notes, setup_id = excluded.setup_id, mistakes = excluded.mistakes,
+      INSERT INTO trade_journal (trade_id, notes, setup_id, mistakes, positives, rating, levels, rules_followed, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      ON CONFLICT (trade_id) DO UPDATE SET notes = excluded.notes, setup_id = excluded.setup_id, mistakes = excluded.mistakes, positives = excluded.positives,
         rating = excluded.rating, levels = excluded.levels, rules_followed = excluded.rules_followed, updated_at = excluded.updated_at`)
-      .run(tradeId, j.notes, j.setupId, JSON.stringify(j.mistakes), j.rating,
+      .run(tradeId, j.notes, j.setupId, JSON.stringify(j.mistakes), JSON.stringify(j.positives ?? []), j.rating,
         JSON.stringify({ stops: j.stops, targets: j.targets, underlyingEntry: j.underlyingEntry, underlyingExit: j.underlyingExit }),
         j.rulesFollowed ? JSON.stringify(j.rulesFollowed) : null);
   }
@@ -265,6 +282,25 @@ export class JournalDb {
     });
   }
 
+  positiveTags(): MistakeTag[] {
+    return this.db.prepare('SELECT id, name FROM positive_tags ORDER BY position').all() as unknown as MistakeTag[];
+  }
+
+  /** Replaces the positive tag list. Deleted tags are taken off the trades that had them. */
+  savePositiveTags(list: MistakeTag[]) {
+    this.transaction(() => {
+      this.db.exec('DELETE FROM positive_tags');
+      const insert = this.db.prepare('INSERT INTO positive_tags (id, name, position) VALUES (?, ?, ?)');
+      list.forEach((t, i) => insert.run(t.id, t.name, i));
+      const keep = new Set(list.map((t) => t.id));
+      const update = this.db.prepare('UPDATE trade_journal SET positives = ? WHERE trade_id = ?');
+      for (const [id, j] of this.tradeJournals()) {
+        const positives = (j.positives ?? []).filter((t) => keep.has(t));
+        if (positives.length !== (j.positives ?? []).length) update.run(JSON.stringify(positives), id);
+      }
+    });
+  }
+
   dayNotes(): Record<string, string> {
     const rows = this.db.prepare('SELECT date, notes FROM day_notes').all() as { date: string; notes: string }[];
     return Object.fromEntries(rows.map((r) => [r.date, r.notes]));
@@ -291,3 +327,17 @@ export class JournalDb {
     this.db.close();
   }
 }
+
+/** Things a trade can do well, to start with. */
+const POSITIVE_TAGS = [
+  'Followed my plan', 'A+ setup', 'Waited for confirmation', 'Patient entry', 'Good entry price', 'Proper position size',
+  'Respected my stop', 'Cut the loser quickly', 'Took profit at target', 'Let the winner run', 'Scaled out well',
+  'Traded with the trend', 'Good risk/reward', 'Stayed disciplined', 'Stayed calm', 'Stopped trading when done',
+];
+
+/** More common mistakes, added to the original seven. */
+const MORE_MISTAKES = [
+  'Moved my stop', 'Overtraded', 'Averaged down', 'Traded against the trend', 'Entered too early', 'Ignored my plan',
+  'Poor risk/reward', 'Traded chop', 'No clear setup', 'Held through news', 'Bought too far out of the money', 'Bored trade',
+];
+

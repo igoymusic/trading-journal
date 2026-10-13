@@ -66,6 +66,8 @@ export interface TradeJournal {
   setupId: string | null;
   /** Ids of mistake tags. */
   mistakes: string[];
+  /** Ids of positive tags: what the trade did well. */
+  positives?: string[];
   /** 1-5, or null if not rated. */
   rating: number | null;
   /** Stop-loss levels you placed on the underlying's chart. */
@@ -111,7 +113,7 @@ export function playbookScore(trade: Pick<Trade, 'journal'>, setups: Setup[]): {
   return { followed: rules.length - broken.length, total: rules.length, broken };
 }
 
-/** A mistake label, e.g. "Chased entry". */
+/** A tag label: a mistake ("Chased entry") or a positive ("Followed my plan"). */
 export interface MistakeTag {
   id: string;
   name: string;

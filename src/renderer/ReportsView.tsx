@@ -11,6 +11,7 @@ const SECTIONS: { key: keyof Reports; title: string; hint?: string }[] = [
   { key: 'setup', title: 'By setup' },
   { key: 'playbook', title: 'Following your playbook', hint: 'Trades on setups that have rules.' },
   { key: 'rulesBroken', title: 'Rules broken', hint: 'What it cost each time you broke a rule.' },
+  { key: 'positive', title: 'By what you did well', hint: 'A trade with two positive tags counts under both.' },
   { key: 'mistake', title: 'By mistake', hint: 'A trade with two mistakes counts under both.' },
   { key: 'dte', title: 'By days to expiry', hint: 'Counted from the day you opened the trade.' },
   { key: 'timeOfDay', title: 'By time of day', hint: 'Grouped by when you entered, in half hours.' },
@@ -28,8 +29,8 @@ const KEYS = SECTIONS.map((s) => s.key);
  * columns that stack tightly; drag a section's title bar to move it, click its arrow to collapse it.
  */
 export function ReportsView({ trades }: { trades: Trade[] }) {
-  const { setups, mistakes } = useJournal();
-  const reports = useMemo(() => buildReports(trades, setups, mistakes), [trades, setups, mistakes]);
+  const { setups, mistakes, positives } = useJournal();
+  const reports = useMemo(() => buildReports(trades, setups, mistakes, positives), [trades, setups, mistakes, positives]);
   const [layout, setLayout] = useState<ReportsLayout>(() => normalizeLayout(undefined, KEYS));
   const [dragging, setDragging] = useState<string | null>(null);
   const [drop, setDrop] = useState<{ column: number; index: number } | null>(null);

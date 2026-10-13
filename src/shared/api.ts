@@ -12,6 +12,7 @@ export interface JournalData {
   summary: Summary;
   setups: Setup[];
   mistakes: MistakeTag[];
+  positives: MistakeTag[];
   /** Daily notes keyed by "YYYY-MM-DD". */
   dayNotes: Record<string, string>;
 }
@@ -141,6 +142,7 @@ export interface JournalApi {
   saveTradeJournal(tradeId: string, journal: TradeJournal): Promise<void>;
   saveSetups(setups: Setup[]): Promise<void>;
   saveMistakes(mistakes: MistakeTag[]): Promise<void>;
+  savePositives(positives: MistakeTag[]): Promise<void>;
   saveDayNote(date: string, notes: string): Promise<void>;
 }
 

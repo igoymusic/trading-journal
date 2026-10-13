@@ -17,15 +17,17 @@ export interface TradeFilter {
   setups: string[];
   /** Trades with any of these mistakes; "none" matches trades with no mistakes. */
   mistakes: string[];
+  /** Trades with any of these positive tags; "none" matches trades with none. */
+  positives?: string[];
   result?: 'win' | 'loss';
   /** Days-to-expiry bucket keys from DTE_BUCKETS. */
   dte: string[];
 }
 
-export const EMPTY_FILTER: TradeFilter = { symbols: [], setups: [], mistakes: [], dte: [] };
+export const EMPTY_FILTER: TradeFilter = { symbols: [], setups: [], mistakes: [], positives: [], dte: [] };
 
 export function isFiltering(f: TradeFilter): boolean {
-  return !!(f.from || f.to || f.symbols.length || f.putCall || f.direction || f.setups.length || f.mistakes.length || f.result || f.dte.length);
+  return !!(f.from || f.to || f.symbols.length || f.putCall || f.direction || f.setups.length || f.mistakes.length || f.positives?.length || f.result || f.dte.length);
 }
 
 /**
@@ -59,6 +61,10 @@ export function applyFilter(trades: Trade[], f: TradeFilter): Trade[] {
     if (f.mistakes.length) {
       const ids = j?.mistakes.length ? j.mistakes : ['none'];
       if (!ids.some((id) => f.mistakes.includes(id))) return false;
+    }
+    if (f.positives?.length) {
+      const ids = j?.positives?.length ? j.positives : ['none'];
+      if (!ids.some((id) => f.positives!.includes(id))) return false;
     }
     if (f.result === 'win' && !(t.status === 'CLOSED' && t.netPnl > 0)) return false;
     if (f.result === 'loss' && !(t.status === 'CLOSED' && t.netPnl < 0)) return false;
@@ -122,6 +128,7 @@ const clock = (m: number) => {
 export interface Reports {
   setup: ReportRow[];
   mistake: ReportRow[];
+  positive: ReportRow[];
   dte: ReportRow[];
   putCall: ReportRow[];
   direction: ReportRow[];
@@ -135,7 +142,7 @@ export interface Reports {
   rulesBroken: ReportRow[];
 }
 
-export function buildReports(trades: Trade[], setups: Setup[], mistakes: MistakeTag[]): Reports {
+export function buildReports(trades: Trade[], setups: Setup[], mistakes: MistakeTag[], positives: MistakeTag[] = []): Reports {
   const symbols = [...new Set(trades.map((t) => t.underlying))].sort();
   // Half-hour slots by entry time; everything before 9:30 or after 4:00 gets its own slot.
   const slots = [{ key: 'pre', label: 'Before 9:30am' }];
@@ -152,6 +159,8 @@ export function buildReports(trades: Trade[], setups: Setup[], mistakes: Mistake
     setup: groupBy(trades, [...setups.map((s) => ({ key: s.id, label: s.name })), { key: 'none', label: 'No setup' }], (t) => [t.journal?.setupId ?? 'none']),
     mistake: groupBy(trades, [{ key: 'none', label: 'No mistakes' }, ...mistakes.map((m) => ({ key: m.id, label: m.name }))],
       (t) => (t.journal?.mistakes.length ? t.journal.mistakes : ['none'])),
+    positive: groupBy(trades, [{ key: 'none', label: 'No positive tags' }, ...positives.map((m) => ({ key: m.id, label: m.name }))],
+      (t) => (t.journal?.positives?.length ? t.journal.positives : ['none'])),
     dte: groupBy(trades, DTE_BUCKETS, (t) => [dteBucket(t).key]),
     putCall: groupBy(trades, [{ key: 'CALL', label: 'Calls' }, { key: 'PUT', label: 'Puts' }], (t) => [t.putCall]),
     direction: groupBy(trades, [{ key: 'LONG', label: 'Bought to open' }, { key: 'SHORT', label: 'Sold to open' }], (t) => [t.direction]),

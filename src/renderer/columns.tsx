@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import { playbookScore, type Setup, type Trade } from '../core/types';
 import { holdTime, pnlClass, shortDate, signedUsd, timeOf, usd } from './format';
 import { formatR, riskReward } from '../core/rr';
-import { MistakeNames, RulesCell, SetupBadge, Stars } from './journal';
+import { MistakeNames, PositiveNames, RulesCell, SetupBadge, Stars } from './journal';
 import type { SortValue } from './sorting';
 
 export interface Column {
@@ -55,6 +55,7 @@ export const COLUMNS: Column[] = [
   { id: 'fees', label: 'Fees', sort: (t) => t.fees, numeric: true, render: (t) => <span className="muted">{usd(t.fees)}</span> },
   { id: 'returnPct', label: 'Return %', sort: (t) => returnPct(t), numeric: true, render: (t) => { const r = returnPct(t); return <span className={pnlClass(r)}>{r > 0 ? '+' : ''}{r.toFixed(1)}%</span>; } },
   { id: 'setup', label: 'Setup', sort: (t, setups) => setups.find((x) => x.id === t.journal?.setupId)?.name, render: (t) => <SetupBadge id={t.journal?.setupId} /> },
+  { id: 'positives', label: 'Did well', sort: (t) => t.journal?.positives?.length || null, render: (t) => <PositiveNames ids={t.journal?.positives} /> },
   { id: 'mistakes', label: 'Mistakes', sort: (t) => t.journal?.mistakes.length || null, render: (t) => <MistakeNames ids={t.journal?.mistakes} /> },
   { id: 'rating', label: 'Rating', sort: (t) => t.journal?.rating, render: (t) => (t.journal?.rating ? <Stars value={t.journal.rating} size="small" /> : null) },
   {

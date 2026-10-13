@@ -34,6 +34,7 @@ const api: JournalApi = {
   saveTradeJournal: (tradeId, journal) => ipcRenderer.invoke('journal:saveTrade', tradeId, journal),
   saveSetups: (setups) => ipcRenderer.invoke('journal:saveSetups', setups),
   saveMistakes: (mistakes) => ipcRenderer.invoke('journal:saveMistakes', mistakes),
+  savePositives: (positives) => ipcRenderer.invoke('journal:savePositives', positives),
   saveDayNote: (date, notes) => ipcRenderer.invoke('journal:saveDayNote', date, notes),
 };
 
