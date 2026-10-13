@@ -227,7 +227,18 @@ button.link { background: none; border: none; color: var(--blue); padding: 6px; 
 .link-button { background: none !important; border: none !important; color: var(--blue) !important; padding: 4px 6px; }
 
 /* Reports */
-.reports { display: grid; grid-template-columns: repeat(auto-fill, minmax(560px, 1fr)); gap: 12px; padding: 0 20px 20px; align-items: start; }
+.reports { display: flex; gap: 12px; padding: 0 20px 20px; align-items: flex-start; }
+.report-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; min-height: 120px; }
+.report-slot { display: flex; flex-direction: column; gap: 12px; }
+.report-slot:empty { display: none; }
+.report.dragging { opacity: 0.4; }
+.report.collapsed { padding-bottom: 0; }
+.report.collapsed .report-head { padding-bottom: 12px; }
+.report-head { cursor: grab; user-select: none; }
+.report-head .collapse { border: none; background: none; padding: 0 2px; color: var(--muted); font-size: 13px; }
+.report-head .grip { margin-left: auto; color: var(--muted); letter-spacing: -2px; opacity: 0.6; }
+.report-head:hover .grip { opacity: 1; }
+.drop-marker { height: 4px; border-radius: 2px; background: var(--blue); box-shadow: 0 0 8px rgba(41, 98, 255, 0.6); }
 .reports-empty { padding: 0 20px; }
 .report { padding-bottom: 6px; }
 .report-head { display: flex; align-items: baseline; gap: 10px; padding: 12px 14px 4px; }

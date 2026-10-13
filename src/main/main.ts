@@ -109,7 +109,9 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('settings:get', () => ({
     timeZone: settings.timeZone, hasAlpacaKey: settings.alpacaCredentials() !== null, tradeColumns: settings.tradeColumns, goals: settings.goals,
+    reportsLayout: settings.reportsLayout,
   }));
+  ipcMain.handle('settings:setReportsLayout', (_event, layout: { columns: string[][]; collapsed: string[] }) => { settings.reportsLayout = layout; });
   ipcMain.handle('settings:setGoals', (_event, goals: Goals) => { settings.goals = goals; });
   ipcMain.handle('settings:setTimeZone', (_event, tz: string) => { settings.timeZone = tz; });
   ipcMain.handle('settings:setTradeColumns', (_event, ids: string[] | null) => { settings.tradeColumns = ids ?? undefined; });

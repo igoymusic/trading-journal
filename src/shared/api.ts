@@ -51,6 +51,7 @@ export interface SettingsView {
   /** Visible trade table columns in order; undefined means the defaults. */
   tradeColumns?: string[];
   goals: Goals;
+  reportsLayout?: { columns: string[][]; collapsed: string[] };
 }
 
 export interface JournalApi {
@@ -66,6 +67,7 @@ export interface JournalApi {
   /** Saves the trade table's columns; null restores the defaults. */
   setTradeColumns(ids: string[] | null): Promise<void>;
   setGoals(goals: Goals): Promise<void>;
+  setReportsLayout(layout: { columns: string[][]; collapsed: string[] }): Promise<void>;
   saveTradeJournal(tradeId: string, journal: TradeJournal): Promise<void>;
   saveSetups(setups: Setup[]): Promise<void>;
   saveMistakes(mistakes: MistakeTag[]): Promise<void>;

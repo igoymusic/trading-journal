@@ -11,6 +11,8 @@ interface StoredSettings {
   /** Trade table columns, in display order. */
   tradeColumns?: string[];
   goals?: Goals;
+  /** Report sections' columns, order and collapsed state. */
+  reportsLayout?: { columns: string[][]; collapsed: string[] };
   /** Base64 of the encrypted "keyId\nsecretKey". */
   alpaca?: string;
 }
@@ -52,6 +54,15 @@ export class Settings {
 
   set goals(g: Goals) {
     this.data.goals = g;
+    this.save();
+  }
+
+  get reportsLayout() {
+    return this.data.reportsLayout;
+  }
+
+  set reportsLayout(layout: StoredSettings['reportsLayout']) {
+    this.data.reportsLayout = layout;
     this.save();
   }
 

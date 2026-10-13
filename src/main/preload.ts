@@ -13,6 +13,7 @@ const api: JournalApi = {
   setTimeZone: (tz) => ipcRenderer.invoke('settings:setTimeZone', tz),
   setTradeColumns: (ids) => ipcRenderer.invoke('settings:setTradeColumns', ids),
   setGoals: (goals) => ipcRenderer.invoke('settings:setGoals', goals),
+  setReportsLayout: (layout) => ipcRenderer.invoke('settings:setReportsLayout', layout),
   saveTradeJournal: (tradeId, journal) => ipcRenderer.invoke('journal:saveTrade', tradeId, journal),
   saveSetups: (setups) => ipcRenderer.invoke('journal:saveSetups', setups),
   saveMistakes: (mistakes) => ipcRenderer.invoke('journal:saveMistakes', mistakes),
