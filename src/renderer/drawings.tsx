@@ -75,12 +75,29 @@ export function useDrawings(underlying: string, firstMs: number | undefined, las
   }
 }
 
-/** Turns drawings pasted from TradingView into this chart's drawings. */
-export function addPasted(draw: DrawingState, pasted: PastedDrawing[], fallbackMs: number) {
-  for (const p of pasted) {
-    const at = p.kind === 'hline' ? fallbackMs : p.a.time;
-    draw.put({ ...p, id: draw.newId(), day: draw.dayFor(at), color: p.color ?? draw.color } as Drawing);
+/**
+ * Saves drawings pasted from TradingView under the ticker and day they were drawn on (price lines
+ * go on this chart's day). Returns a message saying where they went.
+ */
+export async function addPasted(draw: DrawingState, pasted: PastedDrawing[], fallbackMs: number): Promise<string> {
+  const bySymbol = new Map<string, Drawing[]>();
+  const days = new Set<string>();
+  for (const { symbol: from, ...p } of pasted) {
+    const symbol = from ? drawingSymbol(from) : draw.symbol;
+    const day = p.kind === 'hline' ? draw.dayFor(fallbackMs) : nyDay(p.a.time);
+    days.add(day);
+    bySymbol.set(symbol, [...(bySymbol.get(symbol) ?? []), { ...p, id: draw.newId(), day, color: p.color ?? draw.color } as Drawing]);
   }
+  for (const [symbol, list] of bySymbol) {
+    await window.journal.putDrawings(symbol, list);
+    window.dispatchEvent(new CustomEvent(CHANGED, { detail: symbol }));
+  }
+  const n = pasted.length;
+  const symbols = [...bySymbol.keys()];
+  const when = [...days].sort().map((d) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }));
+  const where = `${symbols.join(', ')} ${when.length > 3 ? `${when[0]} to ${when[when.length - 1]}` : when.join(', ')}`;
+  const elsewhere = !symbols.includes(draw.symbol) ? ` They show on ${symbols.join(', ')} charts, not this ${draw.symbol} one.` : '';
+  return `Added ${n} drawing${n === 1 ? '' : 's'} from TradingView (${where}).${elsewhere}`;
 }
 
 /**
@@ -90,8 +107,7 @@ export function addPasted(draw: DrawingState, pasted: PastedDrawing[], fallbackM
 export async function pasteIntoChart(draw: DrawingState | null, fallbackMs: number, tradeId?: string): Promise<string> {
   const r = await window.journal.readPaste();
   if (r.drawings.length && draw) {
-    addPasted(draw, r.drawings, fallbackMs);
-    return `Added ${r.drawings.length} drawing${r.drawings.length === 1 ? '' : 's'} from TradingView.`;
+    return addPasted(draw, r.drawings, fallbackMs);
   }
   if (r.hasImage) {
     if (!tradeId) return 'Open a trade to add a screenshot to it.';

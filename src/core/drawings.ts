@@ -52,14 +52,15 @@ export function shiftDrawing(d: Drawing, dt: number, dp: number): Drawing {
 
 // ---- Pasting drawings copied in TradingView ----
 
-export type PastedDrawing = { kind: 'hline'; price: number; color?: string; label?: string }
-  | { kind: 'trend' | 'rect'; a: ChartPoint; b: ChartPoint; color?: string }
-  | { kind: 'text'; a: ChartPoint; text: string; color?: string };
+/** A drawing read from TradingView, with the ticker it was drawn on when TradingView says. */
+export type PastedDrawing = ({ kind: 'hline'; price: number; label?: string }
+  | { kind: 'trend' | 'rect'; a: ChartPoint; b: ChartPoint }
+  | { kind: 'text'; a: ChartPoint; text: string }) & { color?: string; symbol?: string };
 
 const KINDS: Record<string, 'hline' | 'trend' | 'rect' | 'text'> = {
   LineToolHorzLine: 'hline', LineToolHorzRay: 'hline', LineToolPriceLabel: 'hline',
   LineToolTrendLine: 'trend', LineToolRay: 'trend', LineToolExtended: 'trend', LineToolArrow: 'trend', LineToolInfoLine: 'trend', LineToolTrendAngle: 'trend',
-  LineToolRectangle: 'rect',
+  LineToolRectangle: 'rect', LineToolPriceRange: 'rect', LineToolDateRange: 'rect', LineToolDateAndPriceRange: 'rect',
   LineToolText: 'text', LineToolTextAbsolute: 'text', LineToolNote: 'text', LineToolNoteAbsolute: 'text', LineToolCallout: 'text', LineToolBalloon: 'text', LineToolComment: 'text',
 };
 
@@ -71,6 +72,13 @@ function toHex(c: unknown): string | undefined {
   return m ? `#${[m[1], m[2], m[3]].map((n) => Number(n).toString(16).padStart(2, '0')).join('')}` : undefined;
 }
 
+/** Minutes in a TradingView interval ("1", "15", "60", "D"...), for points placed bars past a time. */
+function intervalMinutes(i: unknown): number {
+  const n = Number(i);
+  if (Number.isFinite(n) && n > 0) return n;
+  return ({ D: 1440, '1D': 1440, W: 10080, '1W': 10080 } as Record<string, number>)[String(i)] ?? 1;
+}
+
 function point(p: any): ChartPoint | null {
   const t = p?.time_t ?? p?.time ?? p?.timestamp;
   const price = Number(p?.price);
@@ -78,8 +86,14 @@ function point(p: any): ChartPoint | null {
   const n = Number(t);
   if (!Number.isFinite(n)) return null;
   // TradingView counts seconds; anything this large is already milliseconds.
-  return { time: n > 1e11 ? n : n * 1000, price };
+  const ms = n > 1e11 ? n : n * 1000;
+  // A point past the last candle is stored as a candle time plus a number of bars.
+  const offset = Number(p?.offset) || 0;
+  return { time: ms + offset * intervalMinutes(p?.interval) * 60_000, price };
 }
+
+/** "AMEX:SPY" -> "SPY". */
+const plainSymbol = (s: unknown) => (typeof s === 'string' && s ? s.split(':').pop()!.trim().toUpperCase() : undefined);
 
 function fromSource(s: any): PastedDrawing | null {
   const kind = KINDS[s?.type];
@@ -87,12 +101,14 @@ function fromSource(s: any): PastedDrawing | null {
   const state = s.state ?? {};
   const pts = (s.points ?? s.positions ?? []).map(point).filter(Boolean) as ChartPoint[];
   const color = toHex(state.linecolor ?? state.color ?? state.textColor ?? state.backgroundColor);
+  const symbol = plainSymbol(state.symbol);
+  const extra = symbol ? { color, symbol } : { color };
   if (kind === 'hline') {
     const price = pts[0]?.price ?? Number(state.price);
-    return Number.isFinite(price) ? { kind, price, color, ...(state.text ? { label: String(state.text) } : {}) } : null;
+    return Number.isFinite(price) ? { kind, price, ...(state.text ? { label: String(state.text) } : {}), ...extra } : null;
   }
-  if (kind === 'text') return pts[0] ? { kind, a: pts[0], text: String(state.text ?? s.text ?? ''), color } : null;
-  return pts.length >= 2 ? { kind, a: pts[0], b: pts[1], color } : null;
+  if (kind === 'text') return pts[0] ? { kind, a: pts[0], text: String(state.text ?? s.text ?? ''), ...extra } : null;
+  return pts.length >= 2 ? { kind, a: pts[0], b: pts[1], ...extra } : null;
 }
 
 /** Everything that looks like a TradingView drawing anywhere inside a parsed JSON value. */
@@ -110,11 +126,13 @@ function collect(v: unknown, out: PastedDrawing[], depth = 0) {
 
 /** The JSON values hidden in clipboard text or HTML, however TradingView wraps them. */
 function jsonCandidates(raw: string): unknown[] {
-  const text = raw.replace(/<[^>]*>/g, ' ').replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'");
+  const isHtml = /<[a-z!]/i.test(raw);
+  // In HTML, TradingView keeps the data in a tag's attribute, so keep attribute values and decode them.
+  const text = isHtml ? decodeEntities(raw.replace(/<[^>]*>/g, (tag) => ` ${[...tag.matchAll(/="([^"]*)"/g)].map((m) => m[1]).join(' ')} `)) : raw;
   const out: unknown[] = [];
-  for (const s of [raw, text]) {
+  for (const s of isHtml ? [text] : [raw]) {
     try { out.push(JSON.parse(s)); continue; } catch { /* look inside */ }
-    for (let i = s.indexOf('{'); i >= 0 && out.length < 50; i = s.indexOf('{', i + 1)) {
+    for (let i = s.indexOf('{'); i >= 0 && out.length < 10_000; i = s.indexOf('{', i + 1)) {
       // Find the matching brace, then try it as JSON.
       let depth = 0;
       let inStr = false;
@@ -131,6 +149,13 @@ function jsonCandidates(raw: string): unknown[] {
     }
   }
   return out;
+}
+
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)))
+    .replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, '&');
 }
 
 /** Drawings found in what TradingView put on the clipboard; empty when there are none. */

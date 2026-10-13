@@ -21,6 +21,21 @@ describe('drawings', () => {
     expect(parseTradingViewClipboard('just some text')).toEqual([]);
   });
 
+  it('reads TradingView\'s HTML clip, with points placed bars past a candle', () => {
+    const clip = { sources: [
+      { type: 'drawing', geometry: [], source: { type: 'LineToolTrendLine', id: 'a', state: { linecolor: 'rgba(0, 188, 212, 0.77)', symbol: 'AMEX:SPY' },
+        points: [{ time_t: 1791918840, offset: 0, price: 778.5, interval: '1' }, { time_t: 1791918840, offset: 5, price: 776, interval: '5' }] } },
+      { type: 'drawing', geometry: [], source: { type: 'LineToolPriceRange', id: 'b', state: { symbol: 'AMEX:SPY' },
+        points: [{ time_t: 1791918840, offset: 0, price: 778, interval: '1' }, { time_t: 1791918900, offset: 0, price: 777, interval: '1' }] } },
+    ] };
+    const enc = JSON.stringify(clip).replace(/"/g, '&#34;');
+    const html = `<meta charset="utf-8"><span data-tradingview-clip="${enc}"></span>`;
+    expect(parseTradingViewClipboard('Drawings', html)).toEqual([
+      { kind: 'trend', a: { time: 1791918840000, price: 778.5 }, b: { time: 1791918840000 + 25 * 60_000, price: 776 }, color: '#00bcd4', symbol: 'SPY' },
+      { kind: 'rect', a: { time: 1791918840000, price: 778 }, b: { time: 1791918900000, price: 777 }, color: undefined, symbol: 'SPY' },
+    ]);
+  });
+
   it('shares index drawings and lists days', () => {
     expect(drawingSymbol('SPXW')).toBe('SPX');
     expect(daysBetween('2026-10-30', '2026-11-02')).toEqual(['2026-10-30', '2026-10-31', '2026-11-01', '2026-11-02']);

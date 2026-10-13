@@ -350,6 +350,20 @@ export class JournalDb {
     });
   }
 
+  /** Adds many drawings at once (a TradingView paste). */
+  putDrawings(symbol: string, drawings: Drawing[]) {
+    this.transaction(() => {
+      const byDay = new Map<string, Drawing[]>();
+      for (const d of drawings) byDay.set(d.day, [...(byDay.get(d.day) ?? []), d]);
+      for (const [day, list] of byDay) {
+        const row = this.db.prepare('SELECT drawings FROM chart_drawings WHERE symbol = ? AND day = ?').get(symbol, day) as { drawings: string } | undefined;
+        const ids = new Set(list.map((d) => d.id));
+        const existing = row ? (JSON.parse(row.drawings) as Drawing[]).filter((d) => !ids.has(d.id)) : [];
+        this.writeDrawings(symbol, day, [...existing, ...list]);
+      }
+    });
+  }
+
   deleteDrawing(symbol: string, id: string) {
     this.transaction(() => this.dropDrawing(symbol, id));
   }

@@ -39,6 +39,7 @@ const api: JournalApi = {
   saveDayNote: (date, notes) => ipcRenderer.invoke('journal:saveDayNote', date, notes),
   getDrawings: (symbol, days) => ipcRenderer.invoke('drawings:get', symbol, days),
   putDrawing: (symbol, drawing) => ipcRenderer.invoke('drawings:put', symbol, drawing),
+  putDrawings: (symbol, drawings) => ipcRenderer.invoke('drawings:putMany', symbol, drawings),
   deleteDrawing: (symbol, id) => ipcRenderer.invoke('drawings:delete', symbol, id),
   readPaste: () => ipcRenderer.invoke('clipboard:readPaste'),
   listScreenshots: (tradeId) => ipcRenderer.invoke('shots:list', tradeId),

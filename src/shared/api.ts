@@ -181,6 +181,7 @@ export interface JournalApi {
   getDrawings(symbol: string, days: string[]): Promise<Drawing[]>;
   /** Adds or replaces one drawing. */
   putDrawing(symbol: string, drawing: Drawing): Promise<void>;
+  putDrawings(symbol: string, drawings: Drawing[]): Promise<void>;
   deleteDrawing(symbol: string, id: string): Promise<void>;
   /** Reads the clipboard for TradingView drawings or a picture. */
   readPaste(): Promise<PasteResult>;

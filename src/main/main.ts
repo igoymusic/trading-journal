@@ -122,6 +122,7 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('drawings:get', (_event, symbol: string, days: string[]) => db.drawings(symbol, days));
   ipcMain.handle('drawings:put', (_event, symbol: string, drawing: Drawing) => db.putDrawing(symbol, drawing));
+  ipcMain.handle('drawings:putMany', (_event, symbol: string, drawings: Drawing[]) => db.putDrawings(symbol, drawings));
   ipcMain.handle('drawings:delete', (_event, symbol: string, id: string) => db.deleteDrawing(symbol, id));
   ipcMain.handle('clipboard:readPaste', () => shots.readPaste());
   ipcMain.handle('shots:list', (_event, tradeId: string) => shots.list(tradeId));
