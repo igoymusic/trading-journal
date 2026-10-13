@@ -31,6 +31,15 @@ describe('journal storage', () => {
     expect(db.tradeJournals().get('t1')).toMatchObject(levels);
   });
 
+  it('saves playbook rules on setups and which ones a trade followed', () => {
+    const db = new JournalDb(':memory:');
+    const rules = [{ id: 'r1', text: 'Wait for the first 5-minute candle' }, { id: 'r2', text: 'Stop under the range' }];
+    db.saveSetups([{ id: 's1', name: 'ORB', color: '#2962ff', rules }]);
+    db.saveTradeJournal('t1', { notes: '', setupId: 's1', mistakes: [], rating: null, rulesFollowed: ['r2'] });
+    expect(db.setups()[0].rules).toEqual(rules);
+    expect(db.tradeJournals().get('t1')?.rulesFollowed).toEqual(['r2']);
+  });
+
   it('keeps one note per day', () => {
     const db = new JournalDb(':memory:');
     db.saveDayNote('2026-09-15', 'Choppy open');

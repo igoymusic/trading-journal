@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { PlaybookRule } from '../core/types';
 import type { SettingsView } from '../shared/api';
 import { newId, SETUP_COLORS, useJournal } from './journal';
 
@@ -87,6 +88,8 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
 function SetupsEditor() {
   const { setups, saveSetups } = useJournal();
   const [name, setName] = useState('');
+  const [openRules, setOpenRules] = useState<string | null>(null);
+  const setRules = (id: string, rules: PlaybookRule[]) => saveSetups(setups.map((x) => (x.id === id ? { ...x, rules } : x)));
   const add = () => {
     if (!name.trim()) return;
     saveSetups([...setups, { id: newId(), name: name.trim(), color: SETUP_COLORS[setups.length % SETUP_COLORS.length] }]);
@@ -95,12 +98,21 @@ function SetupsEditor() {
   return (
     <>
       <h3>Setups</h3>
-      <p className="muted">The kinds of trades you take. Pick one on each trade to see later which setups make money.</p>
+      <p className="muted">
+        The kinds of trades you take. Pick one on each trade to see later which setups make money. Give a setup a
+        playbook (the rules you mean to follow every time) and you can tick off which ones you followed on each trade.
+      </p>
       {setups.map((s) => (
-        <div className="list-row" key={s.id}>
-          <input type="color" value={s.color} onChange={(e) => saveSetups(setups.map((x) => (x.id === s.id ? { ...x, color: e.target.value } : x)))} />
-          <RenameInput value={s.name} onSave={(v) => saveSetups(setups.map((x) => (x.id === s.id ? { ...x, name: v } : x)))} />
-          <button className="danger-link" onClick={() => saveSetups(setups.filter((x) => x.id !== s.id))}>Delete</button>
+        <div key={s.id}>
+          <div className="list-row">
+            <input type="color" value={s.color} onChange={(e) => saveSetups(setups.map((x) => (x.id === s.id ? { ...x, color: e.target.value } : x)))} />
+            <RenameInput value={s.name} onSave={(v) => saveSetups(setups.map((x) => (x.id === s.id ? { ...x, name: v } : x)))} />
+            <button className={openRules === s.id ? 'active' : ''} onClick={() => setOpenRules(openRules === s.id ? null : s.id)}>
+              Playbook ({s.rules?.length ?? 0})
+            </button>
+            <button className="danger-link" onClick={() => saveSetups(setups.filter((x) => x.id !== s.id))}>Delete</button>
+          </div>
+          {openRules === s.id && <RulesEditor rules={s.rules ?? []} onChange={(rules) => setRules(s.id, rules)} />}
         </div>
       ))}
       <div className="list-row">
@@ -108,6 +120,31 @@ function SetupsEditor() {
         <button onClick={add} disabled={!name.trim()}>Add</button>
       </div>
     </>
+  );
+}
+
+function RulesEditor({ rules, onChange }: { rules: PlaybookRule[]; onChange: (rules: PlaybookRule[]) => void }) {
+  const [text, setText] = useState('');
+  const add = () => {
+    if (!text.trim()) return;
+    onChange([...rules, { id: newId(), text: text.trim() }]);
+    setText('');
+  };
+  return (
+    <div className="rules-editor">
+      {rules.map((r, i) => (
+        <div className="list-row" key={r.id}>
+          <span className="muted rule-num">{i + 1}.</span>
+          <RenameInput value={r.text} onSave={(v) => onChange(rules.map((x) => (x.id === r.id ? { ...x, text: v } : x)))} />
+          <button className="danger-link" onClick={() => onChange(rules.filter((x) => x.id !== r.id))}>Delete</button>
+        </div>
+      ))}
+      <div className="list-row">
+        <input autoFocus placeholder="New rule, e.g. Wait for the first 5-minute candle to close" value={text}
+          onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
+        <button onClick={add} disabled={!text.trim()}>Add rule</button>
+      </div>
+    </div>
   );
 }
 

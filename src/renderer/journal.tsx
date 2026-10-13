@@ -2,7 +2,7 @@
 // daily note. Changes save as you make them.
 
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { EMPTY_JOURNAL, type MistakeTag, type Setup, type Trade, type TradeJournal } from '../core/types';
+import { EMPTY_JOURNAL, type MistakeTag, playbookScore, type Setup, type Trade, type TradeJournal } from '../core/types';
 
 export interface JournalContextValue {
   setups: Setup[];
@@ -48,6 +48,15 @@ export function SetupBadge({ id }: { id: string | null | undefined }) {
 export function MistakeNames({ ids }: { ids: string[] | undefined }) {
   const names = useJournal().mistakes.filter((m) => ids?.includes(m.id)).map((m) => m.name);
   return names.length ? <span className="loss">{names.join(', ')}</span> : null;
+}
+
+/** "3/4" rules followed, green when all of them. */
+export function RulesCell({ trade }: { trade: Trade }) {
+  const score = playbookScore(trade, useJournal().setups);
+  if (!score) return null;
+  return <span className={score.followed === score.total ? 'win' : 'muted'} title={score.broken.length ? `Broke: ${score.broken.map((r) => r.text).join('; ')}` : 'Followed every rule'}>
+    {score.followed}/{score.total}
+  </span>;
 }
 
 export function Stars({ value, onChange, size = 'normal' }: { value: number | null; onChange?: (v: number | null) => void; size?: 'small' | 'normal' }) {
@@ -116,6 +125,11 @@ export function TradeJournalEditor({ trade }: { trade: Trade }) {
   }
 
   const unused = mistakes.filter((m) => !journal.mistakes.includes(m.id));
+  const setup = setups.find((s) => s.id === journal.setupId);
+  const score = playbookScore(trade, setups);
+  const followed = new Set(journal.rulesFollowed ?? []);
+  const toggleRule = (id: string) =>
+    update({ rulesFollowed: followed.has(id) ? [...followed].filter((x) => x !== id) : [...followed, id] });
 
   return (
     <div className="journal-editor" onClick={(e) => e.stopPropagation()}>
@@ -165,6 +179,20 @@ export function TradeJournalEditor({ trade }: { trade: Trade }) {
           </div>
         </div>
       </div>
+      {setup && score && (
+        <div className="playbook">
+          <div className="playbook-head">
+            <span>{setup.name} playbook</span>
+            <span className={score.followed === score.total ? 'win' : 'muted'}>{score.followed} of {score.total} rules followed</span>
+          </div>
+          {setup.rules!.map((r) => (
+            <label key={r.id} className={followed.has(r.id) ? 'followed' : ''}>
+              <input type="checkbox" checked={followed.has(r.id)} onChange={() => toggleRule(r.id)} />
+              {r.text}
+            </label>
+          ))}
+        </div>
+      )}
       <textarea
         className="notes"
         placeholder="Notes on this trade: why you took it, how you managed it, what you'd do differently…"

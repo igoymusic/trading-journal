@@ -8,6 +8,8 @@ import { nextSort, sortArrow, sortRows, type SortState } from './sorting';
 
 const SECTIONS: { key: keyof Reports; title: string; hint?: string }[] = [
   { key: 'setup', title: 'By setup' },
+  { key: 'playbook', title: 'Following your playbook', hint: 'Trades on setups that have rules.' },
+  { key: 'rulesBroken', title: 'Rules broken', hint: 'What it cost each time you broke a rule.' },
   { key: 'mistake', title: 'By mistake', hint: 'A trade with two mistakes counts under both.' },
   { key: 'dte', title: 'By days to expiry', hint: 'Counted from the day you opened the trade.' },
   { key: 'timeOfDay', title: 'By time of day', hint: 'Grouped by when you entered, in half hours.' },
@@ -25,7 +27,7 @@ export function ReportsView({ trades }: { trades: Trade[] }) {
   if (!trades.some((t) => t.status === 'CLOSED')) return <p className="muted reports-empty">No closed trades match these filters.</p>;
   return (
     <section className="reports">
-      {SECTIONS.map((s) => <ReportCard key={s.key} title={s.title} hint={s.hint} rows={reports[s.key]} />)}
+      {SECTIONS.filter((s) => reports[s.key].length).map((s) => <ReportCard key={s.key} title={s.title} hint={s.hint} rows={reports[s.key]} />)}
     </section>
   );
 }

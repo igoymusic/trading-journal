@@ -3,7 +3,7 @@
 
 import { tradeDay } from './calendar';
 import { riskReward } from './rr';
-import type { MistakeTag, Setup, Trade } from './types';
+import { type MistakeTag, playbookScore, type Setup, type Trade } from './types';
 
 /** Empty lists and missing values mean "any". */
 export interface TradeFilter {
@@ -129,6 +129,10 @@ export interface Reports {
   weekday: ReportRow[];
   symbol: ReportRow[];
   rating: ReportRow[];
+  /** Trades whose setup has a playbook: every rule followed vs at least one broken. */
+  playbook: ReportRow[];
+  /** Each playbook rule, over the trades that broke it. */
+  rulesBroken: ReportRow[];
 }
 
 export function buildReports(trades: Trade[], setups: Setup[], mistakes: MistakeTag[]): Reports {
@@ -154,6 +158,12 @@ export function buildReports(trades: Trade[], setups: Setup[], mistakes: Mistake
     timeOfDay: groupBy(trades, slots, (t) => [slotOf(t)]),
     weekday: groupBy(trades, WEEKDAYS.map((d, i) => ({ key: String(i), label: d })), (t) => [String(new Date(`${t.openTime.slice(0, 10)}T12:00:00`).getDay())]),
     symbol: groupBy(trades, symbols.map((s) => ({ key: s, label: s })), (t) => [t.underlying]),
+    playbook: groupBy(trades, [{ key: 'all', label: 'Followed every rule' }, { key: 'broke', label: 'Broke a rule' }], (t) => {
+      const score = playbookScore(t, setups);
+      return score ? [score.broken.length ? 'broke' : 'all'] : [];
+    }),
+    rulesBroken: groupBy(trades, setups.flatMap((s) => (s.rules ?? []).map((r) => ({ key: r.id, label: `${r.text} (${s.name})` }))),
+      (t) => playbookScore(t, setups)?.broken.map((r) => r.id) ?? []),
     rating: groupBy(trades, [5, 4, 3, 2, 1].map((n) => ({ key: String(n), label: '★'.repeat(n) })).concat({ key: 'none', label: 'Not rated' }),
       (t) => [t.journal?.rating ? String(t.journal.rating) : 'none']),
   };
