@@ -2,6 +2,8 @@ import { tradeDay } from '../core/calendar';
 import type { Trade } from '../core/types';
 import { longDate } from './format';
 import { DayNote, TradeJournalEditor } from './journal';
+import { DayChart } from './DayChart';
+import { ErrorBoundary } from './ErrorBoundary';
 import { TradePanel } from './TradePanel';
 import { TradeTable } from './TradeTable';
 
@@ -24,6 +26,11 @@ export function DayView({ trades, date, chartVersion, dayNote, onSaveDayNote, ex
     <section className="day">
       <h2 className="view-title">{longDate(date)}</h2>
       <DayNote date={date} initial={dayNote} onSave={onSaveDayNote} />
+      {dayTrades.length > 1 && (
+        <ErrorBoundary key={`${date}:${chartVersion}`} label="the day's chart">
+          <DayChart trades={dayTrades} date={date} version={chartVersion} />
+        </ErrorBoundary>
+      )}
       {dayTrades.length === 0 ? <p className="muted day-empty">No trades on this day.</p> : (
         <TradeTable
           trades={dayTrades}
@@ -32,7 +39,9 @@ export function DayView({ trades, date, chartVersion, dayNote, onSaveDayNote, ex
           expanded={expanded}
           renderDetail={(t) => (
             <>
-              <TradePanel key={`${t.id}:${chartVersion}`} trade={t} onOpenSettings={onOpenSettings} />
+              <ErrorBoundary key={`${t.id}:${chartVersion}`} label="this trade">
+                <TradePanel trade={t} onOpenSettings={onOpenSettings} />
+              </ErrorBoundary>
               <TradeJournalEditor trade={t} />
             </>
           )}

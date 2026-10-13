@@ -18,7 +18,7 @@ interface Levels { stops: PriceLevel[]; targets: PriceLevel[] }
 const LEVEL_COLORS = { stops: '#ef5350', targets: '#26a69a' };
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-type Interval = 1 | 5 | 15;
+export type Interval = 1 | 5 | 15;
 
 /** Groups minute bars into larger candles (5-minute, 15-minute). */
 function aggregate(bars: Bar[], minutes: Interval): Bar[] {
@@ -57,6 +57,8 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
   }, [trade.id]);
 
   const bars = chart?.status === 'ok' ? chart.bars : [];
+  // Without a market data key the app works without charts: no chart, prices or R, just a hint.
+  const chartsOff = chart?.status === 'needs-key';
   const playing = !!replay?.playing;
   useEffect(() => {
     if (!replay?.playing) return;
@@ -169,22 +171,16 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
               {replay ? 'End replay' : '▶ Replay'}
             </button>
           )}
-          {[1, 5, 15].map((m) => (
+          {!chartsOff && [1, 5, 15].map((m) => (
             <button key={m} className={interval === m ? 'active' : ''} onClick={() => setInterval(m as Interval)}>{m}m</button>
           ))}
           {onClose && <button onClick={onClose} aria-label="Close">✕</button>}
         </div>
       </div>
 
-      <div className="panel-body">
-        <div className={`chart-area ${replay ? 'replaying' : ''}`}>
+      <div className={`panel-body ${chartsOff ? 'charts-off' : ''}`}>
+        {!chartsOff && <div className={`chart-area ${replay ? 'replaying' : ''}`}>
           {!chart && <div className="chart-message">Loading {trade.underlying} prices…</div>}
-          {chart?.status === 'needs-key' && (
-            <div className="chart-message">
-              <p>Add your Alpaca market data key to see {trade.underlying}'s chart with your entries and exits.</p>
-              <button className="primary" onClick={onOpenSettings}>Open Settings</button>
-            </div>
-          )}
           {chart?.status === 'error' && <div className="chart-message loss">Couldn't load prices: {chart.message}</div>}
           {chart?.status === 'ok' && (
             <PriceChart
@@ -213,7 +209,7 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
             />
           )}
           {placing && <div className="placing-hint">Click the chart where your {placing === 'stops' ? 'stop' : 'target'} is. Press Esc to cancel.</div>}
-        </div>
+        </div>}
 
         <div className="fill-list">
           <div className="fill-list-head">Fills</div>
@@ -226,10 +222,12 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
                   <span className={buy ? 'win' : 'loss'}>{f.orderType === 'EXPIRED' ? 'Expired' : buy ? 'Bought' : 'Sold'} {f.quantity}</span>
                   <span> @ {usd(f.price * 100)}</span>
                 </div>
-                <div className="muted">{f.execTime.slice(11)}</div>
+                <div className="muted" title={f.account ? `From ${f.account}` : undefined}>
+                  {f.timeExact === false ? 'time not reported' : f.execTime.slice(11)}
+                </div>
                 {(!chart || chart.status === 'ok') && (
                   <div className="muted">
-                    {trade.underlying} {point?.underlyingPrice !== undefined ? <b className="underlying-price">{usd(point.underlyingPrice)}</b> : chart ? 'n/a' : '…'}
+                    {trade.underlying} {point?.underlyingPrice !== undefined ? <b className="underlying-price">{usd(point.underlyingPrice)}</b> : chart || f.timeExact === false ? 'n/a' : '…'}
                   </div>
                 )}
               </div>
@@ -247,8 +245,20 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
               prices={levelPrices}
             />
           )}
+          {chart?.status === 'ok' && chart.estimatedFrom && (
+            <div className="muted small">
+              ≈ {chart.symbol} has no free minute data, so this chart is {chart.estimatedFrom} scaled to {chart.symbol} by each
+              day's closing prices. Expect it within a point or two of the real index.
+            </div>
+          )}
           {chart?.status === 'ok' && chart.feed === 'iex' && (
             <div className="muted small">Some prices come from the IEX exchange only, so they can differ by a cent or two.</div>
+          )}
+          {chartsOff && (
+            <div className="muted small charts-off-hint">
+              Charts are off. Add a free Alpaca market data key to see the chart, the underlying's price at each fill, and R.{' '}
+              <button className="link" onClick={onOpenSettings}>Open Settings</button>
+            </div>
           )}
         </div>
       </div>
@@ -256,8 +266,10 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
   );
 }
 
-function PriceChart({ trade, chart, interval, levels, placing, onPlace, onMove, replayAt }: {
+export function PriceChart({ trade, chart, interval, levels, placing, onPlace, onMove, replayAt, fillInfo }: {
   trade: Trade;
+  /** For a chart of several trades: which fills are entries, and a contract name for each label. */
+  fillInfo?: FillInfo;
   chart: Extract<TradeChart, { status: 'ok' }>;
   interval: Interval;
   /** During a replay, the minute being shown (epoch ms); the chart stops there. Null shows everything. */
@@ -295,7 +307,7 @@ function PriceChart({ trade, chart, interval, levels, placing, onPlace, onMove, 
     });
 
     const tz = chart.timeZone;
-    const { candles, markers } = chartData(chart, live.current.trade, interval, replayAtRef.current);
+    const { candles, markers } = chartData(chart, live.current.trade, interval, replayAtRef.current, fillInfo);
     series.setData(candles.map((b) => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close })));
     const primitive = new FillMarkersPrimitive(markers, candles);
     series.attachPrimitive(primitive);
@@ -404,7 +416,7 @@ function PriceChart({ trade, chart, interval, levels, placing, onPlace, onMove, 
     if (!c || !series || !primitive || replayAt === shownAt.current) return;
     shownAt.current = replayAt;
     const range = c.timeScale().getVisibleLogicalRange();
-    const { candles, markers } = chartData(chart, trade, interval, replayAt);
+    const { candles, markers } = chartData(chart, trade, interval, replayAt, fillInfo);
     primitive.candles = candles;
     primitive.markers = markers;
     series.setData(candles.map((b) => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close })));
@@ -419,7 +431,9 @@ function PriceChart({ trade, chart, interval, levels, placing, onPlace, onMove, 
 }
 
 /** Candles and fill markers for the chart, cut off at `until` during a replay. */
-function chartData(chart: Extract<TradeChart, { status: 'ok' }>, trade: Trade, interval: Interval, until: number | null) {
+export interface FillInfo { entryIds: Set<string>; contract: Map<string, string> }
+
+function chartData(chart: Extract<TradeChart, { status: 'ok' }>, trade: Trade, interval: Interval, until: number | null, info?: FillInfo) {
   const tz = chart.timeZone;
   const size = interval * 60_000;
   const bars = until === null ? chart.bars : chart.bars.filter((b) => b.time <= until);
@@ -427,14 +441,18 @@ function chartData(chart: Extract<TradeChart, { status: 'ok' }>, trade: Trade, i
 
   // Partial fills in the same second at the same price share one marker ("B 2 @ $79.00").
   const entrySide = trade.direction === 'LONG' ? 'BUY' : 'SELL';
-  const groups = new Map<string, { time: number; isEntry: boolean; side: string; qty: number; optionPrice: number; underlying?: number }>();
+  const groups = new Map<string, { time: number; isEntry: boolean; side: string; qty: number; optionPrice: number; underlying?: number; contract?: string }>();
   for (const f of trade.fills) {
     const point = chart.fills.find((p) => p.fillId === f.id);
     if (!point || (until !== null && !filledBy(point.time, until))) continue;
-    const key = `${Math.floor(point.time / 1000)}|${f.side}|${f.price}`;
+    const contract = info?.contract.get(f.id);
+    const key = `${Math.floor(point.time / 1000)}|${f.side}|${f.price}|${contract ?? ''}`;
     const g = groups.get(key);
     if (g) g.qty += f.quantity;
-    else groups.set(key, { time: point.time, isEntry: f.side === entrySide, side: f.side, qty: f.quantity, optionPrice: f.price, underlying: point.underlyingPrice });
+    else groups.set(key, {
+      time: point.time, isEntry: info ? info.entryIds.has(f.id) : f.side === entrySide, side: f.side, qty: f.quantity,
+      optionPrice: f.price, underlying: point.underlyingPrice, contract,
+    });
   }
   const markers: FillMarker[] = [];
   for (const g of groups.values()) {
@@ -442,7 +460,7 @@ function chartData(chart: Extract<TradeChart, { status: 'ok' }>, trade: Trade, i
     // Without an exact price, fall back to the close of the fill's candle.
     const price = g.underlying ?? candles.find((c) => c.time === candleTime)?.close;
     if (price === undefined) continue;
-    const text = `${g.side === 'BUY' ? 'B' : 'S'} ${g.qty} @ ${usd(g.optionPrice * 100)}${g.underlying === undefined ? ' (approx.)' : ''}`;
+    const text = `${g.side === 'BUY' ? 'B' : 'S'} ${g.qty}${g.contract ? ` ${g.contract}` : ''} @ ${usd(g.optionPrice * 100)}${g.underlying === undefined ? ' (approx.)' : ''}`;
     markers.push({ time: candleTime, price, kind: g.isEntry ? 'entry' : 'exit', text });
   }
   return { candles, markers };

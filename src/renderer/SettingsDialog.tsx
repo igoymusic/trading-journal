@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
 import type { Goals } from '../core/goals';
 import type { PlaybookRule } from '../core/types';
-import type { SettingsView } from '../shared/api';
+import type { SettingsView, SyncResult } from '../shared/api';
+import { BrokersSettings } from './BrokersSettings';
+import { NO_ACCOUNT } from './AccountPicker';
+import { SchwabSettings } from './SchwabSettings';
 import { newId, SETUP_COLORS, useJournal } from './journal';
 
 const TIME_ZONES = [
@@ -12,12 +15,13 @@ const TIME_ZONES = [
   ['America/Los_Angeles', 'Pacific'],
 ];
 
-export function SettingsDialog({ onClose }: { onClose: () => void }) {
+export function SettingsDialog({ onClose, onSynced }: { onClose: () => void; onSynced: (result: SyncResult) => void }) {
   const [settings, setSettings] = useState<SettingsView | null>(null);
   const [keyId, setKeyId] = useState('');
   const [secretKey, setSecretKey] = useState('');
   const [status, setStatus] = useState<{ ok: boolean; message: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [removed, setRemoved] = useState<string | null>(null);
 
   const load = () => window.journal.getSettings().then(setSettings);
   useEffect(() => { load(); }, []);
@@ -40,6 +44,16 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
     load();
   }
 
+  async function removeImported() {
+    if (!confirm('Remove all trades imported from thinkorswim CSV files? This can\'t be undone, but you can import the files again.')) return;
+    setBusy(true);
+    const { removed, sync } = await window.journal.removeImported();
+    setBusy(false);
+    setRemoved(`Removed ${removed} imported fills.${sync ? ` ${sync.added} fills synced from your brokers.` : ''}`);
+    if (sync) onSynced(sync);
+    else onSynced({ added: 0, accounts: 0, errors: [] });
+  }
+
   async function changeZone(tz: string) {
     await window.journal.setTimeZone(tz);
     load();
@@ -53,11 +67,16 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
           <button onClick={onClose} aria-label="Close">✕</button>
         </div>
 
+        <BrokersSettings onSynced={onSynced} />
+        <SchwabSettings slot="trading" onSynced={onSynced} />
+        <SchwabSettings slot="marketData" onSynced={onSynced} />
+
         <h3>Market data (Alpaca)</h3>
         <p className="muted">
           Used to draw the underlying's chart and find its exact price at each of your fills.
           A free Alpaca account works. Keys are stored encrypted on this computer only.
         </p>
+        {!settings?.hasAlpacaKey && <AlpacaSteps />}
         {settings?.hasAlpacaKey ? (
           <div className="row">
             <span className="win">● Connected</span>
@@ -76,6 +95,16 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
 
         <SetupsEditor />
         <MistakesEditor />
+
+        <AccountTrades onChanged={() => onSynced({ added: 0, accounts: 0, errors: [] })} />
+
+        <h3>Imported files</h3>
+        <p className="muted">
+          Remove every trade imported from thinkorswim CSV files. If a broker is connected, its full history is synced
+          again right after. Your setups, mistakes and goals stay.
+        </p>
+        <button disabled={busy} onClick={removeImported}>Remove imported CSV trades</button>
+        {removed && <p className="win">{removed}</p>}
 
         <h3>Time zone of your broker exports</h3>
         <p className="muted">thinkorswim exports times in your computer's time zone without saying which one.</p>
@@ -224,4 +253,52 @@ function RenameInput({ value, onSave }: { value: string; onSave: (v: string) => 
   useEffect(() => setText(value), [value]);
   const commit = () => { if (text.trim() && text.trim() !== value) onSave(text.trim()); else setText(value); };
   return <input value={text} onChange={(e) => setText(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />;
+}
+
+/** How to get a free Alpaca key, for people setting up the app for the first time. */
+export function AlpacaSteps() {
+  return (
+    <ol className="setup-steps">
+      <li>
+        Make a free account at <a href="https://app.alpaca.markets/signup" target="_blank" rel="noreferrer">alpaca.markets</a>.
+        You don't need to fund it or trade there.
+      </li>
+      <li>On your Alpaca home page, find <b>API Keys</b> on the right and click <b>Generate New Keys</b>.</li>
+      <li>Copy the <b>Key</b> and the <b>Secret</b> into the two boxes below and click <b>Connect</b>. Alpaca only shows the Secret once.</li>
+    </ol>
+  );
+}
+
+/** Every account with trades in the journal, each with a button to remove its trades. */
+function AccountTrades({ onChanged }: { onChanged: () => void }) {
+  const [counts, setCounts] = useState<{ account: string | null; fills: number }[] | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const load = () => window.journal.accountFillCounts().then(setCounts);
+  useEffect(() => { load(); }, []);
+
+  async function remove(account: string | null) {
+    const name = account ?? NO_ACCOUNT;
+    if (!confirm(`Remove all ${name} trades from your journal? If this account is still connected, its trades come back on the next sync, so disconnect it at your broker first.`)) return;
+    const removed = await window.journal.removeAccount(account);
+    setMessage(`Removed ${removed} fills from ${name}.`);
+    load();
+    onChanged();
+  }
+
+  if (!counts?.length) return null;
+  return (
+    <>
+      <h3>Trades by account</h3>
+      <p className="muted">Remove the trades of an account you no longer use, for example one you disconnected.</p>
+      <ul className="broker-accounts">
+        {counts.map((c) => (
+          <li key={c.account ?? ''} className="row">
+            <span>{c.account ?? NO_ACCOUNT} <span className="muted">({c.fills} fills)</span></span>
+            <button onClick={() => remove(c.account)}>Remove trades</button>
+          </li>
+        ))}
+      </ul>
+      {message && <p className="win">{message}</p>}
+    </>
+  );
 }

@@ -75,6 +75,7 @@ function summarize(fills: Fill[], status: Trade['status']): Trade {
     fees: round2(fees),
     netPnl: round2(grossPnl - fees),
     fills,
+    ...(fills.some((f) => f.account) ? { account: fills.find((f) => f.account)!.account } : {}),
   };
 }
 

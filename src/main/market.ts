@@ -2,11 +2,13 @@
 // spans, and the underlying's exact price at every fill. Results are cached in the database.
 
 import { AlpacaClient, type Bar, occSymbol } from '../core/alpaca';
+import { type IndexProxy, indexProxy, parseFredCsv, ratioDay } from '../core/indexProxy';
 import { type LevelPrice, priceLevels } from '../core/optionLevels';
 import { zonedToUtcMillis } from '../core/time';
 import type { PriceLevel, Trade } from '../core/types';
 import type { LevelPrices, TradeChart } from '../shared/api';
 import type { JournalDb } from './db';
+import type { SchwabSync } from './schwab';
 import type { Settings } from './settings';
 
 /** Pre-market through after-hours, in New York time. */
@@ -27,13 +29,43 @@ export function tradingDays(trade: Trade): string[] {
   return days;
 }
 
-export async function buildTradeChart(trade: Trade, db: JournalDb, settings: Settings, fetchFn?: typeof fetch): Promise<TradeChart> {
+/** Index underlyings (SPXW options trade on SPX) that stock market data doesn't carry. */
+const INDEXES = new Set(['SPX', 'SPXW', 'NDX', 'NDXP', 'RUT', 'RUTW', 'VIX', 'XSP', 'DJX']);
+
+/** Schwab's names for the indexes that index options trade on. */
+const SCHWAB_INDEX: Record<string, string> = {
+  SPX: '$SPX', SPXW: '$SPX', XSP: '$XSP', NDX: '$NDX', NDXP: '$NDX', RUT: '$RUT', RUTW: '$RUT', VIX: '$VIX', DJX: '$DJX',
+};
+
+export async function buildTradeChart(trade: Trade, db: JournalDb, settings: Settings, fetchFn?: typeof fetch, schwab?: SchwabSync): Promise<TradeChart> {
+  // Index options chart the real index when Schwab is signed in and has its minutes.
+  const schwabSymbol = SCHWAB_INDEX[trade.underlying];
+  if (schwabSymbol && schwab?.status().signedIn) {
+    const chart = await schwabIndexChart(trade, schwabSymbol, db, settings, schwab).catch(() => null);
+    if (chart) return chart;
+  }
   const creds = settings.alpacaCredentials();
   if (!creds) return { status: 'needs-key' };
   const client = new AlpacaClient(creds, fetchFn as any, process.env.TJ_ALPACA_BASE_URL || undefined);
-  const symbol = trade.underlying;
   const tz = settings.timeZone;
   const now = Date.now();
+  // Index options chart the tracking ETF, scaled to the index each day.
+  const proxy = indexProxy(trade.underlying);
+  const symbol = proxy?.etf ?? trade.underlying;
+  const ratios = new Map<string, number>();
+  if (proxy) {
+    for (const day of tradingDays(trade)) {
+      const r = await indexRatio(proxy, day, client, db, fetchFn ?? fetch).catch(() => undefined);
+      if (r) ratios.set(day, r);
+    }
+    if (!ratios.size) return { status: 'error', message: `Couldn't get ${trade.underlying}'s daily closes to estimate its prices from ${proxy.etf}.` };
+  }
+  const nyDay = (ms: number) => new Date(ms).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+  const ratioAt = (ms: number) => (proxy ? ratios.get(nyDay(ms)) ?? [...ratios.values()][0] : 1);
+  const scale = (b: Bar): Bar => {
+    const r = ratioAt(b.time);
+    return r === 1 ? b : { ...b, open: b.open * r, high: b.high * r, low: b.low * r, close: b.close * r };
+  };
 
   const bars: Bar[] = [];
   let feed = 'sip';
@@ -54,21 +86,94 @@ export async function buildTradeChart(trade: Trade, db: JournalDb, settings: Set
     }
   }
 
+  // Nothing to chart, e.g. SPX: Alpaca's stock data has no index prices.
+  if (!bars.length) {
+    const index = INDEXES.has(symbol) ? ` ${symbol} is an index, and Alpaca's market data only covers stocks and ETFs.` : '';
+    return { status: 'error', message: `No ${symbol} prices for this trade's days.${index}` };
+  }
+
   const fills = [];
   for (const fill of trade.fills) {
     const fillMillis = zonedToUtcMillis(fill.execTime, tz);
     let price = db.fillPrice(fill.id);
-    if (!price && fillMillis < now - FREE_PLAN_DELAY_MS) {
+    // A fill the broker only dated has no real time, so there's no "price at that second" to look up.
+    if (!price && fill.timeExact !== false && fillMillis < now - FREE_PLAN_DELAY_MS) {
       const print = await client.lastTradeAtOrBefore(symbol, fillMillis);
       if (print) {
-        db.saveFillPrice(fill.id, print.price, print.time, print.feed);
-        price = { price: print.price, tradeTime: print.time, feed: print.feed };
+        const p = Math.round(print.price * ratioAt(fillMillis) * 100) / 100;
+        db.saveFillPrice(fill.id, p, print.time, proxy ? `${print.feed}:${proxy.etf}` : print.feed);
+        price = { price: p, tradeTime: print.time, feed: print.feed };
       }
     }
     fills.push({ fillId: fill.id, time: fillMillis, underlyingPrice: price?.price, priceTime: price?.tradeTime });
   }
 
-  return { status: 'ok', symbol, timeZone: tz, feed, bars, fills };
+  return {
+    status: 'ok', symbol: proxy ? trade.underlying : symbol, timeZone: tz, feed, bars: proxy ? bars.map(scale) : bars, fills,
+    ...(proxy ? { estimatedFrom: proxy.etf } : {}),
+  };
+}
+
+/** The trade on the index's own one-minute prices from Schwab; null if Schwab doesn't have every day. */
+async function schwabIndexChart(trade: Trade, symbol: string, db: JournalDb, settings: Settings, schwab: SchwabSync): Promise<TradeChart | null> {
+  const bars: Bar[] = [];
+  for (const day of tradingDays(trade)) {
+    const start = zonedToUtcMillis(`${day}T${SESSION_START}`, 'America/New_York');
+    const end = zonedToUtcMillis(`${day}T${SESSION_END}`, 'America/New_York');
+    if (db.barDay(symbol, day)) {
+      bars.push(...db.minuteBars(symbol, start, end));
+      continue;
+    }
+    const fetched = await schwab.indexBars(symbol, start, end);
+    if (!fetched) return null;
+    if (end < Date.now()) db.saveBarDay(symbol, day, 'schwab', fetched);
+    bars.push(...fetched);
+  }
+  const tz = settings.timeZone;
+  const fills = trade.fills.map((fill) => {
+    const time = zonedToUtcMillis(fill.execTime, tz);
+    // An index has no trades of its own: read the price partway through the minute the fill was in.
+    const bar = fill.timeExact === false ? undefined : bars.find((b) => b.time <= time && time < b.time + 60_000);
+    const underlyingPrice = bar ? Math.round((bar.open + ((bar.close - bar.open) * (time - bar.time)) / 60_000) * 100) / 100 : undefined;
+    return { fillId: fill.id, time, underlyingPrice, priceTime: bar ? time : undefined };
+  });
+  return { status: 'ok', symbol: trade.underlying, timeZone: tz, feed: 'schwab', bars, fills };
+}
+
+/** The index's daily closes from FRED (free, no account), cached; refetched when a newer day is needed. */
+async function indexCloses(series: string, day: string, db: JournalDb, fetchFn: typeof fetch): Promise<Map<string, number>> {
+  const key = `fred:${series}`;
+  const cached = db.getMeta(key);
+  let closes = cached ? new Map<string, number>(JSON.parse(cached).closes) : new Map<string, number>();
+  const fetchedAt = cached ? JSON.parse(cached).fetchedAt as number : 0;
+  const newest = [...closes.keys()].sort().pop() ?? '';
+  if (newest < day && Date.now() - fetchedAt > 60 * 60_000) {
+    const base = process.env.TJ_FRED_URL || 'https://fred.stlouisfed.org/graph/fredgraph.csv';
+    const res = await fetchFn(`${base}?id=${encodeURIComponent(series)}`);
+    if (res.ok) {
+      closes = parseFredCsv(await res.text());
+      db.setMeta(key, JSON.stringify({ fetchedAt: Date.now(), closes: [...closes] }));
+    }
+  }
+  return closes;
+}
+
+/** Index ÷ ETF at the close of the latest published day on or before `day`. */
+async function indexRatio(proxy: IndexProxy, day: string, client: AlpacaClient, db: JournalDb, fetchFn: typeof fetch): Promise<number | undefined> {
+  const closes = await indexCloses(proxy.fredSeries, day, db, fetchFn);
+  const ref = ratioDay(day, closes);
+  if (!ref) return undefined;
+  const cacheKey = `ratio:${proxy.fredSeries}:${proxy.etf}:${ref}`;
+  const cached = db.getMeta(cacheKey);
+  if (cached) return Number(cached) * proxy.scale;
+  // The ETF's last regular-session minute that day.
+  const close = zonedToUtcMillis(`${ref}T16:00:00`, 'America/New_York');
+  const { bars } = await client.minuteBars(proxy.etf, close - 15 * 60_000, close);
+  const last = bars.filter((b) => b.time < close).pop();
+  if (!last) return undefined;
+  const ratio = closes.get(ref)! / last.close;
+  db.setMeta(cacheKey, String(ratio));
+  return ratio * proxy.scale;
 }
 
 /** Alpaca's option history starts here. */

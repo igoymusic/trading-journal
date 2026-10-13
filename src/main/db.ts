@@ -1,6 +1,7 @@
 // Local database: one SQLite file in the app's data folder, using the SQLite built into Electron's Node.
 
 import { DatabaseSync } from 'node:sqlite';
+import { matchFills } from '../core/fills';
 import type { Bar } from '../core/alpaca';
 import type { Fill, MistakeTag, Setup, TradeJournal } from '../core/types';
 
@@ -80,6 +81,10 @@ export class JournalDb {
     // Added after the first journal release: stop/target levels for R.
     const cols = (this.db.prepare('PRAGMA table_info(trade_journal)').all() as { name: string }[]).map((c) => c.name);
     if (!cols.includes('levels')) this.db.exec("ALTER TABLE trade_journal ADD COLUMN levels TEXT NOT NULL DEFAULT '{}'");
+    // Added with broker sync: which account a fill came from, and whether its time is exact.
+    const fillCols = (this.db.prepare('PRAGMA table_info(fills)').all() as { name: string }[]).map((c) => c.name);
+    if (!fillCols.includes('account')) this.db.exec('ALTER TABLE fills ADD COLUMN account TEXT');
+    if (!fillCols.includes('time_exact')) this.db.exec('ALTER TABLE fills ADD COLUMN time_exact INTEGER NOT NULL DEFAULT 1');
     // Added with playbooks: each setup's rules, and which ones a trade followed.
     if (!cols.includes('rules_followed')) this.db.exec("ALTER TABLE trade_journal ADD COLUMN rules_followed TEXT");
     const setupCols = (this.db.prepare('PRAGMA table_info(setups)').all() as { name: string }[]).map((c) => c.name);
@@ -95,26 +100,75 @@ export class JournalDb {
     this.db.prepare("INSERT INTO meta (key, value) VALUES ('seeded_mistakes', '1')").run();
   }
 
-  /** Saves fills, ignoring ones already imported. Returns how many were new. */
-  addFills(fills: Fill[]): number {
+  /**
+   * Saves fills, skipping ones already in the journal, including the same execution reported by
+   * another source (a CSV and broker sync). Returns how many were new.
+   */
+  /** How many date-only fills the last `addFills` gave an exact time. */
+  lastRetimed = 0;
+
+  /**
+   * Adds fills not already in the journal and returns how many. With `addNew: false` it only uses
+   * them to give exact times (and account names) to fills already there.
+   */
+  addFills(fills: Fill[], opts: { addNew?: boolean } = {}): number {
     const insert = this.db.prepare(`
       INSERT OR IGNORE INTO fills
-        (id, broker, exec_time, underlying, expiry, strike, put_call, side, quantity, position_effect, price, order_type, spread, fees)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+        (id, broker, exec_time, underlying, expiry, strike, put_call, side, quantity, position_effect, price, order_type, spread, fees, account, time_exact)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
     let added = 0;
+    let retimed = 0;
+    const existing = this.allFills();
+    // A fill synced earlier with only its date gets its exact time once the broker's orders give it.
+    const known = new Map(existing.map((f) => [f.id, f]));
+    const retime = this.db.prepare('UPDATE fills SET exec_time = ?, time_exact = 1 WHERE id = ? AND time_exact = 0');
+    const { fresh, matched } = matchFills(fills, existing);
+    // A CSV fill that broker sync also reported learns which account it came from.
+    const label = this.db.prepare('UPDATE fills SET account = ? WHERE id = ? AND account IS NULL');
     this.db.exec('BEGIN');
     try {
-      for (const f of fills) {
+      for (const f of opts.addNew === false ? [] : fresh) {
         const result = insert.run(f.id, f.broker, f.execTime, f.underlying, f.expiry, f.strike, f.putCall, f.side,
-          f.quantity, f.positionEffect, f.price, f.orderType, f.spread, f.fees);
+          f.quantity, f.positionEffect, f.price, f.orderType, f.spread, f.fees, f.account ?? null, f.timeExact === false ? 0 : 1);
         added += Number(result.changes);
+      }
+      for (const f of fills) if (f.timeExact !== false && known.get(f.id)?.timeExact === false) retimed += Number(retime.run(f.execTime, f.id).changes);
+      for (const m of matched) {
+        if (m.incoming.account && !m.existing.account) label.run(m.incoming.account, m.existing.id);
+        // A synced fill with only its date takes the exact time from the same fill in a CSV import.
+        if (m.existing.timeExact === false && m.incoming.timeExact !== false) retimed += Number(retime.run(m.incoming.execTime, m.existing.id).changes);
       }
       this.db.exec('COMMIT');
     } catch (err) {
       this.db.exec('ROLLBACK');
       throw err;
     }
+    this.lastRetimed = retimed;
     return added;
+  }
+
+  getMeta(key: string): string | undefined {
+    return (this.db.prepare('SELECT value FROM meta WHERE key = ?').get(key) as { value: string } | undefined)?.value;
+  }
+
+  setMeta(key: string, value: string) {
+    this.db.prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
+  }
+
+  /** How many fills each account has; null is fills with no account (CSV imports). */
+  accountFillCounts(): { account: string | null; fills: number }[] {
+    return this.db.prepare('SELECT account, COUNT(*) AS fills FROM fills GROUP BY account ORDER BY account').all() as any;
+  }
+
+  /** Deletes every fill from one account (null: the ones with no account). Returns how many. */
+  removeAccountFills(account: string | null): number {
+    const sql = account === null ? 'DELETE FROM fills WHERE account IS NULL' : 'DELETE FROM fills WHERE account = ?';
+    return Number(this.db.prepare(sql).run(...(account === null ? [] : [account])).changes);
+  }
+
+  /** Deletes every fill that came from one source, e.g. all thinkorswim CSV imports. Returns how many. */
+  removeFills(broker: Fill['broker']): number {
+    return Number(this.db.prepare('DELETE FROM fills WHERE broker = ?').run(broker).changes);
   }
 
   allFills(): Fill[] {
@@ -123,6 +177,8 @@ export class JournalDb {
       id: r.id, broker: r.broker, execTime: r.exec_time, underlying: r.underlying, expiry: r.expiry,
       strike: r.strike, putCall: r.put_call, side: r.side, quantity: r.quantity,
       positionEffect: r.position_effect, price: r.price, orderType: r.order_type, spread: r.spread, fees: r.fees,
+      ...(r.account ? { account: r.account } : {}),
+      ...(r.time_exact === 0 ? { timeExact: false } : {}),
     }));
   }
 

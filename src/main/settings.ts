@@ -5,6 +5,7 @@ import { safeStorage } from 'electron';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import type { AlpacaCredentials } from '../core/alpaca';
 import type { Goals } from '../core/goals';
+import type { SchwabSlot } from '../shared/api';
 
 interface StoredSettings {
   timeZone: string;
@@ -13,9 +14,32 @@ interface StoredSettings {
   goals?: Goals;
   /** Report sections' columns, order and collapsed state. */
   reportsLayout?: { columns: string[][]; collapsed: string[] };
+  /** Address of the SnapTrade relay; empty uses the one built into the app. */
+  relayUrl?: string;
+  /** This person's SnapTrade sign-in: the user id, and the secret encrypted like the Alpaca keys. */
+  snaptrade?: { userId: string; secret: string };
+  /** Accounts left out of the journal's numbers (by name). */
+  hiddenAccounts?: string[];
+  /** When broker sync last ran (ISO time). */
+  lastBrokerSync?: string;
   /** Base64 of the encrypted "keyId\nsecretKey". */
   alpaca?: string;
+  /** Your own Schwab developer app: key and secret encrypted together, plus its callback address. */
+  schwab?: StoredSchwab;
+  /** A second Schwab app used only for market data (Schwab allows one app per product). */
+  schwabData?: StoredSchwab;
 }
+
+interface StoredSchwab { app: string; callbackUrl: string; tokens?: string; signedInAt?: string; lastSync?: string; marketDataOnly?: boolean }
+
+export type { SchwabSlot };
+
+export interface SchwabApp { appKey: string; secret: string; callbackUrl: string }
+export interface SchwabTokens { refreshToken: string; accessToken?: string; accessExpires?: number }
+
+/** Filled in at build time from the MOON_RELAY_URL repository variable once the relay is deployed. */
+declare const __MOON_RELAY_URL__: string | undefined;
+const BUILT_IN_RELAY_URL = typeof __MOON_RELAY_URL__ === 'string' ? __MOON_RELAY_URL__ : '';
 
 const DEFAULTS: StoredSettings = { timeZone: 'America/New_York' };
 
@@ -24,6 +48,8 @@ export class Settings {
 
   constructor(private file: string) {
     this.data = existsSync(file) ? { ...DEFAULTS, ...JSON.parse(readFileSync(file, 'utf8')) } : { ...DEFAULTS };
+    // A market-data-only app saved in the trading slot by an earlier version moves to its own slot.
+    if (this.data.schwab?.marketDataOnly && !this.data.schwabData) this.schwabMarketDataOnly = true;
   }
 
   private save() {
@@ -66,6 +92,55 @@ export class Settings {
     this.save();
   }
 
+  get relayUrl(): string {
+    return this.data.relayUrl || process.env.MOON_RELAY_URL || BUILT_IN_RELAY_URL;
+  }
+
+  set relayUrl(url: string) {
+    this.data.relayUrl = url.trim() || undefined;
+    this.save();
+  }
+
+  get hiddenAccounts(): string[] {
+    return this.data.hiddenAccounts ?? [];
+  }
+
+  set hiddenAccounts(names: string[]) {
+    this.data.hiddenAccounts = names.length ? names : undefined;
+    this.save();
+  }
+
+  get lastBrokerSync() {
+    return this.data.lastBrokerSync;
+  }
+
+  set lastBrokerSync(iso: string | undefined) {
+    this.data.lastBrokerSync = iso;
+    this.save();
+  }
+
+  /** The SnapTrade user for this computer, or null if broker sync hasn't been set up. */
+  snaptradeUser(): { userId: string; userSecret: string } | null {
+    const st = this.data.snaptrade;
+    if (!st || !safeStorage.isEncryptionAvailable()) return null;
+    try {
+      return { userId: st.userId, userSecret: safeStorage.decryptString(Buffer.from(st.secret, 'base64')) };
+    } catch {
+      return null;
+    }
+  }
+
+  setSnaptradeUser(user: { userId: string; userSecret: string } | null) {
+    if (!user) {
+      delete this.data.snaptrade;
+      delete this.data.lastBrokerSync;
+    } else {
+      if (!safeStorage.isEncryptionAvailable()) throw new Error('Secure storage is not available on this computer.');
+      this.data.snaptrade = { userId: user.userId, secret: safeStorage.encryptString(user.userSecret).toString('base64') };
+    }
+    this.save();
+  }
+
   /** Keys from Settings, or from ALPACA_KEY_ID / ALPACA_SECRET_KEY environment variables when developing. */
   alpacaCredentials(): AlpacaCredentials | null {
     if (process.env.ALPACA_KEY_ID && process.env.ALPACA_SECRET_KEY) {
@@ -94,6 +169,91 @@ export class Settings {
       if (!safeStorage.isEncryptionAvailable()) throw new Error('Secure storage is not available on this computer, so the keys were not saved.');
       this.data.alpaca = safeStorage.encryptString(`${creds.keyId.trim()}\n${creds.secretKey.trim()}`).toString('base64');
     }
+    this.save();
+  }
+
+  private decrypt(b64: string): string | null {
+    if (!safeStorage.isEncryptionAvailable()) return null;
+    try {
+      return safeStorage.decryptString(Buffer.from(b64, 'base64'));
+    } catch {
+      return null;
+    }
+  }
+
+  private encrypt(plain: string): string {
+    if (!safeStorage.isEncryptionAvailable()) throw new Error('Secure storage is not available on this computer, so the keys were not saved.');
+    return safeStorage.encryptString(plain).toString('base64');
+  }
+
+  private schwab(slot: SchwabSlot): StoredSchwab | undefined {
+    return slot === 'trading' ? this.data.schwab : this.data.schwabData;
+  }
+
+  /** The Schwab developer app entered in Settings for this slot, or null. */
+  schwabApp(slot: SchwabSlot): SchwabApp | null {
+    const s = this.schwab(slot);
+    const plain = s && this.decrypt(s.app);
+    if (!s || !plain) return null;
+    const [appKey, secret] = plain.split('\n');
+    return appKey && secret ? { appKey, secret, callbackUrl: s.callbackUrl } : null;
+  }
+
+  setSchwabApp(slot: SchwabSlot, app: SchwabApp | null) {
+    const stored = app ? { app: this.encrypt(`${app.appKey.trim()}\n${app.secret.trim()}`), callbackUrl: app.callbackUrl.trim() } : undefined;
+    if (slot === 'trading') this.data.schwab = stored;
+    else this.data.schwabData = stored;
+    this.save();
+  }
+
+  schwabTokens(slot: SchwabSlot): SchwabTokens | null {
+    const t = this.schwab(slot)?.tokens;
+    const plain = t && this.decrypt(t);
+    return plain ? JSON.parse(plain) : null;
+  }
+
+  /** Saves new tokens; `signedIn` marks a fresh sign-in, which starts Schwab's 7-day clock. */
+  setSchwabTokens(slot: SchwabSlot, tokens: SchwabTokens | null, signedIn = false) {
+    const s = this.schwab(slot);
+    if (!s) return;
+    if (!tokens) {
+      delete s.tokens;
+      delete s.signedInAt;
+    } else {
+      s.tokens = this.encrypt(JSON.stringify(tokens));
+      if (signedIn) s.signedInAt = new Date().toISOString();
+    }
+    this.save();
+  }
+
+  schwabSignedInAt(slot: SchwabSlot) {
+    return this.schwab(slot)?.signedInAt;
+  }
+
+  /** True when the trading slot's app turned out to have only market data. */
+  get schwabMarketDataOnly() {
+    return !!this.data.schwab?.marketDataOnly;
+  }
+
+  set schwabMarketDataOnly(v: boolean) {
+    if (!this.data.schwab) return;
+    if (v && !this.data.schwabData) {
+      // It's a market data app: move it to that slot, signed in as it is.
+      this.data.schwabData = { ...this.data.schwab, marketDataOnly: undefined, lastSync: undefined };
+      delete this.data.schwab;
+    } else {
+      this.data.schwab.marketDataOnly = v || undefined;
+    }
+    this.save();
+  }
+
+  get schwabLastSync() {
+    return this.data.schwab?.lastSync;
+  }
+
+  set schwabLastSync(iso: string | undefined) {
+    if (!this.data.schwab) return;
+    this.data.schwab.lastSync = iso;
     this.save();
   }
 }

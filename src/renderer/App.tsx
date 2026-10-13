@@ -3,7 +3,7 @@ import { statsByDay, tradeDay } from '../core/calendar';
 import type { Goals } from '../core/goals';
 import { applyFilter, EMPTY_FILTER, type TradeFilter } from '../core/reports';
 import { type Summary, summarizeTrades } from '../core/trades';
-import type { ImportResult, JournalData } from '../shared/api';
+import type { ImportResult, JournalData, SyncResult } from '../shared/api';
 import { DayView } from './DayView';
 import { FilterBar } from './FilterBar';
 import { GoalsCard } from './GoalsCard';
@@ -12,7 +12,10 @@ import { pnlClass, signedUsd, usd } from './format';
 import { MonthView } from './MonthView';
 import { PnlChart } from './PnlChart';
 import { ReportsView } from './ReportsView';
+import { AccountPicker, accountOf, accountsIn } from './AccountPicker';
+import { describeSync } from './BrokersSettings';
 import { SettingsDialog } from './SettingsDialog';
+import { ErrorBoundary } from './ErrorBoundary';
 import { TradePanel } from './TradePanel';
 import { type ActiveTab, initialTabs, monthKey, tabsReducer } from './tabs';
 import { TradeTable } from './TradeTable';
@@ -21,7 +24,20 @@ import { YearView } from './YearView';
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export function App() {
-  const [data, setData] = useState<JournalData | null>(null);
+  const [allData, setData] = useState<JournalData | null>(null);
+  // Accounts left out of every number on screen, from the picker next to the app name.
+  const [hiddenAccounts, setHiddenAccounts] = useState<string[]>([]);
+  useEffect(() => { window.journal.getSettings().then((s) => setHiddenAccounts(s.hiddenAccounts)); }, []);
+  const accounts = useMemo(() => accountsIn(allData?.trades ?? []), [allData]);
+  const data = useMemo(() => {
+    if (!allData || !hiddenAccounts.length) return allData;
+    const trades = allData.trades.filter((t) => !hiddenAccounts.includes(accountOf(t)));
+    return { ...allData, trades, summary: summarizeTrades(trades) };
+  }, [allData, hiddenAccounts]);
+  function changeHiddenAccounts(names: string[]) {
+    setHiddenAccounts(names);
+    window.journal.setHiddenAccounts(names);
+  }
   const [tabs, dispatch] = useReducer(tabsReducer, new Date(), initialTabs);
   // The Home calendar starts on this month and can be paged on its own.
   const [homeMonth, setHomeMonth] = useState(() => ({ year: new Date().getFullYear(), month: new Date().getMonth() + 1 }));
@@ -80,6 +96,35 @@ export function App() {
   }
   useEffect(() => { load(); }, []);
 
+  // Broker sync: once on the first open each day, and whenever Refresh is pressed.
+  const [brokerConnected, setBrokerConnected] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const afterSync = (result: SyncResult) => {
+    if (result.added || result.retimed || result.errors.length) setNotice(describeSync(result));
+    load();
+  };
+  async function syncBrokers(force: boolean) {
+    setSyncing(true);
+    try {
+      const result = force ? await window.journal.syncBrokers() : await window.journal.syncBrokersIfDue();
+      if (result) afterSync(result);
+      if (force && result && !result.added && !result.retimed && !result.errors.length) setNotice(describeSync(result));
+    } catch (err) {
+      setNotice(`Broker sync failed: ${(err as Error).message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`);
+    }
+    setSyncing(false);
+  }
+  useEffect(() => {
+    Promise.all([window.journal.brokerStatus(), window.journal.schwabStatus('trading'), window.journal.schwabStatus('marketData')]).then(([s, schwab, data]) => {
+      const connected = s.connected || schwab.signedIn;
+      setBrokerConnected(connected);
+      if (connected) syncBrokers(false);
+      // Schwab's sign-in only lasts a week, so say when it needs doing again.
+      const expired = [schwab.configured && !schwab.signedIn && 'Trading', data.configured && !data.signedIn && 'Market Data'].filter(Boolean);
+      if (expired.length) setNotice(`Your Schwab sign-in has run out for the ${expired.join(' and ')} app (Schwab makes it last 7 days). Open Settings to sign in again.`);
+    });
+  }, [settingsVersion]);
+
   async function importCsv() {
     try {
       const result = await window.journal.importThinkorswim();
@@ -111,8 +156,16 @@ export function App() {
     <JournalContext.Provider value={journalApi}>
     <div className="app">
       <header className="topbar">
-        <h1>Moon Journal</h1>
+        <div className="topbar-title">
+          <h1>Moon Journal</h1>
+          {accounts.length > 1 && <AccountPicker accounts={accounts} hidden={hiddenAccounts} onChange={changeHiddenAccounts} />}
+        </div>
         <div className="topbar-actions">
+          {brokerConnected && (
+            <button disabled={syncing} onClick={() => syncBrokers(true)} title="Bring in new trades from your brokers">
+              {syncing ? 'Syncing…' : '↻ Refresh'}
+            </button>
+          )}
           <button onClick={() => setShowSettings(true)}>Settings</button>
           <button className="primary" onClick={importCsv}>Import thinkorswim CSV</button>
         </div>
@@ -145,7 +198,7 @@ export function App() {
         </nav>
       )}
       {notice && <div className="notice" onClick={() => setNotice(null)}>{notice}</div>}
-      {!data ? null : !hasTrades ? <EmptyState onImport={importCsv} /> : (
+      {!data ? null : !hasTrades ? <EmptyState onImport={importCsv} onOpenSettings={() => setShowSettings(true)} /> : (
         <main className="view">
           {filterTab && <FilterBar trades={data.trades} filter={filter} onChange={setFilter} shown={filtered.length} />}
           {scoped && <SummaryBar s={scoped} />}
@@ -208,7 +261,9 @@ export function App() {
             <>
               {selected && (
                 <div className="selected-trade">
-                  <TradePanel key={`${selected.id}:${settingsVersion}`} trade={selected} onClose={() => setSelectedId(null)} onOpenSettings={() => setShowSettings(true)} />
+                  <ErrorBoundary key={`${selected.id}:${settingsVersion}`} label="this trade" onClose={() => setSelectedId(null)}>
+                    <TradePanel trade={selected} onClose={() => setSelectedId(null)} onOpenSettings={() => setShowSettings(true)} />
+                  </ErrorBoundary>
                   <TradeJournalEditor key={selected.id} trade={selected} />
                 </div>
               )}
@@ -217,7 +272,7 @@ export function App() {
           )}
         </main>
       )}
-      {showSettings && <SettingsDialog onClose={() => { setShowSettings(false); setSettingsVersion((v) => v + 1); }} />}
+      {showSettings && <SettingsDialog onSynced={afterSync} onClose={() => { setShowSettings(false); setSettingsVersion((v) => v + 1); }} />}
     </div>
     </JournalContext.Provider>
   );
@@ -267,16 +322,24 @@ function describeImport(r: ImportResult): string {
   return parts.join(' · ');
 }
 
-function EmptyState({ onImport }: { onImport: () => void }) {
+function EmptyState({ onImport, onOpenSettings }: { onImport: () => void; onOpenSettings: () => void }) {
   return (
     <div className="empty">
-      <h2>Import your trades</h2>
-      <ol>
-        <li>In thinkorswim, open <b>Monitor</b> then <b>Account Statement</b>.</li>
-        <li>Pick a date range and click <b>Apply</b>.</li>
-        <li>Click the menu icon at the top right and choose <b>Export to File</b>.</li>
-      </ol>
-      <button className="primary" onClick={onImport}>Choose the CSV file</button>
+      <h2>Welcome to Moon Journal</h2>
+      <h3>1. Bring in your trades</h3>
+      <p>Open <b>Settings</b> and click <b>Connect a broker</b>, then sign in to your broker. Your option trades come in on their own from then on.</p>
+      <button className="primary" onClick={onOpenSettings}>Open Settings</button>
+      <details>
+        <summary>Or import a thinkorswim file instead</summary>
+        <ol>
+          <li>In thinkorswim, open <b>Monitor</b> then <b>Account Statement</b>.</li>
+          <li>Pick a date range and click <b>Apply</b>.</li>
+          <li>Click the menu icon at the top right and choose <b>Export to File</b>.</li>
+        </ol>
+        <button onClick={onImport}>Choose the CSV file</button>
+      </details>
+      <h3>2. Turn on charts</h3>
+      <p>Charts use free market data from Alpaca. Settings walks you through getting a key; it takes a couple of minutes.</p>
     </div>
   );
 }

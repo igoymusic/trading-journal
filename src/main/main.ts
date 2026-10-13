@@ -1,6 +1,6 @@
 // Electron main process: owns the window, the database and file access.
 
-import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electron';
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseTosStatement } from '../core/tosCsv';
@@ -9,6 +9,10 @@ import type { MistakeTag, PriceLevel, Setup, TradeJournal } from '../core/types'
 import type { ImportResult, JournalData, TradeChart } from '../shared/api';
 import { AlpacaClient } from '../core/alpaca';
 import type { Goals } from '../core/goals';
+import { dayChartTrade } from '../core/dayChart';
+import { BrokerSync } from './brokerSync';
+import { SchwabSync } from './schwab';
+import type { SchwabSlot } from './settings';
 import { JournalDb } from './db';
 import { moveDataFromOldName } from './migrate';
 import { buildTradeChart, levelOptionPrices } from './market';
@@ -16,6 +20,9 @@ import { Settings } from './settings';
 
 let db: JournalDb;
 let settings: Settings;
+let brokers: BrokerSync;
+let schwab: SchwabSync;
+let schwabData: SchwabSync;
 
 function importFile(file: string): ImportResult {
   const { fills, skipped, unmatchedFees } = parseTosStatement(readFileSync(file, 'utf8'));
@@ -38,6 +45,11 @@ async function createWindow() {
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true },
   });
   win.setMenuBarVisibility(false);
+  // Help links (like Alpaca's sign-up page) open in the normal web browser, and only those sites.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https:\/\/([a-z0-9-]+\.)*(alpaca\.markets|snaptrade\.com)\//.test(url)) shell.openExternal(url);
+    return { action: 'deny' };
+  });
   await win.loadFile(path.join(__dirname, '../renderer/index.html'));
 
   // Used for automated screenshots: TJ_SCREENSHOT=out.png saves the window once it has drawn, then quits.
@@ -63,11 +75,23 @@ async function createWindow() {
   }
 }
 
+/** Index charts come from the Market Data app when it's signed in, else the trading one (if it has market data). */
+function chartSource() {
+  return schwabData?.status().signedIn ? schwabData : schwab;
+}
+
 moveDataFromOldName(app.getPath('appData'), app.getPath('userData'));
 
 app.whenReady().then(async () => {
+  // Headless test runs on Linux have no keyring to encrypt saved secrets with.
+  if (process.platform === 'linux' && process.env.TJ_SCREENSHOT) safeStorage.setUsePlainTextEncryption(true);
   db = new JournalDb(path.join(app.getPath('userData'), 'journal.sqlite'));
   settings = new Settings(path.join(app.getPath('userData'), 'settings.json'));
+  brokers = new BrokerSync(db, settings);
+  schwab = new SchwabSync(db, settings, 'trading');
+  schwabData = new SchwabSync(db, settings, 'marketData');
+  brokers.schwab = schwab;
+  brokers.debugFile = path.join(app.getPath('userData'), 'sync-sample.json');
   if (process.env.TJ_IMPORT_FILE) importFile(process.env.TJ_IMPORT_FILE);
 
   ipcMain.handle('journal:get', () => journalData());
@@ -87,11 +111,20 @@ app.whenReady().then(async () => {
   ipcMain.handle('journal:saveMistakes', (_event, mistakes: MistakeTag[]) => db.saveMistakeTags(mistakes));
   ipcMain.handle('journal:saveDayNote', (_event, date: string, notes: string) => db.saveDayNote(date, notes));
 
+  ipcMain.handle('market:dayChart', async (_event, date: string, underlying: string): Promise<TradeChart> => {
+    const day = dayChartTrade(buildTrades(db.allFills()), date, underlying);
+    if (!day) return { status: 'error', message: 'No trades on this day.' };
+    try {
+      return await buildTradeChart(day.trade, db, settings, undefined, chartSource());
+    } catch (err) {
+      return { status: 'error', message: (err as Error).message };
+    }
+  });
   ipcMain.handle('market:tradeChart', async (_event, tradeId: string): Promise<TradeChart> => {
     const trade = buildTrades(db.allFills()).find((t) => t.id === tradeId);
     if (!trade) return { status: 'error', message: 'Trade not found.' };
     try {
-      return await buildTradeChart(trade, db, settings);
+      return await buildTradeChart(trade, db, settings, undefined, chartSource());
     } catch (err) {
       return { status: 'error', message: (err as Error).message };
     }
@@ -110,8 +143,48 @@ app.whenReady().then(async () => {
   ipcMain.handle('settings:get', () => ({
     timeZone: settings.timeZone, hasAlpacaKey: settings.alpacaCredentials() !== null, tradeColumns: settings.tradeColumns, goals: settings.goals,
     reportsLayout: settings.reportsLayout,
+    hiddenAccounts: settings.hiddenAccounts,
   }));
+  ipcMain.handle('settings:setHiddenAccounts', (_event, names: string[]) => { settings.hiddenAccounts = names; });
   ipcMain.handle('settings:setReportsLayout', (_event, layout: { columns: string[][]; collapsed: string[] }) => { settings.reportsLayout = layout; });
+  // Removes CSV-imported fills, then re-reads the brokers' full history, since sync skipped
+  // everything the CSV already had.
+  ipcMain.handle('journal:removeImported', async () => {
+    const removed = db.removeFills('thinkorswim');
+    settings.lastBrokerSync = undefined;
+    settings.schwabLastSync = undefined;
+    const sync = brokers.status().connected || schwab.status().signedIn ? await brokers.sync().catch(() => null) : null;
+    return { removed, sync };
+  });
+  ipcMain.handle('journal:accountFillCounts', () => db.accountFillCounts());
+  ipcMain.handle('journal:removeAccount', (_event, account: string | null) => db.removeAccountFills(account));
+  ipcMain.handle('journal:removeSynced', () => {
+    const removed = db.removeFills('snaptrade') + db.removeFills('schwab');
+    settings.lastBrokerSync = undefined;
+    settings.schwabLastSync = undefined;
+    return removed;
+  });
+  ipcMain.handle('broker:status', () => brokers.status());
+  ipcMain.handle('broker:accounts', () => brokers.accounts());
+  ipcMain.handle('broker:connect', async (event) => {
+    const connected = await brokers.connect(BrowserWindow.fromWebContents(event.sender));
+    return connected ? brokers.sync() : null;
+  });
+  ipcMain.handle('broker:sync', () => brokers.sync());
+  ipcMain.handle('broker:syncIfDue', () => (brokers.dueToday() ? brokers.sync() : null));
+  ipcMain.handle('broker:disconnect', () => brokers.disconnect());
+  const slot = (s: SchwabSlot) => (s === 'marketData' ? schwabData : schwab);
+  ipcMain.handle('schwab:status', (_event, s: SchwabSlot) => slot(s).status());
+  ipcMain.handle('schwab:saveApp', (_event, s: SchwabSlot, app: { appKey: string; secret: string; callbackUrl: string } | null) => slot(s).saveApp(app));
+  ipcMain.handle('schwab:connect', async (event, s: SchwabSlot) => {
+    const connected = await slot(s).connect(BrowserWindow.fromWebContents(event.sender));
+    if (!connected) return null;
+    if (s === 'marketData') return { added: 0, accounts: 0, errors: [] };
+    settings.schwabLastSync = undefined;
+    return brokers.sync();
+  });
+  ipcMain.handle('schwab:disconnect', (_event, s: SchwabSlot) => slot(s).disconnect(true));
+  ipcMain.handle('broker:setRelayUrl', (_event, url: string) => { settings.relayUrl = url; });
   ipcMain.handle('settings:setGoals', (_event, goals: Goals) => { settings.goals = goals; });
   ipcMain.handle('settings:setTimeZone', (_event, tz: string) => { settings.timeZone = tz; });
   ipcMain.handle('settings:setTradeColumns', (_event, ids: string[] | null) => { settings.tradeColumns = ids ?? undefined; });
