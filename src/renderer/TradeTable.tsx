@@ -2,6 +2,8 @@ import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from '
 import type { Trade } from '../core/types';
 import { COLUMNS, DEFAULT_COLUMNS, moveColumn, resolveColumns } from './columns';
 import { longDate, pnlClass, signedUsd } from './format';
+import { useJournal } from './journal';
+import { nextSort, sortArrow, sortRows, type SortState } from './sorting';
 
 function plural(n: number, word: string) {
   return `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -9,6 +11,7 @@ function plural(n: number, word: string) {
 
 /**
  * Trades grouped by the day they closed (open positions sit under the day they opened).
+ * Clicking a header sorts by that column; across several days that makes one list without day groups.
  * With `renderDetail`, each row expands to show that content underneath when its id is in `expanded`.
  */
 export function TradeTable({ trades, selectedId, onSelect, expanded, renderDetail }: {
@@ -21,6 +24,8 @@ export function TradeTable({ trades, selectedId, onSelect, expanded, renderDetai
   const [columnIds, setColumnIds] = useState<string[] | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [dragging, setDragging] = useState<string | null>(null);
+  const [sort, setSort] = useState<SortState | null>(null);
+  const { setups } = useJournal();
 
   useEffect(() => {
     window.journal.getSettings().then((s) => setColumnIds(resolveColumns(s.tradeColumns).map((c) => c.id)));
@@ -45,6 +50,11 @@ export function TradeTable({ trades, selectedId, onSelect, expanded, renderDetai
     }
     return [...byDay.entries()];
   }, [trades]);
+  const sortColumn = sort && columns.find((c) => c.id === sort.id);
+  const sorted = useMemo(
+    () => (sortColumn ? sortRows(trades, (t) => sortColumn.sort(t, setups), sort!.dir) : null),
+    [trades, sortColumn, sort, setups],
+  );
 
   // Dragging a header onto another header moves it there.
   const dragProps = (id: string) => ({
@@ -58,6 +68,38 @@ export function TradeTable({ trades, selectedId, onSelect, expanded, renderDetai
     },
     onDragEnd: () => setDragging(null),
   });
+
+  function dayBar(day: string, dayTrades: Trade[]) {
+    const dayPnl = Math.round(dayTrades.reduce((a, t) => a + t.netPnl, 0) * 100) / 100;
+    const wins = dayTrades.filter((t) => t.netPnl > 0).length;
+    return (
+      <tr className="day-row" key={`bar:${day}`}>
+        <td colSpan={Math.max(1, pnlAt + lead)}>
+          {longDate(day)} <span className="muted">· {plural(dayTrades.length, 'trade')} · {plural(wins, 'win')}</span>
+        </td>
+        <td className={`num ${pnlClass(dayPnl)}`}>{signedUsd(dayPnl)}</td>
+        {pnlAt < columns.length - 1 && <td colSpan={columns.length - 1 - pnlAt} />}
+      </tr>
+    );
+  }
+
+  /** `flat`: shown outside its day group, so times also show the date. */
+  function row(t: Trade, flat: boolean) {
+    const open = !!expanded?.has(t.id);
+    return (
+      <Fragment key={t.id}>
+        <tr className={`trade-row ${t.id === selectedId || open ? 'selected' : ''}`} onClick={() => onSelect(t.id)}>
+          {lead > 0 && <td className="chev-col muted">{open ? '▾' : '▸'}</td>}
+          {columns.map((c) => <td key={c.id} className={c.numeric ? 'num' : ''}>{flat && c.renderFlat ? c.renderFlat(t) : c.render(t)}</td>)}
+        </tr>
+        {open && renderDetail && (
+          <tr className="detail-row">
+            <td colSpan={columns.length + lead}>{renderDetail(t)}</td>
+          </tr>
+        )}
+      </Fragment>
+    );
+  }
 
   return (
     <section className="trades">
@@ -76,47 +118,30 @@ export function TradeTable({ trades, selectedId, onSelect, expanded, renderDetai
       </div>
       <table>
         <thead>
+          {/* A single day's summary bar sits above the column labels. Several days each get one in the list, or none when sorted. */}
+          {days.length === 1 && dayBar(days[0][0], days[0][1])}
           <tr>
             {lead > 0 && <th className="chev-col" />}
             {columns.map((c) => (
-              <th key={c.id} className={`${c.numeric ? 'num' : ''} ${dragging === c.id ? 'dragging' : ''}`} title="Drag to move" {...dragProps(c.id)}>
-                {c.label}
+              <th
+                key={c.id}
+                className={`sortable ${c.numeric ? 'num' : ''} ${dragging === c.id ? 'dragging' : ''} ${sort?.id === c.id ? 'sorted' : ''}`}
+                title="Click to sort, drag to move"
+                onClick={() => setSort(nextSort(sort, c.id))}
+                {...dragProps(c.id)}
+              >
+                {c.label}{sortArrow(sort, c.id)}
               </th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {days.map(([day, dayTrades]) => {
-            const dayPnl = Math.round(dayTrades.reduce((a, t) => a + t.netPnl, 0) * 100) / 100;
-            const wins = dayTrades.filter((t) => t.netPnl > 0).length;
-            return (
-              <Fragment key={day}>
-                <tr className="day-row">
-                  <td colSpan={Math.max(1, pnlAt + lead)}>
-                    {longDate(day)} <span className="muted">· {plural(dayTrades.length, 'trade')} · {plural(wins, 'win')}</span>
-                  </td>
-                  <td className={`num ${pnlClass(dayPnl)}`}>{signedUsd(dayPnl)}</td>
-                  {pnlAt < columns.length - 1 && <td colSpan={columns.length - 1 - pnlAt} />}
-                </tr>
-                {dayTrades.map((t) => {
-                  const open = !!expanded?.has(t.id);
-                  return (
-                    <Fragment key={t.id}>
-                      <tr className={`trade-row ${t.id === selectedId || open ? 'selected' : ''}`} onClick={() => onSelect(t.id)}>
-                        {lead > 0 && <td className="chev-col muted">{open ? '▾' : '▸'}</td>}
-                        {columns.map((c) => <td key={c.id} className={c.numeric ? 'num' : ''}>{c.render(t)}</td>)}
-                      </tr>
-                      {open && renderDetail && (
-                        <tr className="detail-row">
-                          <td colSpan={columns.length + lead}>{renderDetail(t)}</td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  );
-                })}
-              </Fragment>
-            );
-          })}
+          {sorted && days.length > 1 ? sorted.map((t) => row(t, true)) : days.map(([day, dayTrades]) => (
+            <Fragment key={day}>
+              {days.length > 1 && dayBar(day, dayTrades)}
+              {(sorted ?? dayTrades).map((t) => row(t, false))}
+            </Fragment>
+          ))}
         </tbody>
       </table>
     </section>

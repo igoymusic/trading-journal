@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useReducer, useState } from 'react';
 import { statsByDay, tradeDay } from '../core/calendar';
+import { applyFilter, EMPTY_FILTER, type TradeFilter } from '../core/reports';
 import { type Summary, summarizeTrades } from '../core/trades';
 import type { ImportResult, JournalData } from '../shared/api';
 import { DayView } from './DayView';
+import { FilterBar } from './FilterBar';
 import { JournalContext, type JournalContextValue, TradeJournalEditor } from './journal';
 import { pnlClass, signedUsd, usd } from './format';
 import { MonthView } from './MonthView';
 import { PnlChart } from './PnlChart';
+import { ReportsView } from './ReportsView';
 import { SettingsDialog } from './SettingsDialog';
 import { TradePanel } from './TradePanel';
 import { type ActiveTab, initialTabs, monthKey, tabsReducer } from './tabs';
@@ -27,6 +30,10 @@ export function App() {
   const [settingsVersion, setSettingsVersion] = useState(0);
   // Which trades have their chart open on each day, so a Day tab remembers it while you switch tabs.
   const [openCharts, setOpenCharts] = useState<Record<string, string[]>>({});
+  // Filters shared by the All trades and Reports tabs.
+  const [filter, setFilter] = useState<TradeFilter>(EMPTY_FILTER);
+  const filtered = useMemo(() => applyFilter(data?.trades ?? [], filter), [data, filter]);
+  const filterTab = tabs.active === 'trades' || tabs.active === 'reports';
   const selected = data?.trades.find((t) => t.id === selectedId) ?? null;
   const activeDay = tabs.active.startsWith('day:') ? tabs.active.slice(4) : null;
   const activeMonth = tabs.active.startsWith('month:')
@@ -87,8 +94,9 @@ export function App() {
     if (tabs.active === 'year') return pick(String(tabs.year));
     if (activeMonth) return pick(monthKey(activeMonth.year, activeMonth.month));
     if (activeDay) return pick(activeDay);
+    if (tabs.active === 'trades' || tabs.active === 'reports') return summarizeTrades(filtered);
     return data.summary;
-  }, [data, tabs]);
+  }, [data, tabs, filtered]);
 
   const hasTrades = !!data && data.trades.length > 0;
   // Net P&L shown on each Month and Day tab.
@@ -109,6 +117,7 @@ export function App() {
         <nav className="tab-bar">
           <Tab active={tabs.active === 'home'} onClick={() => dispatch({ type: 'show', tab: 'home' })}>Home</Tab>
           <Tab active={tabs.active === 'trades'} onClick={() => dispatch({ type: 'show', tab: 'trades' })}>All trades</Tab>
+          <Tab active={tabs.active === 'reports'} onClick={() => dispatch({ type: 'show', tab: 'reports' })}>Reports</Tab>
           <span className="tab-gap" />
           <Tab active={tabs.active === 'year'} onClick={() => dispatch({ type: 'show', tab: 'year' })}>{tabs.year}</Tab>
           {tabs.months.map((m) => {
@@ -134,6 +143,7 @@ export function App() {
       {notice && <div className="notice" onClick={() => setNotice(null)}>{notice}</div>}
       {!data ? null : !hasTrades ? <EmptyState onImport={importCsv} /> : (
         <main className="view">
+          {filterTab && <FilterBar trades={data.trades} filter={filter} onChange={setFilter} shown={filtered.length} />}
           {scoped && <SummaryBar s={scoped} />}
           {tabs.active === 'home' && (
             <div className="home">
@@ -184,6 +194,7 @@ export function App() {
               onOpenSettings={() => setShowSettings(true)}
             />
           )}
+          {tabs.active === 'reports' && <ReportsView trades={filtered} />}
           {tabs.active === 'trades' && (
             <>
               {selected && (
@@ -192,7 +203,7 @@ export function App() {
                   <TradeJournalEditor key={selected.id} trade={selected} />
                 </div>
               )}
-              <TradeTable trades={data.trades} selectedId={selectedId} onSelect={(id) => setSelectedId(id === selectedId ? null : id)} />
+              <TradeTable trades={filtered} selectedId={selectedId} onSelect={(id) => setSelectedId(id === selectedId ? null : id)} />
             </>
           )}
         </main>
