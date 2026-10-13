@@ -1,6 +1,6 @@
 // Electron main process: owns the window, the database and file access.
 
-import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, safeStorage } from 'electron';
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseTosStatement } from '../core/tosCsv';
@@ -9,6 +9,7 @@ import type { MistakeTag, PriceLevel, Setup, TradeJournal } from '../core/types'
 import type { ImportResult, JournalData, TradeChart } from '../shared/api';
 import { AlpacaClient } from '../core/alpaca';
 import type { Goals } from '../core/goals';
+import { BrokerSync } from './brokerSync';
 import { JournalDb } from './db';
 import { moveDataFromOldName } from './migrate';
 import { buildTradeChart, levelOptionPrices } from './market';
@@ -16,6 +17,7 @@ import { Settings } from './settings';
 
 let db: JournalDb;
 let settings: Settings;
+let brokers: BrokerSync;
 
 function importFile(file: string): ImportResult {
   const { fills, skipped, unmatchedFees } = parseTosStatement(readFileSync(file, 'utf8'));
@@ -66,8 +68,11 @@ async function createWindow() {
 moveDataFromOldName(app.getPath('appData'), app.getPath('userData'));
 
 app.whenReady().then(async () => {
+  // Headless test runs on Linux have no keyring to encrypt saved secrets with.
+  if (process.platform === 'linux' && process.env.TJ_SCREENSHOT) safeStorage.setUsePlainTextEncryption(true);
   db = new JournalDb(path.join(app.getPath('userData'), 'journal.sqlite'));
   settings = new Settings(path.join(app.getPath('userData'), 'settings.json'));
+  brokers = new BrokerSync(db, settings);
   if (process.env.TJ_IMPORT_FILE) importFile(process.env.TJ_IMPORT_FILE);
 
   ipcMain.handle('journal:get', () => journalData());
@@ -112,6 +117,16 @@ app.whenReady().then(async () => {
     reportsLayout: settings.reportsLayout,
   }));
   ipcMain.handle('settings:setReportsLayout', (_event, layout: { columns: string[][]; collapsed: string[] }) => { settings.reportsLayout = layout; });
+  ipcMain.handle('broker:status', () => brokers.status());
+  ipcMain.handle('broker:accounts', () => brokers.accounts());
+  ipcMain.handle('broker:connect', async (event) => {
+    const connected = await brokers.connect(BrowserWindow.fromWebContents(event.sender));
+    return connected ? brokers.sync() : null;
+  });
+  ipcMain.handle('broker:sync', () => brokers.sync());
+  ipcMain.handle('broker:syncIfDue', () => (brokers.dueToday() ? brokers.sync() : null));
+  ipcMain.handle('broker:disconnect', () => brokers.disconnect());
+  ipcMain.handle('broker:setRelayUrl', (_event, url: string) => { settings.relayUrl = url; });
   ipcMain.handle('settings:setGoals', (_event, goals: Goals) => { settings.goals = goals; });
   ipcMain.handle('settings:setTimeZone', (_event, tz: string) => { settings.timeZone = tz; });
   ipcMain.handle('settings:setTradeColumns', (_event, ids: string[] | null) => { settings.tradeColumns = ids ?? undefined; });

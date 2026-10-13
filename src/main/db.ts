@@ -1,6 +1,7 @@
 // Local database: one SQLite file in the app's data folder, using the SQLite built into Electron's Node.
 
 import { DatabaseSync } from 'node:sqlite';
+import { newFills } from '../core/fills';
 import type { Bar } from '../core/alpaca';
 import type { Fill, MistakeTag, Setup, TradeJournal } from '../core/types';
 
@@ -80,6 +81,10 @@ export class JournalDb {
     // Added after the first journal release: stop/target levels for R.
     const cols = (this.db.prepare('PRAGMA table_info(trade_journal)').all() as { name: string }[]).map((c) => c.name);
     if (!cols.includes('levels')) this.db.exec("ALTER TABLE trade_journal ADD COLUMN levels TEXT NOT NULL DEFAULT '{}'");
+    // Added with broker sync: which account a fill came from, and whether its time is exact.
+    const fillCols = (this.db.prepare('PRAGMA table_info(fills)').all() as { name: string }[]).map((c) => c.name);
+    if (!fillCols.includes('account')) this.db.exec('ALTER TABLE fills ADD COLUMN account TEXT');
+    if (!fillCols.includes('time_exact')) this.db.exec('ALTER TABLE fills ADD COLUMN time_exact INTEGER NOT NULL DEFAULT 1');
     // Added with playbooks: each setup's rules, and which ones a trade followed.
     if (!cols.includes('rules_followed')) this.db.exec("ALTER TABLE trade_journal ADD COLUMN rules_followed TEXT");
     const setupCols = (this.db.prepare('PRAGMA table_info(setups)').all() as { name: string }[]).map((c) => c.name);
@@ -95,18 +100,22 @@ export class JournalDb {
     this.db.prepare("INSERT INTO meta (key, value) VALUES ('seeded_mistakes', '1')").run();
   }
 
-  /** Saves fills, ignoring ones already imported. Returns how many were new. */
+  /**
+   * Saves fills, skipping ones already in the journal, including the same execution reported by
+   * another source (a CSV and broker sync). Returns how many were new.
+   */
   addFills(fills: Fill[]): number {
     const insert = this.db.prepare(`
       INSERT OR IGNORE INTO fills
-        (id, broker, exec_time, underlying, expiry, strike, put_call, side, quantity, position_effect, price, order_type, spread, fees)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+        (id, broker, exec_time, underlying, expiry, strike, put_call, side, quantity, position_effect, price, order_type, spread, fees, account, time_exact)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
     let added = 0;
+    const fresh = newFills(fills, this.allFills());
     this.db.exec('BEGIN');
     try {
-      for (const f of fills) {
+      for (const f of fresh) {
         const result = insert.run(f.id, f.broker, f.execTime, f.underlying, f.expiry, f.strike, f.putCall, f.side,
-          f.quantity, f.positionEffect, f.price, f.orderType, f.spread, f.fees);
+          f.quantity, f.positionEffect, f.price, f.orderType, f.spread, f.fees, f.account ?? null, f.timeExact === false ? 0 : 1);
         added += Number(result.changes);
       }
       this.db.exec('COMMIT');
@@ -123,6 +132,8 @@ export class JournalDb {
       id: r.id, broker: r.broker, execTime: r.exec_time, underlying: r.underlying, expiry: r.expiry,
       strike: r.strike, putCall: r.put_call, side: r.side, quantity: r.quantity,
       positionEffect: r.position_effect, price: r.price, orderType: r.order_type, spread: r.spread, fees: r.fees,
+      ...(r.account ? { account: r.account } : {}),
+      ...(r.time_exact === 0 ? { timeExact: false } : {}),
     }));
   }
 

@@ -3,7 +3,7 @@ import { statsByDay, tradeDay } from '../core/calendar';
 import type { Goals } from '../core/goals';
 import { applyFilter, EMPTY_FILTER, type TradeFilter } from '../core/reports';
 import { type Summary, summarizeTrades } from '../core/trades';
-import type { ImportResult, JournalData } from '../shared/api';
+import type { ImportResult, JournalData, SyncResult } from '../shared/api';
 import { DayView } from './DayView';
 import { FilterBar } from './FilterBar';
 import { GoalsCard } from './GoalsCard';
@@ -12,6 +12,7 @@ import { pnlClass, signedUsd, usd } from './format';
 import { MonthView } from './MonthView';
 import { PnlChart } from './PnlChart';
 import { ReportsView } from './ReportsView';
+import { describeSync } from './BrokersSettings';
 import { SettingsDialog } from './SettingsDialog';
 import { TradePanel } from './TradePanel';
 import { type ActiveTab, initialTabs, monthKey, tabsReducer } from './tabs';
@@ -80,6 +81,31 @@ export function App() {
   }
   useEffect(() => { load(); }, []);
 
+  // Broker sync: once on the first open each day, and whenever Refresh is pressed.
+  const [brokerConnected, setBrokerConnected] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const afterSync = (result: SyncResult) => {
+    if (result.added || result.errors.length) setNotice(describeSync(result));
+    if (result.added) load();
+  };
+  async function syncBrokers(force: boolean) {
+    setSyncing(true);
+    try {
+      const result = force ? await window.journal.syncBrokers() : await window.journal.syncBrokersIfDue();
+      if (result) afterSync(result);
+      if (force && result && !result.added && !result.errors.length) setNotice(describeSync(result));
+    } catch (err) {
+      setNotice(`Broker sync failed: ${(err as Error).message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`);
+    }
+    setSyncing(false);
+  }
+  useEffect(() => {
+    window.journal.brokerStatus().then((s) => {
+      setBrokerConnected(s.connected);
+      if (s.connected) syncBrokers(false);
+    });
+  }, [settingsVersion]);
+
   async function importCsv() {
     try {
       const result = await window.journal.importThinkorswim();
@@ -113,6 +139,11 @@ export function App() {
       <header className="topbar">
         <h1>Moon Journal</h1>
         <div className="topbar-actions">
+          {brokerConnected && (
+            <button disabled={syncing} onClick={() => syncBrokers(true)} title="Bring in new trades from your brokers">
+              {syncing ? 'Syncing…' : '↻ Refresh'}
+            </button>
+          )}
           <button onClick={() => setShowSettings(true)}>Settings</button>
           <button className="primary" onClick={importCsv}>Import thinkorswim CSV</button>
         </div>
@@ -217,7 +248,7 @@ export function App() {
           )}
         </main>
       )}
-      {showSettings && <SettingsDialog onClose={() => { setShowSettings(false); setSettingsVersion((v) => v + 1); }} />}
+      {showSettings && <SettingsDialog onSynced={afterSync} onClose={() => { setShowSettings(false); setSettingsVersion((v) => v + 1); }} />}
     </div>
     </JournalContext.Provider>
   );

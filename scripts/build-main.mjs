@@ -9,5 +9,7 @@ await build({
   format: 'cjs',
   target: 'node22',
   external: ['electron'],
+  // The broker-sync relay's address (not a secret), from the MOON_RELAY_URL repository variable.
+  define: { __MOON_RELAY_URL__: JSON.stringify(process.env.MOON_RELAY_URL ?? '') },
   logLevel: 'warning',
 });

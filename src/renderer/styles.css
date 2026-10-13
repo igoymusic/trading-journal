@@ -297,3 +297,11 @@ th.sorted { color: var(--text); }
 .goal-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; }
 .goal-input { display: flex; align-items: center; gap: 4px; }
 .goal-input input { width: 100%; }
+
+/* Settings: connected broker accounts */
+.broker-accounts { list-style: none; padding: 0; margin: 6px 0 10px; }
+.broker-accounts li { padding: 3px 0; }
+.advanced { margin-top: 10px; }
+.advanced summary { cursor: pointer; color: var(--muted, #8a93a6); font-size: 13px; }
+.advanced input { flex: 1; }
+.modal .row.broker-actions { justify-content: flex-start; gap: 8px; }

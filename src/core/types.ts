@@ -7,7 +7,11 @@ export type Side = 'BUY' | 'SELL';
 export interface Fill {
   /** Stable id so re-importing the same file never creates duplicates. */
   id: string;
-  broker: 'thinkorswim';
+  broker: 'thinkorswim' | 'snaptrade';
+  /** Which brokerage account it came from, when known (broker sync). */
+  account?: string;
+  /** False when the broker only reported the date; execTime is then a placeholder time that day. */
+  timeExact?: boolean;
   execTime: string;
   underlying: string;
   /** Expiration date, "YYYY-MM-DD". */

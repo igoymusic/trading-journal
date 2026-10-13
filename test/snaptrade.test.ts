@@ -1,0 +1,75 @@
+import { describe, expect, it } from 'vitest';
+import { newFills, sameFill } from '../src/core/fills';
+import { activitiesToFills, parseOcc, type StActivity, toWallClock } from '../src/core/snaptrade';
+import type { Fill } from '../src/core/types';
+
+const spy = { ticker: 'SPY   260915C00776000', option_type: 'CALL' as const, strike_price: 776, expiration_date: '2026-09-15', underlying_symbol: { symbol: 'SPY' } };
+const act = (over: Partial<StActivity>): StActivity => ({ id: 'a1', type: 'BUY', option_type: 'BUY_TO_OPEN', option_symbol: spy, price: 1.36, units: 2, fee: 1.3, trade_date: '2026-09-15T17:20:12.000Z', ...over });
+const opts = { accountId: 'acc', accountName: 'Schwab Individual', timeZone: 'America/New_York' };
+
+describe('SnapTrade fills', () => {
+  it('reads OCC option symbols with or without padding', () => {
+    expect(parseOcc('SPY   260915C00776000')).toEqual({ underlying: 'SPY', expiry: '2026-09-15', putCall: 'CALL', strike: 776 });
+    expect(parseOcc('TSLA260109P00402500')).toEqual({ underlying: 'TSLA', expiry: '2026-01-09', putCall: 'PUT', strike: 402.5 });
+  });
+
+  it('turns an option buy into a fill on New York time', () => {
+    expect(toWallClock(Date.parse('2026-09-15T17:20:12Z'), 'America/New_York')).toBe('2026-09-15T13:20:12');
+    const [f] = activitiesToFills([act({})], [], opts);
+    expect(f).toEqual({
+      id: 'snaptrade:acc:a1', broker: 'snaptrade', account: 'Schwab Individual', execTime: '2026-09-15T13:20:12', timeExact: true,
+      underlying: 'SPY', expiry: '2026-09-15', strike: 776, putCall: 'CALL', side: 'BUY', quantity: 2,
+      positionEffect: 'OPEN', price: 1.36, orderType: 'MARKET', spread: 'SINGLE', fees: 1.3,
+    });
+  });
+
+  it('borrows the exact time from the matching order when the activity only has a date', () => {
+    const dated = act({ type: 'SELL', option_type: 'SELL_TO_CLOSE', units: -2, price: 1.26, trade_date: '2026-09-15T00:00:00.000Z' });
+    const order = { status: 'EXECUTED', action: 'SELL', option_symbol: spy, filled_quantity: '2', execution_price: '1.26', time_executed: '2026-09-15T17:22:15.000Z' };
+    const [f] = activitiesToFills([dated], [order], opts);
+    expect(f).toMatchObject({ side: 'SELL', quantity: 2, execTime: '2026-09-15T13:22:15', timeExact: true, positionEffect: 'CLOSE' });
+    // Without a matching order the time is unknown.
+    const [g] = activitiesToFills([dated], [], opts);
+    expect(g).toMatchObject({ execTime: '2026-09-15T12:00:00', timeExact: false });
+  });
+
+  it('closes whatever was open when an option expires', () => {
+    const buy = act({});
+    const expired = act({ id: 'x', type: 'OPTIONEXPIRATION', option_type: null, units: 2, price: 0, fee: 0, trade_date: '2026-09-15T00:00:00Z' });
+    const fills = activitiesToFills([expired, buy], [], opts);
+    expect(fills.find((f) => f.id.endsWith(':x'))).toMatchObject({ side: 'SELL', quantity: 2, price: 0, orderType: 'EXPIRED', execTime: '2026-09-15T16:00:00' });
+    // A short that expires is bought back.
+    const sold = act({ type: 'SELL', option_type: 'SELL_TO_OPEN' });
+    expect(activitiesToFills([expired, sold], [], opts).find((f) => f.id.endsWith(':x'))!.side).toBe('BUY');
+  });
+
+  it('skips stock trades, deposits and mini options', () => {
+    expect(activitiesToFills([
+      act({ option_symbol: null }), act({ type: 'DIVIDEND' }), act({ option_symbol: { ...spy, is_mini_option: true } }),
+    ], [], opts)).toEqual([]);
+  });
+});
+
+describe('the same fill from two sources', () => {
+  const tos: Fill = {
+    id: 'tos:1', broker: 'thinkorswim', execTime: '2026-09-15T13:20:12', underlying: 'SPY', expiry: '2026-09-15', strike: 776,
+    putCall: 'CALL', side: 'BUY', quantity: 2, positionEffect: 'OPEN', price: 1.36, orderType: 'LMT', spread: 'SINGLE', fees: 1.3,
+  };
+  const synced = activitiesToFills([act({ trade_date: '2026-09-15T17:20:13Z' })], [], opts)[0];
+
+  it('matches on contract, side, size, price and time', () => {
+    expect(sameFill(tos, synced)).toBe(true);
+    expect(sameFill(tos, { ...synced, price: 1.4 })).toBe(false);
+    expect(sameFill(tos, { ...synced, execTime: '2026-09-15T13:30:00' })).toBe(false);
+    expect(sameFill(tos, { ...synced, execTime: '2026-09-15T12:00:00', timeExact: false })).toBe(true);
+  });
+
+  it('keeps only fills the journal does not already have', () => {
+    expect(newFills([synced], [tos])).toEqual([]);
+    // Two identical trades that day: one matches the CSV fill, the other is new.
+    const second = { ...synced, id: 'snaptrade:acc:a2', execTime: '2026-09-15T12:00:00', timeExact: false };
+    const first = { ...synced, execTime: '2026-09-15T12:00:00', timeExact: false };
+    expect(newFills([first, second], [tos]).map((f) => f.id)).toEqual(['snaptrade:acc:a2']);
+    expect(newFills([tos], [tos])).toEqual([]);
+  });
+});

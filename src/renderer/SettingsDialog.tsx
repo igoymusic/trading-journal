@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { Goals } from '../core/goals';
 import type { PlaybookRule } from '../core/types';
-import type { SettingsView } from '../shared/api';
+import type { SettingsView, SyncResult } from '../shared/api';
+import { BrokersSettings } from './BrokersSettings';
 import { newId, SETUP_COLORS, useJournal } from './journal';
 
 const TIME_ZONES = [
@@ -12,7 +13,7 @@ const TIME_ZONES = [
   ['America/Los_Angeles', 'Pacific'],
 ];
 
-export function SettingsDialog({ onClose }: { onClose: () => void }) {
+export function SettingsDialog({ onClose, onSynced }: { onClose: () => void; onSynced: (result: SyncResult) => void }) {
   const [settings, setSettings] = useState<SettingsView | null>(null);
   const [keyId, setKeyId] = useState('');
   const [secretKey, setSecretKey] = useState('');
@@ -52,6 +53,8 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
           <h2>Settings</h2>
           <button onClick={onClose} aria-label="Close">✕</button>
         </div>
+
+        <BrokersSettings onSynced={onSynced} />
 
         <h3>Market data (Alpaca)</h3>
         <p className="muted">

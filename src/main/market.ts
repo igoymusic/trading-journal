@@ -58,7 +58,8 @@ export async function buildTradeChart(trade: Trade, db: JournalDb, settings: Set
   for (const fill of trade.fills) {
     const fillMillis = zonedToUtcMillis(fill.execTime, tz);
     let price = db.fillPrice(fill.id);
-    if (!price && fillMillis < now - FREE_PLAN_DELAY_MS) {
+    // A fill the broker only dated has no real time, so there's no "price at that second" to look up.
+    if (!price && fill.timeExact !== false && fillMillis < now - FREE_PLAN_DELAY_MS) {
       const print = await client.lastTradeAtOrBefore(symbol, fillMillis);
       if (print) {
         db.saveFillPrice(fill.id, print.price, print.time, print.feed);

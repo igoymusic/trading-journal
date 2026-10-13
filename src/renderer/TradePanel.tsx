@@ -226,10 +226,12 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
                   <span className={buy ? 'win' : 'loss'}>{f.orderType === 'EXPIRED' ? 'Expired' : buy ? 'Bought' : 'Sold'} {f.quantity}</span>
                   <span> @ {usd(f.price * 100)}</span>
                 </div>
-                <div className="muted">{f.execTime.slice(11)}</div>
+                <div className="muted" title={f.account ? `From ${f.account}` : undefined}>
+                  {f.timeExact === false ? 'time not reported' : f.execTime.slice(11)}
+                </div>
                 {(!chart || chart.status === 'ok') && (
                   <div className="muted">
-                    {trade.underlying} {point?.underlyingPrice !== undefined ? <b className="underlying-price">{usd(point.underlyingPrice)}</b> : chart ? 'n/a' : '…'}
+                    {trade.underlying} {point?.underlyingPrice !== undefined ? <b className="underlying-price">{usd(point.underlyingPrice)}</b> : chart || f.timeExact === false ? 'n/a' : '…'}
                   </div>
                 )}
               </div>

@@ -13,9 +13,19 @@ interface StoredSettings {
   goals?: Goals;
   /** Report sections' columns, order and collapsed state. */
   reportsLayout?: { columns: string[][]; collapsed: string[] };
+  /** Address of the SnapTrade relay; empty uses the one built into the app. */
+  relayUrl?: string;
+  /** This person's SnapTrade sign-in: the user id, and the secret encrypted like the Alpaca keys. */
+  snaptrade?: { userId: string; secret: string };
+  /** When broker sync last ran (ISO time). */
+  lastBrokerSync?: string;
   /** Base64 of the encrypted "keyId\nsecretKey". */
   alpaca?: string;
 }
+
+/** Filled in at build time from the MOON_RELAY_URL repository variable once the relay is deployed. */
+declare const __MOON_RELAY_URL__: string | undefined;
+const BUILT_IN_RELAY_URL = typeof __MOON_RELAY_URL__ === 'string' ? __MOON_RELAY_URL__ : '';
 
 const DEFAULTS: StoredSettings = { timeZone: 'America/New_York' };
 
@@ -63,6 +73,46 @@ export class Settings {
 
   set reportsLayout(layout: StoredSettings['reportsLayout']) {
     this.data.reportsLayout = layout;
+    this.save();
+  }
+
+  get relayUrl(): string {
+    return this.data.relayUrl || process.env.MOON_RELAY_URL || BUILT_IN_RELAY_URL;
+  }
+
+  set relayUrl(url: string) {
+    this.data.relayUrl = url.trim() || undefined;
+    this.save();
+  }
+
+  get lastBrokerSync() {
+    return this.data.lastBrokerSync;
+  }
+
+  set lastBrokerSync(iso: string | undefined) {
+    this.data.lastBrokerSync = iso;
+    this.save();
+  }
+
+  /** The SnapTrade user for this computer, or null if broker sync hasn't been set up. */
+  snaptradeUser(): { userId: string; userSecret: string } | null {
+    const st = this.data.snaptrade;
+    if (!st || !safeStorage.isEncryptionAvailable()) return null;
+    try {
+      return { userId: st.userId, userSecret: safeStorage.decryptString(Buffer.from(st.secret, 'base64')) };
+    } catch {
+      return null;
+    }
+  }
+
+  setSnaptradeUser(user: { userId: string; userSecret: string } | null) {
+    if (!user) {
+      delete this.data.snaptrade;
+      delete this.data.lastBrokerSync;
+    } else {
+      if (!safeStorage.isEncryptionAvailable()) throw new Error('Secure storage is not available on this computer.');
+      this.data.snaptrade = { userId: user.userId, secret: safeStorage.encryptString(user.userSecret).toString('base64') };
+    }
     this.save();
   }
 

@@ -45,6 +45,27 @@ export interface LevelPrices {
   targets: (LevelPrice | null)[];
 }
 
+export interface BrokerAccount {
+  id: string;
+  /** e.g. "Schwab · Individual" */
+  name: string;
+  institution: string;
+}
+
+export interface SyncResult {
+  /** New fills brought in. */
+  added: number;
+  accounts: number;
+  /** Accounts that couldn't be read, with why. */
+  errors: string[];
+}
+
+export interface BrokerStatus {
+  relayUrl: string;
+  connected: boolean;
+  lastSync?: string;
+}
+
 export interface SettingsView {
   timeZone: string;
   hasAlpacaKey: boolean;
@@ -67,6 +88,15 @@ export interface JournalApi {
   /** Saves the trade table's columns; null restores the defaults. */
   setTradeColumns(ids: string[] | null): Promise<void>;
   setGoals(goals: Goals): Promise<void>;
+  brokerStatus(): Promise<BrokerStatus>;
+  brokerAccounts(): Promise<BrokerAccount[]>;
+  /** Opens the broker sign-in; syncs when it's done. Null if the window was closed first. */
+  connectBroker(): Promise<SyncResult | null>;
+  syncBrokers(): Promise<SyncResult>;
+  /** Syncs if it hasn't run today yet; null when not due or not set up. */
+  syncBrokersIfDue(): Promise<SyncResult | null>;
+  disconnectBrokers(): Promise<void>;
+  setRelayUrl(url: string): Promise<void>;
   setReportsLayout(layout: { columns: string[][]; collapsed: string[] }): Promise<void>;
   saveTradeJournal(tradeId: string, journal: TradeJournal): Promise<void>;
   saveSetups(setups: Setup[]): Promise<void>;
