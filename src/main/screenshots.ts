@@ -2,7 +2,7 @@
 
 import { clipboard, nativeImage } from 'electron';
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseTradingViewClipboard } from '../core/drawings';
 import type { JournalDb } from './db';
@@ -86,12 +86,21 @@ export class Screenshots {
     const { texts, image } = await this.clipboardContents();
     const { drawings, skipped } = parseTradingViewClipboard(...Object.values(texts));
     let sampleSaved = false;
-    // A TradingView copy is kept (the latest one only) so new drawing types can be added from it.
+    // The latest TradingView copy is kept so new drawing types can be added from it.
     // Nothing else you copied is ever saved, since it could be a password or key.
     if (!image && Object.values(texts).some((t) => /tradingview/i.test(t))) {
       try {
         const sample = Object.fromEntries(Object.entries(texts).map(([k, v]) => [k, v.slice(0, 2_000_000)]));
-        writeFileSync(this.sampleFile, JSON.stringify({ when: new Date().toISOString(), formats: Object.keys(texts), ...sample }, null, 1));
+        const json = JSON.stringify({ when: new Date().toISOString(), formats: Object.keys(texts), skipped, ...sample }, null, 1);
+        writeFileSync(this.sampleFile, json);
+        // Copies with types that can't be drawn yet are also kept one by one (the latest 30), so
+        // several pastes in a row don't overwrite each other.
+        if (skipped.length) {
+          const dir = path.join(path.dirname(this.sampleFile), 'tradingview-samples');
+          mkdirSync(dir, { recursive: true });
+          writeFileSync(path.join(dir, `${new Date().toISOString().replace(/[:.]/g, '-')}.json`), json);
+          for (const old of readdirSync(dir).sort().reverse().slice(30)) rmSync(path.join(dir, old), { force: true });
+        }
         sampleSaved = true;
       } catch { /* not important */ }
     }

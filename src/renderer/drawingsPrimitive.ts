@@ -299,9 +299,10 @@ class Renderer implements IPrimitivePaneRenderer {
         const a = src.toXy(d.a);
         const b = src.toXy(d.b);
         if (!a || !b) return;
-        const x = Math.min(a.x, b.x);
+        // Boxes can stretch to either edge of the chart.
+        const x = d.kind === 'rect' && d.extendLeft ? 0 : Math.min(a.x, b.x);
         const y = Math.min(a.y, b.y);
-        const w = Math.abs(b.x - a.x);
+        const w = (d.kind === 'rect' && d.extendRight ? width : Math.max(a.x, b.x)) - x;
         const h = Math.abs(b.y - a.y);
         const fill = d.fill ?? withOpacity(d.color, 0.15);
         ctx.beginPath();
