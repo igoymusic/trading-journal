@@ -2,14 +2,20 @@
 
 import { clipboard, nativeImage } from 'electron';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseTradingViewClipboard } from '../core/drawings';
 import type { JournalDb } from './db';
 import type { PasteResult, TradeImage } from '../shared/api';
 
 export class Screenshots {
-  constructor(private db: JournalDb, private dir: string, private sampleFile: string) {}
+  constructor(private db: JournalDb, private dir: string, private sampleFile: string) {
+    // Earlier versions saved whatever was on the clipboard, which could be a password or key.
+    // Only TradingView copies are worth keeping.
+    try {
+      if (existsSync(sampleFile) && !/tradingview/i.test(readFileSync(sampleFile, 'utf8'))) rmSync(sampleFile, { force: true });
+    } catch { /* not important */ }
+  }
 
   private file(id: string) {
     // Ids are UUIDs we made; never let one point outside the folder.
@@ -80,7 +86,8 @@ export class Screenshots {
     const { texts, image } = await this.clipboardContents();
     const drawings = parseTradingViewClipboard(...Object.values(texts));
     let sampleSaved = false;
-    if (!drawings.length && !image && Object.values(texts).some(Boolean)) {
+    // Only copies that came from TradingView are saved, never anything else you copied (like a key).
+    if (!drawings.length && !image && Object.values(texts).some((t) => /tradingview/i.test(t))) {
       try {
         const sample = Object.fromEntries(Object.entries(texts).map(([k, v]) => [k, v.slice(0, 200_000)]));
         writeFileSync(this.sampleFile, JSON.stringify({ when: new Date().toISOString(), formats: Object.keys(texts), ...sample }, null, 1));

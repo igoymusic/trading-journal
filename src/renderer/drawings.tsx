@@ -100,7 +100,7 @@ export async function pasteIntoChart(draw: DrawingState | null, fallbackMs: numb
     return 'Screenshot added to this trade.';
   }
   if (r.sampleSaved) return 'No TradingView drawings found on the clipboard. A copy was saved as clipboard-sample.json in the Moon Journal data folder so support can be added.';
-  return 'The clipboard is empty.';
+  return 'No TradingView drawings or pictures on the clipboard.';
 }
 
 const TOOLS: { tool: Tool; icon: string; title: string }[] = [
