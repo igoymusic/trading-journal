@@ -86,6 +86,8 @@ export interface JournalApi {
   /** Opens a file picker; resolves to null if the user cancels. */
   importThinkorswim(): Promise<ImportResult | null>;
   getTradeChart(tradeId: string): Promise<TradeChart>;
+  /** One chart of a day's trades on one ticker. */
+  getDayChart(date: string, underlying: string): Promise<TradeChart>;
   getLevelPrices(tradeId: string, stops: PriceLevel[], targets: PriceLevel[]): Promise<LevelPrices | null>;
   getSettings(): Promise<SettingsView>;
   /** Saves (or clears, with null) the Alpaca keys after checking they work. */

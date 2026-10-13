@@ -6,6 +6,7 @@ import type { JournalApi } from '../shared/api';
 const api: JournalApi = {
   getJournal: () => ipcRenderer.invoke('journal:get'),
   importThinkorswim: () => ipcRenderer.invoke('journal:importTos'),
+  getDayChart: (date, underlying) => ipcRenderer.invoke('market:dayChart', date, underlying),
   getTradeChart: (tradeId) => ipcRenderer.invoke('market:tradeChart', tradeId),
   getLevelPrices: (tradeId, stops, targets) => ipcRenderer.invoke('market:levelPrices', tradeId, stops, targets),
   getSettings: () => ipcRenderer.invoke('settings:get'),

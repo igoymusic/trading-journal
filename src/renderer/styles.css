@@ -326,3 +326,8 @@ th.sorted { color: var(--text); }
 .panel-body.charts-off .fill-list { width: 100%; max-width: none; border-left: none; }
 .charts-off-hint { margin-top: 8px; }
 .charts-off-hint button.link { width: auto; padding: 0; display: inline; }
+
+/* The day's trades together on one chart */
+.trade-panel.day-chart { margin: 0 0 14px; }
+.panel-actions .divider { width: 1px; align-self: stretch; background: var(--border); margin: 0 4px; }
+.day-chart-note { padding: 4px 12px 8px; }

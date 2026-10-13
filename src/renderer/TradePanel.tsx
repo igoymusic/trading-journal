@@ -18,7 +18,7 @@ interface Levels { stops: PriceLevel[]; targets: PriceLevel[] }
 const LEVEL_COLORS = { stops: '#ef5350', targets: '#26a69a' };
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-type Interval = 1 | 5 | 15;
+export type Interval = 1 | 5 | 15;
 
 /** Groups minute bars into larger candles (5-minute, 15-minute). */
 function aggregate(bars: Bar[], minutes: Interval): Bar[] {
@@ -266,8 +266,10 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
   );
 }
 
-function PriceChart({ trade, chart, interval, levels, placing, onPlace, onMove, replayAt }: {
+export function PriceChart({ trade, chart, interval, levels, placing, onPlace, onMove, replayAt, fillInfo }: {
   trade: Trade;
+  /** For a chart of several trades: which fills are entries, and a contract name for each label. */
+  fillInfo?: FillInfo;
   chart: Extract<TradeChart, { status: 'ok' }>;
   interval: Interval;
   /** During a replay, the minute being shown (epoch ms); the chart stops there. Null shows everything. */
@@ -305,7 +307,7 @@ function PriceChart({ trade, chart, interval, levels, placing, onPlace, onMove, 
     });
 
     const tz = chart.timeZone;
-    const { candles, markers } = chartData(chart, live.current.trade, interval, replayAtRef.current);
+    const { candles, markers } = chartData(chart, live.current.trade, interval, replayAtRef.current, fillInfo);
     series.setData(candles.map((b) => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close })));
     const primitive = new FillMarkersPrimitive(markers, candles);
     series.attachPrimitive(primitive);
@@ -414,7 +416,7 @@ function PriceChart({ trade, chart, interval, levels, placing, onPlace, onMove, 
     if (!c || !series || !primitive || replayAt === shownAt.current) return;
     shownAt.current = replayAt;
     const range = c.timeScale().getVisibleLogicalRange();
-    const { candles, markers } = chartData(chart, trade, interval, replayAt);
+    const { candles, markers } = chartData(chart, trade, interval, replayAt, fillInfo);
     primitive.candles = candles;
     primitive.markers = markers;
     series.setData(candles.map((b) => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close })));
@@ -429,7 +431,9 @@ function PriceChart({ trade, chart, interval, levels, placing, onPlace, onMove, 
 }
 
 /** Candles and fill markers for the chart, cut off at `until` during a replay. */
-function chartData(chart: Extract<TradeChart, { status: 'ok' }>, trade: Trade, interval: Interval, until: number | null) {
+export interface FillInfo { entryIds: Set<string>; contract: Map<string, string> }
+
+function chartData(chart: Extract<TradeChart, { status: 'ok' }>, trade: Trade, interval: Interval, until: number | null, info?: FillInfo) {
   const tz = chart.timeZone;
   const size = interval * 60_000;
   const bars = until === null ? chart.bars : chart.bars.filter((b) => b.time <= until);
@@ -437,14 +441,18 @@ function chartData(chart: Extract<TradeChart, { status: 'ok' }>, trade: Trade, i
 
   // Partial fills in the same second at the same price share one marker ("B 2 @ $79.00").
   const entrySide = trade.direction === 'LONG' ? 'BUY' : 'SELL';
-  const groups = new Map<string, { time: number; isEntry: boolean; side: string; qty: number; optionPrice: number; underlying?: number }>();
+  const groups = new Map<string, { time: number; isEntry: boolean; side: string; qty: number; optionPrice: number; underlying?: number; contract?: string }>();
   for (const f of trade.fills) {
     const point = chart.fills.find((p) => p.fillId === f.id);
     if (!point || (until !== null && !filledBy(point.time, until))) continue;
-    const key = `${Math.floor(point.time / 1000)}|${f.side}|${f.price}`;
+    const contract = info?.contract.get(f.id);
+    const key = `${Math.floor(point.time / 1000)}|${f.side}|${f.price}|${contract ?? ''}`;
     const g = groups.get(key);
     if (g) g.qty += f.quantity;
-    else groups.set(key, { time: point.time, isEntry: f.side === entrySide, side: f.side, qty: f.quantity, optionPrice: f.price, underlying: point.underlyingPrice });
+    else groups.set(key, {
+      time: point.time, isEntry: info ? info.entryIds.has(f.id) : f.side === entrySide, side: f.side, qty: f.quantity,
+      optionPrice: f.price, underlying: point.underlyingPrice, contract,
+    });
   }
   const markers: FillMarker[] = [];
   for (const g of groups.values()) {
@@ -452,7 +460,7 @@ function chartData(chart: Extract<TradeChart, { status: 'ok' }>, trade: Trade, i
     // Without an exact price, fall back to the close of the fill's candle.
     const price = g.underlying ?? candles.find((c) => c.time === candleTime)?.close;
     if (price === undefined) continue;
-    const text = `${g.side === 'BUY' ? 'B' : 'S'} ${g.qty} @ ${usd(g.optionPrice * 100)}${g.underlying === undefined ? ' (approx.)' : ''}`;
+    const text = `${g.side === 'BUY' ? 'B' : 'S'} ${g.qty}${g.contract ? ` ${g.contract}` : ''} @ ${usd(g.optionPrice * 100)}${g.underlying === undefined ? ' (approx.)' : ''}`;
     markers.push({ time: candleTime, price, kind: g.isEntry ? 'entry' : 'exit', text });
   }
   return { candles, markers };

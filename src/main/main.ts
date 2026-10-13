@@ -9,6 +9,7 @@ import type { MistakeTag, PriceLevel, Setup, TradeJournal } from '../core/types'
 import type { ImportResult, JournalData, TradeChart } from '../shared/api';
 import { AlpacaClient } from '../core/alpaca';
 import type { Goals } from '../core/goals';
+import { dayChartTrade } from '../core/dayChart';
 import { BrokerSync } from './brokerSync';
 import { JournalDb } from './db';
 import { moveDataFromOldName } from './migrate';
@@ -97,6 +98,15 @@ app.whenReady().then(async () => {
   ipcMain.handle('journal:saveMistakes', (_event, mistakes: MistakeTag[]) => db.saveMistakeTags(mistakes));
   ipcMain.handle('journal:saveDayNote', (_event, date: string, notes: string) => db.saveDayNote(date, notes));
 
+  ipcMain.handle('market:dayChart', async (_event, date: string, underlying: string): Promise<TradeChart> => {
+    const day = dayChartTrade(buildTrades(db.allFills()), date, underlying);
+    if (!day) return { status: 'error', message: 'No trades on this day.' };
+    try {
+      return await buildTradeChart(day.trade, db, settings);
+    } catch (err) {
+      return { status: 'error', message: (err as Error).message };
+    }
+  });
   ipcMain.handle('market:tradeChart', async (_event, tradeId: string): Promise<TradeChart> => {
     const trade = buildTrades(db.allFills()).find((t) => t.id === tradeId);
     if (!trade) return { status: 'error', message: 'Trade not found.' };
