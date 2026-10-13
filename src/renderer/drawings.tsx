@@ -1,5 +1,6 @@
 // The drawing tools: which drawings a chart shows, the toolbar, and pasting from TradingView.
 
+import { MarkerStyleEditor } from './MarkerStyleEditor';
 import { useEffect, useMemo, useState } from 'react';
 import { screenshotsChanged } from './Screenshots';
 import {
@@ -218,6 +219,7 @@ const HAS_FILL = new Set(['rect', 'range', 'fib', 'ellipse', 'channel', 'path'])
 /** The strip of drawing tools down the left side of a chart. */
 export function DrawToolbar({ draw, onPaste }: { draw: DrawingState; onPaste: () => void }) {
   const [picking, setPicking] = useState(false);
+  const [markers, setMarkers] = useState(false);
   const sel = draw.list.find((d) => d.id === draw.selected);
   // Show the selected drawing's formatting, or what new drawings will get.
   const shown: DrawStyle = sel
@@ -265,6 +267,10 @@ export function DrawToolbar({ draw, onPaste }: { draw: DrawingState; onPaste: ()
       )}
       {sel && <button title="Delete (Del)" onClick={() => draw.remove(sel.id)}>🗑</button>}
       <span className="draw-spacer" />
+      <div className="draw-color-wrap">
+        <button className={markers ? 'active' : ''} title="Entry and exit markers: colors, sizes and lines" onClick={() => setMarkers((m) => !m)}>➤</button>
+        {markers && <div className="draw-style markers-pop"><MarkerStyleEditor /></div>}
+      </div>
       <button title="Paste drawings copied in TradingView, or a screenshot (Ctrl+V)" onClick={onPaste}>📋</button>
     </div>
   );

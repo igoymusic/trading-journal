@@ -21,8 +21,6 @@ export const COLOR_LABELS: { key: keyof ColorScheme; label: string; group: strin
   { key: 'accent', label: 'Buttons and highlights', group: 'Numbers and calendar' },
   { key: 'candleUp', label: 'Up candles', group: 'Charts' },
   { key: 'candleDown', label: 'Down candles', group: 'Charts' },
-  { key: 'entry', label: 'Entry markers', group: 'Charts' },
-  { key: 'exit', label: 'Exit markers', group: 'Charts' },
   { key: 'stop', label: 'Stop lines', group: 'Charts' },
   { key: 'target', label: 'Target lines', group: 'Charts' },
 ];

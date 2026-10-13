@@ -363,7 +363,7 @@ th.sorted { color: var(--text); }
 /* Drawing tools */
 .trade-panel:focus { outline: none; }
 .chart-area.with-tools .chart { left: 34px; }
-.draw-tools { position: absolute; left: 0; top: 0; bottom: 0; width: 34px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 0; border-right: 1px solid var(--border); background: var(--panel); z-index: 2; }
+.draw-tools { position: absolute; left: 0; top: 0; bottom: 0; width: 34px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 0; border-right: 1px solid var(--border); background: var(--panel); z-index: 10; }
 .chart-area.replaying .draw-tools { bottom: 42px; }
 .draw-tools button { width: 26px; height: 22px; flex-shrink: 0; padding: 0; font-size: 14px; line-height: 1; display: flex; align-items: center; justify-content: center; }
 .draw-tools button.active { background: var(--blue); border-color: var(--blue); color: #fff; }
@@ -416,3 +416,21 @@ th.sorted { color: var(--text); }
 /* Full-screen chart */
 .trade-panel.fullscreen { position: fixed; inset: 0; z-index: 15; margin: 0; height: auto; border-radius: 0; border: none; }
 .trade-panel.fullscreen .fill-list { width: 260px; }
+
+/* Entry and exit marker settings */
+.marker-styles { display: flex; flex-direction: column; gap: 10px; font-size: 12px; color: var(--muted); }
+.marker-style { display: flex; flex-direction: column; gap: 6px; }
+.marker-style + .marker-style { border-top: 1px solid var(--border); padding-top: 8px; }
+.marker-style label { display: flex; flex-direction: column; gap: 2px; }
+.marker-style input[type=range] { accent-color: var(--blue); width: 100%; }
+.marker-style-head { display: flex; align-items: center; gap: 8px; color: var(--text); }
+.marker-style-head input[type=color] { width: 24px; height: 22px; padding: 0; border: none; background: none; cursor: pointer; }
+.marker-sample { margin-left: auto; width: 0; height: 0; border-style: solid; border-color: transparent; }
+.marker-sample.flip { transform: scaleX(-1); }
+.draw-style.markers-pop { top: auto; bottom: 0; width: 560px; max-width: 70vw; }
+.markers-pop .marker-styles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 14px; }
+.markers-pop .marker-style + .marker-style { border-top: none; padding-top: 0; }
+.markers-pop .marker-styles > p, .markers-pop .marker-styles > button { grid-column: 1 / -1; margin: 0; }
+.markers-pop .marker-styles > button { justify-self: start; }
+.settings .marker-styles { max-width: 320px; }
+.markers-pop .marker-styles > button { width: auto; height: 26px; padding: 0 10px; font-size: 12px; }

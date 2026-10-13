@@ -1,3 +1,4 @@
+import type { MarkerStyles } from '../core/markerStyles';
 // The contract between the screens (renderer) and the main process.
 
 import type { Drawing, PastedDrawing } from '../core/drawings';
@@ -89,6 +90,9 @@ export interface BrokerStatus {
   lastSync?: string;
 }
 
+/** Where a dragged fill label sits, in pixels from its arrow's point to the label's top-left corner. */
+export interface LabelOffset { dx: number; dy: number }
+
 /** Colors you can change in Settings, as "#rrggbb". */
 export interface ColorScheme {
   win: string;
@@ -113,6 +117,8 @@ export interface SettingsView {
   hiddenAccounts: string[];
   /** Only the colors you changed. */
   colors?: Partial<ColorScheme>;
+  /** How entry and exit markers look. */
+  markerStyles: MarkerStyles;
 }
 
 export interface TradeImage {
@@ -173,6 +179,8 @@ export interface JournalApi {
   setHiddenAccounts(names: string[]): Promise<void>;
   /** Saves your colors; null goes back to the defaults. */
   setColors(colors: Partial<ColorScheme> | null): Promise<void>;
+  /** Saves how entry and exit markers look; null goes back to the defaults. */
+  setMarkerStyles(styles: MarkerStyles | null): Promise<void>;
   setReportsLayout(layout: { columns: string[][]; collapsed: string[] }): Promise<void>;
   saveTradeJournal(tradeId: string, journal: TradeJournal): Promise<void>;
   saveSetups(setups: Setup[]): Promise<void>;
@@ -185,6 +193,10 @@ export interface JournalApi {
   putDrawing(symbol: string, drawing: Drawing): Promise<void>;
   putDrawings(symbol: string, drawings: Drawing[]): Promise<void>;
   deleteDrawing(symbol: string, id: string): Promise<void>;
+  /** Where you dragged fill labels, by fill id, in pixels from the arrow's point. */
+  markerLabels(fillIds: string[]): Promise<Record<string, LabelOffset>>;
+  /** Saves where a fill's label sits; null puts it back to automatic. */
+  setMarkerLabel(fillId: string, offset: LabelOffset | null): Promise<void>;
   /** Reads the clipboard for TradingView drawings or a picture. */
   readPaste(): Promise<PasteResult>;
   listScreenshots(tradeId: string): Promise<TradeImage[]>;

@@ -11,6 +11,8 @@ import { averageUnderlying, formatR, levelsFromExits, riskReward } from '../core
 import { EMPTY_JOURNAL, type PriceLevel, type Trade } from '../core/types';
 import type { LevelPrices, TradeChart } from '../shared/api';
 import { type FillMarker, FillMarkersPrimitive } from './fillMarkers';
+import { exitKind } from '../core/markerStyles';
+import { onMarkerStylesChange } from './markerStyles';
 import { type Drawing, type ChartPoint, drawingStart, moveHandle, shiftDrawing } from '../core/drawings';
 import { DrawToolbar, type DrawingState, finishShape, pasteIntoChart, shapeFor, useDrawings } from './drawings';
 import { ScreenshotGallery, useScreenshotCount } from './Screenshots';
@@ -379,6 +381,14 @@ export function PriceChart({ trade, chart, interval, levels, placing, onPlace, o
     const primitive = new FillMarkersPrimitive(markers, candles);
     series.attachPrimitive(primitive);
     markersRef.current = primitive;
+    // Labels you dragged before go back where you put them.
+    let gone = false;
+    window.journal.markerLabels(live.current.trade.fills.map((f) => f.id)).then((saved) => {
+      if (gone) return;
+      for (const [id, offset] of Object.entries(saved)) primitive.offsets.set(id, offset);
+      primitive.update();
+    });
+    const stopStyles = onMarkerStylesChange(() => primitive.update());
     const drawings = new DrawingsPrimitive(
       aggregate(chart.bars, interval).map((b) => chartTime(b.time, tz) as UTCTimestamp), interval * 60, tz,
     );
@@ -419,6 +429,9 @@ export function PriceChart({ trade, chart, interval, levels, placing, onPlace, o
     // Only the price area takes drawings, not the price scale on the right.
     const inPane = (p: Xy) => p.x >= 0 && p.y >= 0 && p.x <= c.timeScale().width() && p.y <= el.clientHeight - c.timeScale().height();
     let drag: { kind: LevelKind; index: number; price: number } | null = null;
+    // Dragging a fill's label: which one, and where on the label it was grabbed.
+    let labelDrag: { id: string; tipX: number; y: number; grab: Xy; start: Xy; moved: boolean } | null = null;
+    const labelsMovable = () => !live.current.placing && !editingRef.current && (!live.current.draw || live.current.draw.tool === 'select');
     // Drawing a line or box: where it started. Moving a drawing: what was grabbed and where.
     let creating: { a: ChartPoint; start: Xy; moved: boolean; clicks: number } | null = null;
     let moving: { original: Drawing; handle?: string; from: ChartPoint; start: Xy; moved: boolean } | null = null;
@@ -463,6 +476,15 @@ export function PriceChart({ trade, chart, interval, levels, placing, onPlace, o
     };
 
     const onDown = (e: MouseEvent) => {
+      const at = xyOf(e);
+      const label = e.button === 0 && labelsMovable() ? primitive.labelAt(at.x, at.y) : null;
+      if (label) {
+        e.stopPropagation();
+        e.preventDefault();
+        labelDrag = { id: label.id, tipX: label.tipX, y: label.y, grab: { x: at.x - label.rect.x, y: at.y - label.rect.y }, start: at, moved: false };
+        lock(true);
+        return;
+      }
       const hit = live.current.placing ? null : lineAt(yOf(e));
       if (!hit) {
         if (onDraw(e)) { e.stopPropagation(); e.preventDefault(); lock(true); }
@@ -474,6 +496,20 @@ export function PriceChart({ trade, chart, interval, levels, placing, onPlace, o
       lock(true);
     };
     const onMoveMouse = (e: MouseEvent) => {
+      if (labelDrag) {
+        const at = xyOf(e);
+        if (Math.hypot(at.x - labelDrag.start.x, at.y - labelDrag.start.y) > 2) labelDrag.moved = true;
+        if (!labelDrag.moved) return;
+        // Keep the label inside the price area.
+        const hit = primitive.hits.find((h) => h.id === labelDrag!.id);
+        const w = hit?.rect.w ?? 0;
+        const h = hit?.rect.h ?? 0;
+        const x = Math.min(Math.max(at.x - labelDrag.grab.x, 0), c.timeScale().width() - w);
+        const y = Math.min(Math.max(at.y - labelDrag.grab.y, 0), el.clientHeight - c.timeScale().height() - h);
+        primitive.offsets.set(labelDrag.id, { dx: x - labelDrag.tipX, dy: y - labelDrag.y });
+        primitive.update();
+        return;
+      }
       if (creating || moving) {
         const at = xyOf(e);
         const point = drawings.fromXy(at);
@@ -502,6 +538,7 @@ export function PriceChart({ trade, chart, interval, levels, placing, onPlace, o
         const at = xyOf(e);
         const d = live.current.draw;
         el.style.cursor = live.current.placing ? 'crosshair'
+          : labelsMovable() && primitive.labelAt(at.x, at.y) ? 'move'
           : lineAt(at.y) ? 'ns-resize'
           : d && d.tool !== 'select' && inPane(at) ? 'crosshair'
           : d && inPane(at) && drawings.findAt(at) ? 'move' : '';
@@ -513,6 +550,14 @@ export function PriceChart({ trade, chart, interval, levels, placing, onPlace, o
       lines.current.get(`${drag.kind}:${drag.index}`)?.applyOptions({ price });
     };
     const onUp = () => {
+      if (labelDrag) {
+        const { id, moved } = labelDrag;
+        labelDrag = null;
+        lock(false);
+        const offset = primitive.offsets.get(id);
+        if (moved && offset) window.journal.setMarkerLabel(id, { dx: Math.round(offset.dx), dy: Math.round(offset.dy) });
+        return;
+      }
       const d = live.current.draw;
       if (creating) {
         // A click without dragging starts a line; the next click finishes it. A brush stroke ends when you let go.
@@ -552,6 +597,15 @@ export function PriceChart({ trade, chart, interval, levels, placing, onPlace, o
     };
     // Double-click a note to change its text.
     const onDouble = (e: MouseEvent) => {
+      // Double-clicking a label you moved puts it back in its automatic spot.
+      const at = xyOf(e);
+      const label = labelsMovable() ? primitive.labelAt(at.x, at.y) : null;
+      if (label && primitive.offsets.has(label.id)) {
+        primitive.offsets.delete(label.id);
+        primitive.update();
+        window.journal.setMarkerLabel(label.id, null);
+        return;
+      }
       const d = live.current.draw;
       if (!d) return;
       const hit = drawings.findAt(xyOf(e));
@@ -578,6 +632,8 @@ export function PriceChart({ trade, chart, interval, levels, placing, onPlace, o
     setBuilt((n) => n + 1);
 
     return () => {
+      gone = true;
+      stopStyles();
       el.removeEventListener('dblclick', onDouble);
       window.removeEventListener('keydown', onKey);
       el.removeEventListener('mousedown', onDown, true);
@@ -687,7 +743,7 @@ function chartData(chart: Extract<TradeChart, { status: 'ok' }>, trade: Trade, i
 
   // Partial fills in the same second at the same price share one marker ("B 2 @ $79.00").
   const entrySide = trade.direction === 'LONG' ? 'BUY' : 'SELL';
-  const groups = new Map<string, { time: number; isEntry: boolean; side: string; qty: number; optionPrice: number; underlying?: number; contract?: string }>();
+  const groups = new Map<string, { id: string; time: number; isEntry: boolean; side: string; qty: number; optionPrice: number; underlying?: number; contract?: string }>();
   for (const f of trade.fills) {
     const point = chart.fills.find((p) => p.fillId === f.id);
     if (!point || (until !== null && !filledBy(point.time, until))) continue;
@@ -696,9 +752,19 @@ function chartData(chart: Extract<TradeChart, { status: 'ok' }>, trade: Trade, i
     const g = groups.get(key);
     if (g) g.qty += f.quantity;
     else groups.set(key, {
-      time: point.time, isEntry: info ? info.entryIds.has(f.id) : f.side === entrySide, side: f.side, qty: f.quantity,
+      id: f.id, time: point.time, isEntry: info ? info.entryIds.has(f.id) : f.side === entrySide, side: f.side, qty: f.quantity,
       optionPrice: f.price, underlying: point.underlyingPrice, contract,
     });
+  }
+  // Average entry price per contract, to tell exits in profit from exits at a loss.
+  const entries = new Map<string, { side: 'BUY' | 'SELL'; cost: number; qty: number }>();
+  for (const f of trade.fills) {
+    if (!(info ? info.entryIds.has(f.id) : f.side === entrySide)) continue;
+    const k = info?.contract.get(f.id) ?? '';
+    const e = entries.get(k) ?? { side: f.side as 'BUY' | 'SELL', cost: 0, qty: 0 };
+    e.cost += f.price * f.quantity;
+    e.qty += f.quantity;
+    entries.set(k, e);
   }
   const markers: FillMarker[] = [];
   for (const g of groups.values()) {
@@ -707,7 +773,9 @@ function chartData(chart: Extract<TradeChart, { status: 'ok' }>, trade: Trade, i
     const price = g.underlying ?? candles.find((c) => c.time === candleTime)?.close;
     if (price === undefined) continue;
     const text = `${g.side === 'BUY' ? 'B' : 'S'} ${g.qty}${g.contract ? ` ${g.contract}` : ''} @ ${usd(g.optionPrice * 100)}${g.underlying === undefined ? ' (approx.)' : ''}`;
-    markers.push({ time: candleTime, price, kind: g.isEntry ? 'entry' : 'exit', text });
+    const e = entries.get(g.contract ?? '');
+    const style = g.isEntry ? 'entry' : exitKind(e?.side ?? (entrySide as 'BUY' | 'SELL'), e?.qty ? e.cost / e.qty : undefined, g.optionPrice);
+    markers.push({ id: g.id, time: candleTime, price, kind: g.isEntry ? 'entry' : 'exit', style, text });
   }
   return { candles, markers };
 }

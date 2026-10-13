@@ -6,7 +6,8 @@ import path from 'node:path';
 import { parseTosStatement } from '../core/tosCsv';
 import { buildTrades, summarizeTrades } from '../core/trades';
 import type { MistakeTag, PriceLevel, Setup, TradeJournal } from '../core/types';
-import type { ImportResult, JournalData, TradeChart } from '../shared/api';
+import type { ImportResult, JournalData, LabelOffset, TradeChart } from '../shared/api';
+import type { MarkerStyles } from '../core/markerStyles';
 import { AlpacaClient } from '../core/alpaca';
 import type { Goals } from '../core/goals';
 import { dayChartTrade } from '../core/dayChart';
@@ -124,6 +125,8 @@ app.whenReady().then(async () => {
   ipcMain.handle('drawings:put', (_event, symbol: string, drawing: Drawing) => db.putDrawing(symbol, drawing));
   ipcMain.handle('drawings:putMany', (_event, symbol: string, drawings: Drawing[]) => db.putDrawings(symbol, drawings));
   ipcMain.handle('drawings:delete', (_event, symbol: string, id: string) => db.deleteDrawing(symbol, id));
+  ipcMain.handle('markers:labels', (_event, ids: string[]) => db.markerLabels(ids));
+  ipcMain.handle('markers:setLabel', (_event, id: string, offset: LabelOffset | null) => db.setMarkerLabel(id, offset));
   ipcMain.handle('clipboard:readPaste', () => shots.readPaste());
   ipcMain.handle('shots:list', (_event, tradeId: string) => shots.list(tradeId));
   ipcMain.handle('shots:counts', () => db.tradeImageCounts());
@@ -174,7 +177,9 @@ app.whenReady().then(async () => {
     reportsLayout: settings.reportsLayout,
     hiddenAccounts: settings.hiddenAccounts,
     colors: settings.colors,
+    markerStyles: settings.markerStyles,
   }));
+  ipcMain.handle('settings:setMarkerStyles', (_event, styles: MarkerStyles | null) => { settings.markerStyles = styles ?? undefined; });
   ipcMain.handle('settings:setColors', (_event, colors: Record<string, string> | null) => { settings.colors = colors ?? undefined; });
   ipcMain.handle('settings:setHiddenAccounts', (_event, names: string[]) => { settings.hiddenAccounts = names; });
   ipcMain.handle('settings:setReportsLayout', (_event, layout: { columns: string[][]; collapsed: string[] }) => { settings.reportsLayout = layout; });

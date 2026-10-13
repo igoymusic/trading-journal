@@ -4,6 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { matchFills } from '../core/fills';
 import type { Bar } from '../core/alpaca';
 import type { Drawing } from '../core/drawings';
+import type { LabelOffset } from '../shared/api';
 import type { Fill, MistakeTag, Setup, TradeJournal } from '../core/types';
 
 export class JournalDb {
@@ -97,6 +98,7 @@ export class JournalDb {
         position INTEGER NOT NULL DEFAULT 0
       );
       CREATE INDEX IF NOT EXISTS trade_images_trade ON trade_images (trade_id);
+      CREATE TABLE IF NOT EXISTS marker_labels (fill_id TEXT PRIMARY KEY, dx REAL NOT NULL, dy REAL NOT NULL);
     `);
     // Added after the first journal release: stop/target levels for R.
     const cols = (this.db.prepare('PRAGMA table_info(trade_journal)').all() as { name: string }[]).map((c) => c.name);
@@ -325,6 +327,24 @@ export class JournalDb {
     this.db.prepare(`
       INSERT INTO day_notes (date, notes, updated_at) VALUES (?, ?, datetime('now'))
       ON CONFLICT (date) DO UPDATE SET notes = excluded.notes, updated_at = excluded.updated_at`).run(date, notes);
+  }
+
+  /** Where you dragged these fills' labels. */
+  markerLabels(fillIds: string[]): Record<string, LabelOffset> {
+    const get = this.db.prepare('SELECT dx, dy FROM marker_labels WHERE fill_id = ?');
+    const out: Record<string, LabelOffset> = {};
+    for (const id of fillIds) {
+      const row = get.get(id) as { dx: number; dy: number } | undefined;
+      if (row) out[id] = { dx: row.dx, dy: row.dy };
+    }
+    return out;
+  }
+
+  setMarkerLabel(fillId: string, offset: LabelOffset | null) {
+    if (!offset) this.db.prepare('DELETE FROM marker_labels WHERE fill_id = ?').run(fillId);
+    else this.db.prepare(`
+      INSERT INTO marker_labels (fill_id, dx, dy) VALUES (?, ?, ?)
+      ON CONFLICT (fill_id) DO UPDATE SET dx = excluded.dx, dy = excluded.dy`).run(fillId, offset.dx, offset.dy);
   }
 
   /** A ticker's drawings on the given days, plus price lines from earlier days marked to keep. */

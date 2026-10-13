@@ -5,6 +5,7 @@ import { safeStorage } from 'electron';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import type { AlpacaCredentials } from '../core/alpaca';
 import type { Goals } from '../core/goals';
+import { cleanMarkerStyles, type MarkerStyles } from '../core/markerStyles';
 import type { SchwabSlot } from '../shared/api';
 
 interface StoredSettings {
@@ -22,6 +23,8 @@ interface StoredSettings {
   colors?: Record<string, string>;
   /** Accounts left out of the journal's numbers (by name). */
   hiddenAccounts?: string[];
+  /** How entry and exit markers look, when changed from the defaults. */
+  markerStyles?: MarkerStyles;
   /** When broker sync last ran (ISO time). */
   lastBrokerSync?: string;
   /** Base64 of the encrypted "keyId\nsecretKey". */
@@ -117,6 +120,15 @@ export class Settings {
     // Only keep real "#rrggbb" colors.
     const clean = Object.fromEntries(Object.entries(c ?? {}).filter(([, v]) => /^#[0-9a-f]{6}$/i.test(v)));
     this.data.colors = Object.keys(clean).length ? clean : undefined;
+    this.save();
+  }
+
+  get markerStyles(): MarkerStyles {
+    return cleanMarkerStyles(this.data.markerStyles);
+  }
+
+  set markerStyles(s: MarkerStyles | undefined) {
+    this.data.markerStyles = s ? cleanMarkerStyles(s) : undefined;
     this.save();
   }
 

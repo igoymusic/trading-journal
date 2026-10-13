@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { type CustomGoal, describeGoal, GOAL_METRICS, type Goals } from '../core/goals';
 import type { PlaybookRule } from '../core/types';
 import type { BackupStatus, ColorScheme, SettingsView, SyncResult } from '../shared/api';
+import { MarkerStyleEditor } from './MarkerStyleEditor';
 import { applyColors, COLOR_LABELS, DEFAULT_COLORS } from './colors';
 import { BrokersSettings } from './BrokersSettings';
 import { NO_ACCOUNT } from './AccountPicker';
@@ -450,6 +451,8 @@ function ColorsEditor({ initial, onChange }: { initial?: Partial<ColorScheme>; o
         </div>
       ))}
       <button disabled={!Object.keys(custom).length} onClick={() => save({})}>Reset to default colors</button>
+      <h3>Entry and exit markers</h3>
+      <MarkerStyleEditor />
     </>
   );
 }
