@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { type CustomGoal, describeGoal, GOAL_METRICS, type Goals } from '../core/goals';
 import type { PlaybookRule } from '../core/types';
 import type { BackupStatus, ColorScheme, SettingsView, SyncResult } from '../shared/api';
+import { type OptionPriceDisplay, setOptionPriceDisplay } from './format';
 import { MarkerStyleEditor } from './MarkerStyleEditor';
 import { applyColors, COLOR_LABELS, DEFAULT_COLORS } from './colors';
 import { BrokersSettings } from './BrokersSettings';
@@ -113,6 +114,7 @@ export function SettingsDialog({ onClose, onSynced, onColorsChanged }: { onClose
         <button disabled={busy} onClick={removeImported}>Remove imported CSV trades</button>
         {removed && <p className="win">{removed}</p>}
 
+        {settings && <OptionPriceToggle initial={settings.optionPriceDisplay} onChange={onColorsChanged} />}
         {settings && <ColorsEditor initial={settings.colors} onChange={onColorsChanged} />}
 
         <h3>Time zone of your broker exports</h3>
@@ -413,6 +415,27 @@ function BackupsSection() {
         )}
       </p>
       {message && <p className={message.ok ? 'win' : 'loss'}>{message.text}</p>}
+    </>
+  );
+}
+
+/** Whether option prices show as quoted ($0.15) or as paid per contract ($15.00). */
+function OptionPriceToggle({ initial, onChange }: { initial: OptionPriceDisplay; onChange: () => void }) {
+  const [mode, setMode] = useState(initial);
+  const pick = (next: OptionPriceDisplay) => {
+    setMode(next);
+    setOptionPriceDisplay(next);
+    window.journal.setOptionPriceDisplay(next);
+    onChange();
+  };
+  return (
+    <>
+      <h3>Option prices</h3>
+      <div className="toggle">
+        <button className={mode === 'quote' ? 'active' : ''} onClick={() => pick('quote')}>Option price ($0.15)</button>
+        <button className={mode === 'contract' ? 'active' : ''} onClick={() => pick('contract')}>Price paid ($15.00)</button>
+      </div>
+      <p className="muted small">Used for fills, chart labels, stop and target prices, and the Avg entry and Avg exit columns.</p>
     </>
   );
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { leaderLine, placeLabels } from '../src/renderer/fillMarkers';
+import { readableText } from '../src/renderer/colors';
 import { cleanMarkerStyles, DEFAULT_MARKER_STYLES, exitKind } from '../src/core/markerStyles';
 
 describe('marker labels', () => {
@@ -54,5 +55,12 @@ describe('marker labels', () => {
     const s = cleanMarkerStyles({ entry: { color: 'red', size: 99, lineWidth: 2, dash: 'solid' } });
     expect(s.entry).toEqual({ color: DEFAULT_MARKER_STYLES.entry.color, size: 30, lineWidth: 2, dash: 'solid' });
     expect(s.loss).toEqual(DEFAULT_MARKER_STYLES.loss);
+  });
+
+  it('switches label text to dark on light colors', () => {
+    expect(readableText('#2962ff')).toBe('#ffffff');
+    expect(readableText('#ef5350')).toBe('#ffffff');
+    expect(readableText('#ffeb3b')).toBe('#131722');
+    expect(readableText('#ffffff')).toBe('#131722');
   });
 });

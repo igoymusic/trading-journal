@@ -119,6 +119,8 @@ export interface SettingsView {
   colors?: Partial<ColorScheme>;
   /** How entry and exit markers look. */
   markerStyles: MarkerStyles;
+  /** Option prices as quoted ($0.15) or as paid per contract ($15.00). */
+  optionPriceDisplay: 'quote' | 'contract';
 }
 
 export interface TradeImage {
@@ -181,6 +183,7 @@ export interface JournalApi {
   setColors(colors: Partial<ColorScheme> | null): Promise<void>;
   /** Saves how entry and exit markers look; null goes back to the defaults. */
   setMarkerStyles(styles: MarkerStyles | null): Promise<void>;
+  setOptionPriceDisplay(mode: 'quote' | 'contract'): Promise<void>;
   setReportsLayout(layout: { columns: string[][]; collapsed: string[] }): Promise<void>;
   saveTradeJournal(tradeId: string, journal: TradeJournal): Promise<void>;
   saveSetups(setups: Setup[]): Promise<void>;

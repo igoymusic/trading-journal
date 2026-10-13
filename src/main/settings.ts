@@ -23,6 +23,8 @@ interface StoredSettings {
   colors?: Record<string, string>;
   /** Accounts left out of the journal's numbers (by name). */
   hiddenAccounts?: string[];
+  /** Option prices as quoted ($0.15) or per contract ($15.00, the default). */
+  optionPriceDisplay?: 'quote' | 'contract';
   /** How entry and exit markers look, when changed from the defaults. */
   markerStyles?: MarkerStyles;
   /** When broker sync last ran (ISO time). */
@@ -120,6 +122,15 @@ export class Settings {
     // Only keep real "#rrggbb" colors.
     const clean = Object.fromEntries(Object.entries(c ?? {}).filter(([, v]) => /^#[0-9a-f]{6}$/i.test(v)));
     this.data.colors = Object.keys(clean).length ? clean : undefined;
+    this.save();
+  }
+
+  get optionPriceDisplay(): 'quote' | 'contract' {
+    return this.data.optionPriceDisplay === 'quote' ? 'quote' : 'contract';
+  }
+
+  set optionPriceDisplay(mode: 'quote' | 'contract') {
+    this.data.optionPriceDisplay = mode === 'quote' ? 'quote' : undefined;
     this.save();
   }
 

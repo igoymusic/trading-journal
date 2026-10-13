@@ -8,6 +8,7 @@ import type {
 } from 'lightweight-charts';
 import { type ChartPoint, type Drawing, drawingHandles } from '../core/drawings';
 import { chartTime, fromChartTime } from '../core/time';
+import { readableText } from './colors';
 
 export const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
 const HANDLE = 4;
@@ -244,7 +245,7 @@ class Renderer implements IPrimitivePaneRenderer {
       ctx.beginPath();
       ctx.roundRect(cx - w / 2, cy - 9, w, 18, 3);
       ctx.fill();
-      label(text, cx, cy + 0.5, '#ffffff', 'center', 'middle');
+      label(text, cx, cy + 0.5, readableText(bg), 'center', 'middle');
     };
 
     switch (d.kind) {

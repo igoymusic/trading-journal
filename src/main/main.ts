@@ -178,7 +178,9 @@ app.whenReady().then(async () => {
     hiddenAccounts: settings.hiddenAccounts,
     colors: settings.colors,
     markerStyles: settings.markerStyles,
+    optionPriceDisplay: settings.optionPriceDisplay,
   }));
+  ipcMain.handle('settings:setOptionPriceDisplay', (_event, mode: 'quote' | 'contract') => { settings.optionPriceDisplay = mode; });
   ipcMain.handle('settings:setMarkerStyles', (_event, styles: MarkerStyles | null) => { settings.markerStyles = styles ?? undefined; });
   ipcMain.handle('settings:setColors', (_event, colors: Record<string, string> | null) => { settings.colors = colors ?? undefined; });
   ipcMain.handle('settings:setHiddenAccounts', (_event, names: string[]) => { settings.hiddenAccounts = names; });

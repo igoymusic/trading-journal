@@ -2,6 +2,7 @@
 // at the exact price, with a label placed where it doesn't cover any candles.
 
 import { markerStyles } from './markerStyles';
+import { readableText } from './colors';
 import type { MarkerKind } from '../core/markerStyles';
 import type { LabelOffset } from '../shared/api';
 import type { CanvasRenderingTarget2D } from 'fancy-canvas';
@@ -166,7 +167,7 @@ class Renderer implements IPrimitivePaneRenderer {
         ctx.beginPath();
         ctx.roundRect(label.x, label.y, label.w, label.h, 3);
         ctx.fill();
-        ctx.fillStyle = '#ffffff';
+        ctx.fillStyle = readableText(color);
         ctx.textBaseline = 'middle';
         ctx.fillText(a.marker.text, label.x + PAD_X, label.y + label.h / 2 + 0.5);
       });

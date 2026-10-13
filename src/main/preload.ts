@@ -30,6 +30,7 @@ const api: JournalApi = {
   connectSchwab: (slot) => ipcRenderer.invoke('schwab:connect', slot),
   disconnectSchwab: (slot) => ipcRenderer.invoke('schwab:disconnect', slot),
   setColors: (colors) => ipcRenderer.invoke('settings:setColors', colors),
+  setOptionPriceDisplay: (mode) => ipcRenderer.invoke('settings:setOptionPriceDisplay', mode),
   setMarkerStyles: (styles) => ipcRenderer.invoke('settings:setMarkerStyles', styles),
   setHiddenAccounts: (names) => ipcRenderer.invoke('settings:setHiddenAccounts', names),
   setReportsLayout: (layout) => ipcRenderer.invoke('settings:setReportsLayout', layout),

@@ -17,7 +17,7 @@ import { type Drawing, type ChartPoint, drawingStart, moveHandle, shiftDrawing }
 import { DrawToolbar, type DrawingState, finishShape, pasteIntoChart, shapeFor, useDrawings } from './drawings';
 import { ScreenshotGallery, useScreenshotCount } from './Screenshots';
 import { DrawingsPrimitive, type Xy } from './drawingsPrimitive';
-import { holdTime, pnlClass, shortDate, signedUsd, usd } from './format';
+import { holdTime, pnlClass, shortDate, signedUsd, optionUsd, usd } from './format';
 import { useJournal } from './journal';
 
 type LevelKind = 'stops' | 'targets';
@@ -266,7 +266,7 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
               <div className="fill-item" key={f.id}>
                 <div>
                   <span className={buy ? 'win' : 'loss'}>{f.orderType === 'EXPIRED' ? 'Expired' : buy ? 'Bought' : 'Sold'} {f.quantity}</span>
-                  <span> @ {usd(f.price * 100)}</span>
+                  <span> @ {optionUsd(f.price)}</span>
                 </div>
                 <div className="muted" title={f.account ? `From ${f.account}` : undefined}>
                   {f.timeExact === false ? 'time not reported' : f.execTime.slice(11)}
@@ -772,7 +772,7 @@ function chartData(chart: Extract<TradeChart, { status: 'ok' }>, trade: Trade, i
     // Without an exact price, fall back to the close of the fill's candle.
     const price = g.underlying ?? candles.find((c) => c.time === candleTime)?.close;
     if (price === undefined) continue;
-    const text = `${g.side === 'BUY' ? 'B' : 'S'} ${g.qty}${g.contract ? ` ${g.contract}` : ''} @ ${usd(g.optionPrice * 100)}${g.underlying === undefined ? ' (approx.)' : ''}`;
+    const text = `${g.side === 'BUY' ? 'B' : 'S'} ${g.qty}${g.contract ? ` ${g.contract}` : ''} @ ${optionUsd(g.optionPrice)}${g.underlying === undefined ? ' (approx.)' : ''}`;
     const e = entries.get(g.contract ?? '');
     const style = g.isEntry ? 'entry' : exitKind(e?.side ?? (entrySide as 'BUY' | 'SELL'), e?.qty ? e.cost / e.qty : undefined, g.optionPrice);
     markers.push({ id: g.id, time: candleTime, price, kind: g.isEntry ? 'entry' : 'exit', style, text });
@@ -861,7 +861,7 @@ function RiskPanel({ trade, levels, placing, onPlacing, onChange, canMeasure, rr
                   ? 'The option\'s real price when the underlying reached this line'
                   : 'Estimated with Black-Scholes from your entry\'s implied volatility, as if reached at your exit'}
               >
-                {matched[kind][i]!.source === 'market' ? '' : '≈'}{usd(matched[kind][i]!.optionPrice * 100)}
+                {matched[kind][i]!.source === 'market' ? '' : '≈'}{optionUsd(matched[kind][i]!.optionPrice)}
               </span>
             )}
           </span>
