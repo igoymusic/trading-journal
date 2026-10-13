@@ -1,4 +1,4 @@
-// Journaling pieces: the setup, mistakes, rating and notes you record for each trade, and the
+// Journaling pieces: the setup, tags (positive and mistakes), rating and notes you record for each trade, and the
 // daily note. Changes save as you make them.
 
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
@@ -7,13 +7,15 @@ import { EMPTY_JOURNAL, type MistakeTag, playbookScore, type Setup, type Trade, 
 export interface JournalContextValue {
   setups: Setup[];
   mistakes: MistakeTag[];
+  positives: MistakeTag[];
   saveTrade(tradeId: string, journal: TradeJournal): void;
   saveSetups(setups: Setup[]): void;
   saveMistakes(mistakes: MistakeTag[]): void;
+  savePositives(positives: MistakeTag[]): void;
 }
 
 export const JournalContext = createContext<JournalContextValue>({
-  setups: [], mistakes: [], saveTrade() {}, saveSetups() {}, saveMistakes() {},
+  setups: [], mistakes: [], positives: [], saveTrade() {}, saveSetups() {}, saveMistakes() {}, savePositives() {},
 });
 
 export const useJournal = () => useContext(JournalContext);
@@ -48,6 +50,11 @@ export function SetupBadge({ id }: { id: string | null | undefined }) {
 export function MistakeNames({ ids }: { ids: string[] | undefined }) {
   const names = useJournal().mistakes.filter((m) => ids?.includes(m.id)).map((m) => m.name);
   return names.length ? <span className="loss">{names.join(', ')}</span> : null;
+}
+
+export function PositiveNames({ ids }: { ids: string[] | undefined }) {
+  const names = useJournal().positives.filter((m) => ids?.includes(m.id)).map((m) => m.name);
+  return names.length ? <span className="win">{names.join(', ')}</span> : null;
 }
 
 /** "3/4" rules followed, green when all of them. */
@@ -98,10 +105,15 @@ function QuickAdd({ placeholder, onAdd, onCancel }: { placeholder: string; onAdd
 
 /** The journal strip under a trade's chart. */
 export function TradeJournalEditor({ trade }: { trade: Trade }) {
-  const { setups, mistakes, saveTrade, saveSetups, saveMistakes } = useJournal();
+  const { setups, mistakes, positives, saveTrade, saveSetups, saveMistakes, savePositives } = useJournal();
   const journal = trade.journal ?? EMPTY_JOURNAL;
   const [notes, setNotes] = useState(journal.notes);
-  const [adding, setAdding] = useState<'setup' | 'mistake' | null>(null);
+  const [adding, setAdding] = useState<'setup' | 'mistake' | 'positive' | null>(null);
+  const [tagsOpen, setTagsOpen] = useState(() => { try { return localStorage.getItem('tagsOpen') === '1'; } catch { return false; } });
+  const toggleTags = () => {
+    setTagsOpen(!tagsOpen);
+    try { localStorage.setItem('tagsOpen', tagsOpen ? '0' : '1'); } catch { /* not saved */ }
+  };
   // Always build on the newest saved entry, since notes save on a delay.
   const current = useRef(journal);
   current.current = trade.journal ?? EMPTY_JOURNAL;
@@ -116,15 +128,41 @@ export function TradeJournalEditor({ trade }: { trade: Trade }) {
     setAdding(null);
   }
 
-  function addMistake(name: string) {
-    const existing = mistakes.find((m) => m.name.toLowerCase() === name.toLowerCase());
+  const chosen = { mistake: journal.mistakes, positive: journal.positives ?? [] };
+  const toggleTag = (kind: 'mistake' | 'positive', id: string) => {
+    const list = chosen[kind];
+    const next = list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
+    update(kind === 'mistake' ? { mistakes: next } : { positives: next });
+  };
+
+  function addTag(kind: 'mistake' | 'positive', name: string) {
+    const all = kind === 'mistake' ? mistakes : positives;
+    const existing = all.find((m) => m.name.toLowerCase() === name.toLowerCase());
     const tag = existing ?? { id: newId(), name };
-    if (!existing) saveMistakes([...mistakes, tag]);
-    if (!journal.mistakes.includes(tag.id)) update({ mistakes: [...journal.mistakes, tag.id] });
+    if (!existing) (kind === 'mistake' ? saveMistakes : savePositives)([...all, tag]);
+    if (!chosen[kind].includes(tag.id)) toggleTag(kind, tag.id);
     setAdding(null);
   }
 
-  const unused = mistakes.filter((m) => !journal.mistakes.includes(m.id));
+  const tagGroup = (kind: 'mistake' | 'positive', title: string, all: MistakeTag[]) => (
+    <div className={`tag-group ${kind}`}>
+      <div className="tag-group-title">{title}</div>
+      <div className="chips">
+        {all.map((t) => (
+          <button key={t.id} className={`tag-toggle${chosen[kind].includes(t.id) ? ' on' : ''}`} onClick={() => toggleTag(kind, t.id)}>
+            {t.name}
+          </button>
+        ))}
+        {adding === kind
+          ? <QuickAdd placeholder={kind === 'mistake' ? 'New mistake' : 'New positive tag'} onAdd={(n) => addTag(kind, n)} onCancel={() => setAdding(null)} />
+          : <button className="tag-toggle add" onClick={() => setAdding(kind)}>+ New</button>}
+      </div>
+    </div>
+  );
+  const picked = [
+    ...chosen.positive.map((id) => ({ id, kind: 'positive' as const, tag: positives.find((x) => x.id === id) })),
+    ...chosen.mistake.map((id) => ({ id, kind: 'mistake' as const, tag: mistakes.find((x) => x.id === id) })),
+  ].filter((p) => p.tag);
   const setup = setups.find((s) => s.id === journal.setupId);
   const score = playbookScore(trade, setups);
   const followed = new Set(journal.rulesFollowed ?? []);
@@ -154,31 +192,26 @@ export function TradeJournalEditor({ trade }: { trade: Trade }) {
         </div>
 
         <div className="journal-field grow">
-          <span>Mistakes</span>
+          <span>Tags</span>
           <div className="chips">
-            {journal.mistakes.map((id) => {
-              const m = mistakes.find((x) => x.id === id);
-              return m && (
-                <span key={id} className="chip">
-                  {m.name}
-                  <button aria-label={`Remove ${m.name}`} onClick={() => update({ mistakes: journal.mistakes.filter((x) => x !== id) })}>×</button>
-                </span>
-              );
-            })}
-            {adding === 'mistake' ? <QuickAdd placeholder="New mistake" onAdd={addMistake} onCancel={() => setAdding(null)} /> : (
-              <select
-                className="chip-add"
-                value=""
-                onChange={(e) => (e.target.value === '+new' ? setAdding('mistake') : e.target.value && update({ mistakes: [...journal.mistakes, e.target.value] }))}
-              >
-                <option value="">+ Add mistake</option>
-                {unused.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-                <option value="+new">New mistake…</option>
-              </select>
-            )}
+            <button className={`tags-button${tagsOpen ? ' active' : ''}`} onClick={toggleTags}>
+              {tagsOpen ? '▾' : '▸'} Tags
+            </button>
+            {picked.map((p) => (
+              <span key={p.id} className={`chip ${p.kind}`}>
+                {p.tag!.name}
+                <button aria-label={`Remove ${p.tag!.name}`} onClick={() => toggleTag(p.kind, p.id)}>×</button>
+              </span>
+            ))}
           </div>
         </div>
       </div>
+      {tagsOpen && (
+        <div className="tags-panel">
+          {tagGroup('positive', 'Did well', positives)}
+          {tagGroup('mistake', 'Mistakes', mistakes)}
+        </div>
+      )}
       {setup && score && (
         <div className="playbook">
           <div className="playbook-head">

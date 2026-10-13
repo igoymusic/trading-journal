@@ -66,6 +66,7 @@ export function App() {
   const journalApi = useMemo<JournalContextValue>(() => ({
     setups: data?.setups ?? [],
     mistakes: data?.mistakes ?? [],
+    positives: data?.positives ?? [],
     saveTrade(tradeId, journal) {
       setData((d) => d && { ...d, trades: d.trades.map((t) => (t.id === tradeId ? { ...t, journal } : t)) });
       window.journal.saveTradeJournal(tradeId, journal);
@@ -88,7 +89,16 @@ export function App() {
       });
       window.journal.saveMistakes(mistakes);
     },
-  }), [data?.setups, data?.mistakes]);
+    savePositives(positives) {
+      const ids = new Set(positives.map((x) => x.id));
+      setData((d) => d && {
+        ...d,
+        positives,
+        trades: d.trades.map((t) => (t.journal?.positives ? { ...t, journal: { ...t.journal, positives: t.journal.positives.filter((p) => ids.has(p)) } } : t)),
+      });
+      window.journal.savePositives(positives);
+    },
+  }), [data?.setups, data?.mistakes, data?.positives]);
 
   function saveDayNote(date: string, notes: string) {
     setData((d) => d && { ...d, dayNotes: { ...d.dayNotes, [date]: notes } });

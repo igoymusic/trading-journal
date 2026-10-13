@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Goals } from '../core/goals';
+import { type CustomGoal, describeGoal, GOAL_METRICS, type Goals } from '../core/goals';
 import type { PlaybookRule } from '../core/types';
 import type { SettingsView, SyncResult } from '../shared/api';
 import { BrokersSettings } from './BrokersSettings';
@@ -94,14 +94,17 @@ export function SettingsDialog({ onClose, onSynced }: { onClose: () => void; onS
         {settings && <GoalsEditor initial={settings.goals} />}
 
         <SetupsEditor />
-        <MistakesEditor />
+        <h3>Tags</h3>
+        <p className="muted">Labels you put on trades for what went well and what went wrong. Reports show what each one is worth.</p>
+        <TagsEditor kind="positive" />
+        <TagsEditor kind="mistake" />
 
         <AccountTrades onChanged={() => onSynced({ added: 0, accounts: 0, errors: [] })} />
 
         <h3>Imported files</h3>
         <p className="muted">
           Remove every trade imported from thinkorswim CSV files. If a broker is connected, its full history is synced
-          again right after. Your setups, mistakes and goals stay.
+          again right after. Your setups, tags and goals stay.
         </p>
         <button disabled={busy} onClick={removeImported}>Remove imported CSV trades</button>
         {removed && <p className="win">{removed}</p>}
@@ -116,10 +119,11 @@ export function SettingsDialog({ onClose, onSynced }: { onClose: () => void; onS
   );
 }
 
-const GOAL_FIELDS: { key: keyof Goals; label: string; hint: string; dollars: boolean }[] = [
+const GOAL_FIELDS: { key: 'dailyTarget' | 'dailyMaxLoss' | 'maxTradesPerDay' | 'maxLossesPerDay' | 'monthlyTarget'; label: string; hint: string; dollars: boolean }[] = [
   { key: 'dailyTarget', label: 'Daily profit target', hint: 'A day at or above this counts as hitting your target.', dollars: true },
   { key: 'dailyMaxLoss', label: 'Max loss per day', hint: 'Days that lose more than this get flagged.', dollars: true },
   { key: 'maxTradesPerDay', label: 'Max trades per day', hint: 'Days with more trades than this get flagged.', dollars: false },
+  { key: 'maxLossesPerDay', label: 'Max losing trades per day', hint: 'Days with more losing trades than this get flagged.', dollars: false },
   { key: 'monthlyTarget', label: 'Monthly profit target', hint: 'Shown as a progress bar on Home.', dollars: true },
 ];
 
@@ -128,16 +132,27 @@ function GoalsEditor({ initial }: { initial: Goals }) {
   const [goals, setGoals] = useState<Record<string, string>>(
     Object.fromEntries(GOAL_FIELDS.map((f) => [f.key, initial[f.key] === undefined ? '' : String(initial[f.key])])),
   );
+  const [custom, setCustom] = useState<CustomGoal[]>(initial.custom ?? []);
+  function persist(fields: Record<string, string>, customGoals: CustomGoal[]) {
+    const parsed: Goals = {};
+    for (const f of GOAL_FIELDS) {
+      const n = Number(fields[f.key]);
+      if (fields[f.key].trim() !== '' && Number.isFinite(n) && n > 0) (parsed as Record<string, number>)[f.key] = f.dollars ? n : Math.round(n);
+    }
+    const valid = customGoals.filter((g) => Number.isFinite(g.value));
+    if (valid.length) parsed.custom = valid;
+    window.journal.setGoals(parsed);
+  }
   function change(key: keyof Goals, text: string) {
     const next = { ...goals, [key]: text };
     setGoals(next);
-    const parsed: Goals = {};
-    for (const f of GOAL_FIELDS) {
-      const n = Number(next[f.key]);
-      if (next[f.key].trim() !== '' && Number.isFinite(n) && n > 0) parsed[f.key] = f.dollars ? n : Math.round(n);
-    }
-    window.journal.setGoals(parsed);
+    persist(next, custom);
   }
+  function changeCustom(list: CustomGoal[]) {
+    setCustom(list);
+    persist(goals, list);
+  }
+  const patch = (id: string, p: Partial<CustomGoal>) => changeCustom(custom.map((g) => (g.id === id ? { ...g, ...p } : g)));
   return (
     <>
       <h3>Goals</h3>
@@ -153,6 +168,37 @@ function GoalsEditor({ initial }: { initial: Goals }) {
           </label>
         ))}
       </div>
+      <h4>Your own goals</h4>
+      <p className="muted small">Pick what to measure, the target, and whether it's per day, week or month.</p>
+      {custom.map((g) => {
+        const unit = GOAL_METRICS.find((m) => m.key === g.metric)!.unit;
+        return (
+          <div className="custom-goal" key={g.id}>
+            <input className="custom-goal-name" placeholder={describeGoal({ ...g, name: '' })} value={g.name} onChange={(e) => patch(g.id, { name: e.target.value })} />
+            <div className="row">
+              <select value={g.metric} onChange={(e) => patch(g.id, { metric: e.target.value as CustomGoal['metric'] })}>
+                {GOAL_METRICS.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
+              </select>
+              <select value={g.op} onChange={(e) => patch(g.id, { op: e.target.value as CustomGoal['op'] })}>
+                <option value="atLeast">at least</option>
+                <option value="atMost">at most</option>
+              </select>
+              <span className="goal-input">
+                {unit === '$' && <span className="muted">$</span>}
+                <input type="number" min={0} value={g.value} onChange={(e) => patch(g.id, { value: Number(e.target.value) })} />
+                {unit === '%' && <span className="muted">%</span>}
+              </span>
+              <select value={g.period} onChange={(e) => patch(g.id, { period: e.target.value as CustomGoal['period'] })}>
+                <option value="day">per day</option>
+                <option value="week">per week</option>
+                <option value="month">per month</option>
+              </select>
+              <button className="danger-link" onClick={() => changeCustom(custom.filter((x) => x.id !== g.id))}>Delete</button>
+            </div>
+          </div>
+        );
+      })}
+      <button onClick={() => changeCustom([...custom, { id: newId(), name: '', metric: 'winRate', op: 'atLeast', value: 60, period: 'week' }])}>+ Add a goal</button>
     </>
   );
 }
@@ -221,29 +267,32 @@ function RulesEditor({ rules, onChange }: { rules: PlaybookRule[]; onChange: (ru
   );
 }
 
-function MistakesEditor() {
-  const { mistakes, saveMistakes } = useJournal();
+/** One tag list (positive tags or mistakes): rename, delete or add. Deleting one takes it off every trade. */
+function TagsEditor({ kind }: { kind: 'positive' | 'mistake' }) {
+  const j = useJournal();
+  const tags = kind === 'positive' ? j.positives : j.mistakes;
+  const save = kind === 'positive' ? j.savePositives : j.saveMistakes;
   const [name, setName] = useState('');
   const add = () => {
     if (!name.trim()) return;
-    saveMistakes([...mistakes, { id: newId(), name: name.trim() }]);
+    save([...tags, { id: newId(), name: name.trim() }]);
     setName('');
   };
   return (
-    <>
-      <h3>Mistakes</h3>
-      <p className="muted">Labels you can put on trades. Deleting one takes it off every trade.</p>
-      {mistakes.map((m) => (
+    <details className="tags-editor">
+      <summary>{kind === 'positive' ? 'Did well' : 'Mistakes'} <span className="muted">({tags.length})</span></summary>
+      {tags.map((m) => (
         <div className="list-row" key={m.id}>
-          <RenameInput value={m.name} onSave={(v) => saveMistakes(mistakes.map((x) => (x.id === m.id ? { ...x, name: v } : x)))} />
-          <button className="danger-link" onClick={() => saveMistakes(mistakes.filter((x) => x.id !== m.id))}>Delete</button>
+          <RenameInput value={m.name} onSave={(v) => save(tags.map((x) => (x.id === m.id ? { ...x, name: v } : x)))} />
+          <button className="danger-link" onClick={() => save(tags.filter((x) => x.id !== m.id))}>Delete</button>
         </div>
       ))}
       <div className="list-row">
-        <input placeholder="New mistake, e.g. Traded the open" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
+        <input placeholder={kind === 'positive' ? 'New tag, e.g. Waited for my level' : 'New mistake, e.g. Traded the open'}
+          value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
         <button onClick={add} disabled={!name.trim()}>Add</button>
       </div>
-    </>
+    </details>
   );
 }
 

@@ -181,6 +181,17 @@ button.link { background: none; border: none; color: var(--blue); padding: 6px; 
 .chip { display: inline-flex; align-items: center; gap: 4px; background: rgba(239, 83, 80, 0.14); color: #f5a3a1; border: 1px solid rgba(239, 83, 80, 0.4); border-radius: 12px; padding: 2px 4px 2px 10px; font-size: 12px; }
 .chip button { border: none; background: none; color: inherit; padding: 0 4px; font-size: 14px; line-height: 1; }
 .chips .chip-add { min-width: 0; border-style: dashed; color: var(--muted); }
+.chip.positive { background: rgba(38, 166, 154, 0.14); color: #7fd6cd; border-color: rgba(38, 166, 154, 0.45); }
+.tags-button { padding: 3px 10px; font-size: 12px; }
+.tags-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 4px 0 10px; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); }
+@media (max-width: 760px) { .tags-panel { grid-template-columns: 1fr; } }
+.tag-group-title { font-size: 12px; font-weight: 600; margin-bottom: 6px; }
+.tag-group.positive .tag-group-title { color: #7fd6cd; }
+.tag-group.mistake .tag-group-title { color: #f5a3a1; }
+.tag-toggle { padding: 2px 10px; font-size: 12px; border-radius: 12px; background: transparent; color: var(--muted); border: 1px solid var(--border); }
+.tag-group.positive .tag-toggle.on { background: rgba(38, 166, 154, 0.18); color: #7fd6cd; border-color: rgba(38, 166, 154, 0.6); }
+.tag-group.mistake .tag-toggle.on { background: rgba(239, 83, 80, 0.16); color: #f5a3a1; border-color: rgba(239, 83, 80, 0.55); }
+.tag-toggle.add { border-style: dashed; }
 .stars { display: inline-flex; gap: 2px; color: #4a4e59; font-size: 20px; line-height: 1; }
 .stars.small { font-size: 13px; }
 .stars.editable span { cursor: pointer; }
@@ -336,3 +347,11 @@ th.sorted { color: var(--text); }
 .collapse-arrow { display: inline-block; width: 16px; color: var(--muted); }
 .trade-panel.day-chart.collapsed { height: auto; }
 .trade-panel.day-chart.collapsed .panel-head { border-bottom: none; }
+.tags-editor { margin-bottom: 8px; }
+.tags-editor summary { cursor: pointer; padding: 4px 0; font-weight: 600; }
+.custom-goal { border: 1px solid var(--border); border-radius: 6px; padding: 8px; margin-bottom: 8px; display: flex; flex-direction: column; gap: 6px; }
+.custom-goal .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.custom-goal .row select { width: auto; flex: 1 1 120px; }
+.custom-goal .goal-input { display: inline-flex; align-items: center; gap: 4px; }
+.custom-goal .goal-input input { width: 90px; }
+.custom-goal-name { width: 100%; }

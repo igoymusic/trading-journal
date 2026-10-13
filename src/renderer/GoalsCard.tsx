@@ -1,4 +1,4 @@
-import { hasGoals, type Goals, monthGoals } from '../core/goals';
+import { customGoalResult, describeGoal, GOAL_METRICS, hasGoals, type Goals, monthGoals } from '../core/goals';
 import type { Trade } from '../core/types';
 import { pnlClass, signedUsd, usd } from './format';
 
@@ -16,16 +16,18 @@ export function GoalsCard({ trades, goals, year, month, onOpenSettings }: {
     return (
       <div className="card goals">
         <div className="goals-head"><h3>Goals</h3></div>
-        <p className="muted">Set a daily target, a max loss, a max number of trades or a monthly target to track them here.</p>
+        <p className="muted">Set a daily target, a max loss, a max number of trades or losing trades, a monthly target or a goal of your own to track them here.</p>
         <button onClick={onOpenSettings}>Set goals</button>
       </div>
     );
   }
-  const m = monthGoals(trades, `${year}-${String(month).padStart(2, '0')}`, goals);
+  const monthKey = `${year}-${String(month).padStart(2, '0')}`;
+  const m = monthGoals(trades, monthKey, goals);
   const rows: { label: string; value: number | undefined; good: boolean }[] = [
     { label: `Hit the ${usd(goals.dailyTarget ?? 0)} daily target`, value: m.daysHitTarget, good: true },
     { label: `Stayed within the ${usd(goals.dailyMaxLoss ?? 0)} max loss`, value: m.daysWithinMaxLoss, good: true },
     { label: `Stayed within ${goals.maxTradesPerDay} trades a day`, value: m.daysWithinMaxTrades, good: true },
+    { label: `Stayed within ${goals.maxLossesPerDay} losing trade${goals.maxLossesPerDay === 1 ? '' : 's'} a day`, value: m.daysWithinMaxLosses, good: true },
   ];
   const pct = m.monthlyProgress === undefined ? 0 : Math.max(0, Math.min(1, m.monthlyProgress));
   return (
@@ -51,6 +53,34 @@ export function GoalsCard({ trades, goals, year, month, onOpenSettings }: {
           </span>
         </div>
       ))}
+      {m.tradedDays > 0 && (goals.custom ?? []).map((g) => {
+        const r = customGoalResult(trades, g, monthKey);
+        const unit = GOAL_METRICS.find((x) => x.key === g.metric)!.unit;
+        const fmt = (v: number | undefined) => v === undefined ? '–' : v === Infinity ? '∞'
+          : unit === '$' ? usd(v) : unit === '%' ? `${Math.round(v)}%` : String(Math.round(v * 100) / 100);
+        if (g.period === 'month') {
+          const p = r.periods[0];
+          // An "at least" goal still counts as in progress while the month isn't over; going over an "at most" one is final.
+          const cls = p?.met ? 'win' : p?.met === false && g.op === 'atMost' ? 'loss' : '';
+          return (
+            <div className="goal-row" key={g.id}>
+              <span>{describeGoal(g)}</span>
+              <span className={cls}><b>{fmt(p?.value)}</b> <span className="muted">of {fmt(g.value)} so far</span></span>
+            </div>
+          );
+        }
+        const word = g.period === 'day' ? 'day' : 'week';
+        return (
+          <div className="goal-row" key={g.id} title={r.periods.map((p) => `${p.key}: ${fmt(p.value)}`).join('\n')}>
+            <span>{describeGoal(g)}</span>
+            {r.measured ? (
+              <span className={r.met === r.measured ? 'win' : r.met / r.measured < 0.5 ? 'loss' : ''}>
+                <b>{r.met}</b> <span className="muted">of {r.measured} {word}{r.measured === 1 ? '' : 's'}</span>
+              </span>
+            ) : <span className="muted">nothing to measure yet</span>}
+          </div>
+        );
+      })}
     </div>
   );
 }

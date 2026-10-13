@@ -11,7 +11,7 @@ export function FilterBar({ trades, filter, onChange, shown }: {
   /** How many trades pass, shown next to the controls. */
   shown: number;
 }) {
-  const { setups, mistakes } = useJournal();
+  const { setups, mistakes, positives } = useJournal();
   const set = (patch: Partial<TradeFilter>) => onChange({ ...filter, ...patch });
   const symbols = [...new Set(trades.map((t) => t.underlying))].sort();
 
@@ -25,6 +25,7 @@ export function FilterBar({ trades, filter, onChange, shown }: {
       </label>
       <MultiPick label="Symbol" options={symbols.map((s) => ({ id: s, name: s }))} value={filter.symbols} onChange={(symbols) => set({ symbols })} />
       <MultiPick label="Setup" options={[...setups, { id: 'none', name: 'No setup' }]} value={filter.setups} onChange={(s) => set({ setups: s })} />
+      <MultiPick label="Did well" options={[{ id: 'none', name: 'No positive tags' }, ...positives]} value={filter.positives ?? []} onChange={(p) => set({ positives: p })} />
       <MultiPick label="Mistake" options={[{ id: 'none', name: 'No mistakes' }, ...mistakes]} value={filter.mistakes} onChange={(m) => set({ mistakes: m })} />
       <MultiPick label="DTE" options={DTE_BUCKETS.map((b) => ({ id: b.key, name: b.label }))} value={filter.dte} onChange={(dte) => set({ dte })} />
       <Toggle options={[['CALL', 'Calls'], ['PUT', 'Puts']]} value={filter.putCall} onChange={(putCall) => set({ putCall })} />
