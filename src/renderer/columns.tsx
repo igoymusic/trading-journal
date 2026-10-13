@@ -1,10 +1,10 @@
 // Every column the trade table can show. People pick which ones appear and in what order.
 
 import type { ReactNode } from 'react';
-import type { Setup, Trade } from '../core/types';
+import { playbookScore, type Setup, type Trade } from '../core/types';
 import { holdTime, pnlClass, shortDate, signedUsd, timeOf, usd } from './format';
 import { formatR, riskReward } from '../core/rr';
-import { MistakeNames, SetupBadge, Stars } from './journal';
+import { MistakeNames, RulesCell, SetupBadge, Stars } from './journal';
 import type { SortValue } from './sorting';
 
 export interface Column {
@@ -64,6 +64,11 @@ export const COLUMNS: Column[] = [
   {
     id: 'plannedRR', label: 'Planned R:R', sort: (t) => riskReward(t, t.journal)?.plannedR, numeric: true,
     render: (t) => { const r = riskReward(t, t.journal)?.plannedR; return r === undefined ? null : `1 : ${r.toFixed(1)}`; },
+  },
+  {
+    id: 'rules', label: 'Rules', numeric: true,
+    sort: (t, setups) => { const p = playbookScore(t, setups); return p ? p.followed / p.total : null; },
+    render: (t) => <RulesCell trade={t} />,
   },
   { id: 'notes', label: 'Notes', sort: (t) => t.journal?.notes.length || null, render: (t) => (t.journal?.notes ? <span className="muted" title={t.journal.notes}>✎</span> : null) },
   { id: 'net', label: 'Net P&L', sort: (t) => t.netPnl, numeric: true, render: (t) => <span className={pnlClass(t.netPnl)}>{signedUsd(t.netPnl)}</span> },

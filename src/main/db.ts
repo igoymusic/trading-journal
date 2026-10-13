@@ -80,6 +80,10 @@ export class JournalDb {
     // Added after the first journal release: stop/target levels for R.
     const cols = (this.db.prepare('PRAGMA table_info(trade_journal)').all() as { name: string }[]).map((c) => c.name);
     if (!cols.includes('levels')) this.db.exec("ALTER TABLE trade_journal ADD COLUMN levels TEXT NOT NULL DEFAULT '{}'");
+    // Added with playbooks: each setup's rules, and which ones a trade followed.
+    if (!cols.includes('rules_followed')) this.db.exec("ALTER TABLE trade_journal ADD COLUMN rules_followed TEXT");
+    const setupCols = (this.db.prepare('PRAGMA table_info(setups)').all() as { name: string }[]).map((c) => c.name);
+    if (!setupCols.includes('rules')) this.db.exec("ALTER TABLE setups ADD COLUMN rules TEXT NOT NULL DEFAULT '[]'");
     this.seedMistakes();
   }
 
@@ -157,28 +161,31 @@ export class JournalDb {
     const rows = this.db.prepare('SELECT * FROM trade_journal').all() as Record<string, any>[];
     return new Map(rows.map((r) => [r.trade_id, {
       notes: r.notes, setupId: r.setup_id, mistakes: JSON.parse(r.mistakes), rating: r.rating, ...JSON.parse(r.levels),
+      ...(r.rules_followed ? { rulesFollowed: JSON.parse(r.rules_followed) } : {}),
     }]));
   }
 
   saveTradeJournal(tradeId: string, j: TradeJournal) {
     this.db.prepare(`
-      INSERT INTO trade_journal (trade_id, notes, setup_id, mistakes, rating, levels, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
-      ON CONFLICT (trade_id) DO UPDATE SET notes = excluded.notes, setup_id = excluded.setup_id,
-        mistakes = excluded.mistakes, rating = excluded.rating, levels = excluded.levels, updated_at = excluded.updated_at`)
+      INSERT INTO trade_journal (trade_id, notes, setup_id, mistakes, rating, levels, rules_followed, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      ON CONFLICT (trade_id) DO UPDATE SET notes = excluded.notes, setup_id = excluded.setup_id, mistakes = excluded.mistakes,
+        rating = excluded.rating, levels = excluded.levels, rules_followed = excluded.rules_followed, updated_at = excluded.updated_at`)
       .run(tradeId, j.notes, j.setupId, JSON.stringify(j.mistakes), j.rating,
-        JSON.stringify({ stops: j.stops, targets: j.targets, underlyingEntry: j.underlyingEntry, underlyingExit: j.underlyingExit }));
+        JSON.stringify({ stops: j.stops, targets: j.targets, underlyingEntry: j.underlyingEntry, underlyingExit: j.underlyingExit }),
+        j.rulesFollowed ? JSON.stringify(j.rulesFollowed) : null);
   }
 
   setups(): Setup[] {
-    return this.db.prepare('SELECT id, name, color FROM setups ORDER BY position').all() as unknown as Setup[];
+    const rows = this.db.prepare('SELECT id, name, color, rules FROM setups ORDER BY position').all() as Record<string, any>[];
+    return rows.map((r) => ({ id: r.id, name: r.name, color: r.color, rules: JSON.parse(r.rules) }));
   }
 
   /** Replaces the setup list. Trades that used a deleted setup go back to having none. */
   saveSetups(list: Setup[]) {
     this.transaction(() => {
       this.db.exec('DELETE FROM setups');
-      const insert = this.db.prepare('INSERT INTO setups (id, name, color, position) VALUES (?, ?, ?, ?)');
-      list.forEach((x, i) => insert.run(x.id, x.name, x.color, i));
+      const insert = this.db.prepare('INSERT INTO setups (id, name, color, position, rules) VALUES (?, ?, ?, ?, ?)');
+      list.forEach((x, i) => insert.run(x.id, x.name, x.color, i, JSON.stringify(x.rules ?? [])));
       this.db.exec('UPDATE trade_journal SET setup_id = NULL WHERE setup_id IS NOT NULL AND setup_id NOT IN (SELECT id FROM setups)');
     });
   }

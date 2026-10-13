@@ -69,6 +69,8 @@ export interface TradeJournal {
   /** The underlying's average price at your entries and exits, saved with the levels so R shows without loading the chart. */
   underlyingEntry?: number;
   underlyingExit?: number;
+  /** Ids of the setup's playbook rules you followed on this trade; the rest count as broken. */
+  rulesFollowed?: string[];
 }
 
 /** A price on the underlying and how many contracts it applies to. */
@@ -85,6 +87,22 @@ export interface Setup {
   name: string;
   /** Hex color used for its badge. */
   color: string;
+  /** The setup's playbook: rules you mean to follow every time you take it. */
+  rules?: PlaybookRule[];
+}
+
+export interface PlaybookRule {
+  id: string;
+  text: string;
+}
+
+/** How well a trade followed its setup's playbook, or null if the setup has no rules. */
+export function playbookScore(trade: Pick<Trade, 'journal'>, setups: Setup[]): { followed: number; total: number; broken: PlaybookRule[] } | null {
+  const rules = setups.find((s) => s.id === trade.journal?.setupId)?.rules ?? [];
+  if (!rules.length) return null;
+  const ticked = new Set(trade.journal?.rulesFollowed ?? []);
+  const broken = rules.filter((r) => !ticked.has(r.id));
+  return { followed: rules.length - broken.length, total: rules.length, broken };
 }
 
 /** A mistake label, e.g. "Chased entry". */

@@ -45,6 +45,25 @@ describe('filters', () => {
   });
 });
 
+describe('playbook reports', () => {
+  const setups = [{ id: 'orb', name: 'ORB', color: '#fff', rules: [{ id: 'r1', text: 'Wait 5m' }, { id: 'r2', text: 'Stop under range' }] }];
+  const pb = [
+    trade('p1', { netPnl: 40, j: { setupId: 'orb', rulesFollowed: ['r1', 'r2'] } }),
+    trade('p2', { netPnl: -25, j: { setupId: 'orb', rulesFollowed: ['r2'] } }),
+    trade('p3', { netPnl: -15, j: { setupId: 'orb' } }),
+    trade('p4', { netPnl: 10 }),
+  ];
+  const r = buildReports(pb, setups, []);
+
+  it('compares trades that followed every rule with ones that broke one', () => {
+    expect(r.playbook.map((x) => [x.label, x.trades, x.netPnl])).toEqual([['Followed every rule', 1, 40], ['Broke a rule', 2, -40]]);
+  });
+
+  it('shows what each broken rule cost', () => {
+    expect(r.rulesBroken.map((x) => [x.label, x.trades, x.netPnl])).toEqual([['Wait 5m (ORB)', 2, -40], ['Stop under range (ORB)', 1, -15]]);
+  });
+});
+
 describe('reports', () => {
   const r = buildReports(trades, [{ id: 'orb', name: 'ORB', color: '#fff' }],
     [{ id: 'fomo', name: 'FOMO' }, { id: 'late', name: 'Late entry' }]);

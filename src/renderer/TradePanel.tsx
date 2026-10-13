@@ -3,6 +3,7 @@ import {
 } from 'lightweight-charts';
 import { useEffect, useRef, useState } from 'react';
 import type { Bar } from '../core/alpaca';
+import { filledBy, positionAt, replayStartIndex } from '../core/replay';
 import { chartTime } from '../core/time';
 import { dollarRiskReward } from '../core/optionLevels';
 import { averageUnderlying, formatR, levelsFromExits, riskReward } from '../core/rr';
@@ -43,14 +44,51 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
   const [chart, setChart] = useState<TradeChart | null>(null);
   const [interval, setInterval] = useState<Interval>(1);
   const [placing, setPlacing] = useState<LevelKind | null>(null);
+  // Replay: which minute bar is showing, whether it's playing, and how many candles a second.
+  const [replay, setReplay] = useState<{ index: number; playing: boolean; speed: number } | null>(null);
   const { saveTrade } = useJournal();
   const journal = trade.journal ?? EMPTY_JOURNAL;
   const levels: Levels = { stops: journal.stops ?? [], targets: journal.targets ?? [] };
 
   useEffect(() => {
     setChart(null);
+    setReplay(null);
     window.journal.getTradeChart(trade.id).then(setChart);
   }, [trade.id]);
+
+  const bars = chart?.status === 'ok' ? chart.bars : [];
+  const playing = !!replay?.playing;
+  useEffect(() => {
+    if (!replay?.playing) return;
+    const timer = window.setInterval(() => setReplay((r) => {
+      if (!r) return r;
+      const index = Math.min(r.index + 1, bars.length - 1);
+      return { ...r, index, playing: index < bars.length - 1 };
+    }), 1000 / replay.speed);
+    return () => window.clearInterval(timer);
+  }, [playing, replay?.speed, bars]);
+
+  const step = (by: number) => setReplay((r) => r && { ...r, playing: false, index: Math.max(0, Math.min(bars.length - 1, r.index + by)) });
+  function startReplay() {
+    if (chart?.status !== 'ok' || !bars.length) return;
+    setPlacing(null);
+    setReplay({ index: replayStartIndex(bars, chart.fills[0]?.time), playing: true, speed: 2 });
+  }
+
+  // Replay keys: space plays or pauses, the arrow keys step a minute, Esc ends it.
+  useEffect(() => {
+    if (!replay) return;
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement;
+      if (el.closest('input, textarea, select')) return;
+      if (e.key === ' ') { e.preventDefault(); setReplay((r) => r && { ...r, playing: !r.playing && r.index < bars.length - 1 }); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); step(1); }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); step(-1); }
+      else if (e.key === 'Escape') setReplay(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [!!replay, bars]);
 
   useEffect(() => {
     if (!placing) return;
@@ -125,6 +163,12 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
           {rr?.plannedR !== undefined && <span className="panel-r muted">planned 1 : {rr.plannedR.toFixed(1)}</span>}
         </div>
         <div className="panel-actions">
+          {chart?.status === 'ok' && (
+            <button className={replay ? 'active' : ''} onClick={() => (replay ? setReplay(null) : startReplay())}
+              title="Watch the trade play out minute by minute">
+              {replay ? 'End replay' : '▶ Replay'}
+            </button>
+          )}
           {[1, 5, 15].map((m) => (
             <button key={m} className={interval === m ? 'active' : ''} onClick={() => setInterval(m as Interval)}>{m}m</button>
           ))}
@@ -133,7 +177,7 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
       </div>
 
       <div className="panel-body">
-        <div className="chart-area">
+        <div className={`chart-area ${replay ? 'replaying' : ''}`}>
           {!chart && <div className="chart-message">Loading {trade.underlying} prices…</div>}
           {chart?.status === 'needs-key' && (
             <div className="chart-message">
@@ -151,6 +195,21 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
               placing={placing}
               onPlace={placeLevel}
               onMove={(kind, i, price) => changeLevel(kind, i, { price: round2(price) })}
+              replayAt={replay ? bars[replay.index]?.time ?? null : null}
+            />
+          )}
+          {replay && chart?.status === 'ok' && (
+            <ReplayBar
+              trade={trade}
+              chart={chart}
+              index={replay.index}
+              playing={replay.playing}
+              speed={replay.speed}
+              onPlay={() => setReplay((r) => r && { ...r, playing: !r.playing, index: r.index >= bars.length - 1 ? replayStartIndex(bars, chart.fills[0]?.time) : r.index })}
+              onStep={step}
+              onRestart={() => setReplay((r) => r && { ...r, playing: false, index: replayStartIndex(bars, chart.fills[0]?.time) })}
+              onSpeed={(speed) => setReplay((r) => r && { ...r, speed })}
+              onSeek={(index) => setReplay((r) => r && { ...r, playing: false, index })}
             />
           )}
           {placing && <div className="placing-hint">Click the chart where your {placing === 'stops' ? 'stop' : 'target'} is. Press Esc to cancel.</div>}
@@ -197,10 +256,12 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
   );
 }
 
-function PriceChart({ trade, chart, interval, levels, placing, onPlace, onMove }: {
+function PriceChart({ trade, chart, interval, levels, placing, onPlace, onMove, replayAt }: {
   trade: Trade;
   chart: Extract<TradeChart, { status: 'ok' }>;
   interval: Interval;
+  /** During a replay, the minute being shown (epoch ms); the chart stops there. Null shows everything. */
+  replayAt: number | null;
   levels: Levels;
   placing: LevelKind | null;
   onPlace: (price: number) => void;
@@ -210,10 +271,13 @@ function PriceChart({ trade, chart, interval, levels, placing, onPlace, onMove }
   const api = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const lines = useRef(new Map<string, IPriceLine>());
+  const markersRef = useRef<FillMarkersPrimitive | null>(null);
   const [built, setBuilt] = useState(0);
   // The chart's event handlers are set up once per build, so they read the latest props from here.
   const live = useRef({ trade, levels, placing, onPlace, onMove });
   live.current = { trade, levels, placing, onPlace, onMove };
+  const replayAtRef = useRef(replayAt);
+  replayAtRef.current = replayAt;
 
   useEffect(() => {
     const el = container.current!;
@@ -231,32 +295,11 @@ function PriceChart({ trade, chart, interval, levels, placing, onPlace, onMove }
     });
 
     const tz = chart.timeZone;
-    const size = interval * 60_000;
-    const candles = aggregate(chart.bars, interval).map((b) => ({ ...b, time: chartTime(b.time, tz) as UTCTimestamp }));
+    const { candles, markers } = chartData(chart, live.current.trade, interval, replayAtRef.current);
     series.setData(candles.map((b) => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close })));
-
-    // Partial fills in the same second at the same price share one marker ("B 2 @ $79.00").
-    const trade = live.current.trade;
-    const entrySide = trade.direction === 'LONG' ? 'BUY' : 'SELL';
-    const groups = new Map<string, { time: number; isEntry: boolean; side: string; qty: number; optionPrice: number; underlying?: number }>();
-    for (const f of trade.fills) {
-      const point = chart.fills.find((p) => p.fillId === f.id);
-      if (!point) continue;
-      const key = `${Math.floor(point.time / 1000)}|${f.side}|${f.price}`;
-      const g = groups.get(key);
-      if (g) g.qty += f.quantity;
-      else groups.set(key, { time: point.time, isEntry: f.side === entrySide, side: f.side, qty: f.quantity, optionPrice: f.price, underlying: point.underlyingPrice });
-    }
-    const markers: FillMarker[] = [];
-    for (const g of groups.values()) {
-      const candleTime = chartTime(Math.floor(g.time / size) * size, tz) as UTCTimestamp;
-      // Without an exact price, fall back to the close of the fill's candle.
-      const price = g.underlying ?? candles.find((c) => c.time === candleTime)?.close;
-      if (price === undefined) continue;
-      const text = `${g.side === 'BUY' ? 'B' : 'S'} ${g.qty} @ ${usd(g.optionPrice * 100)}${g.underlying === undefined ? ' (approx.)' : ''}`;
-      markers.push({ time: candleTime, price, kind: g.isEntry ? 'entry' : 'exit', text });
-    }
-    series.attachPrimitive(new FillMarkersPrimitive(markers, candles));
+    const primitive = new FillMarkersPrimitive(markers, candles);
+    series.attachPrimitive(primitive);
+    markersRef.current = primitive;
 
     // Frame the trade: from a bit before the entry to a bit after the exit.
     const first = chart.fills[0]?.time;
@@ -327,6 +370,7 @@ function PriceChart({ trade, chart, interval, levels, placing, onPlace, onMove }
       c.remove();
       api.current = null;
       seriesRef.current = null;
+      markersRef.current = null;
       lines.current.clear();
     };
   }, [chart, interval, trade.id]);
@@ -351,7 +395,100 @@ function PriceChart({ trade, chart, interval, levels, placing, onPlace, onMove }
     }
   }, [JSON.stringify(levels), built]);
 
+  // Replay: redraw up to the current minute, keeping your zoom, and follow it off the right edge.
+  const shownAt = useRef<number | null>(null);
+  useEffect(() => {
+    const c = api.current;
+    const series = seriesRef.current;
+    const primitive = markersRef.current;
+    if (!c || !series || !primitive || replayAt === shownAt.current) return;
+    shownAt.current = replayAt;
+    const range = c.timeScale().getVisibleLogicalRange();
+    const { candles, markers } = chartData(chart, trade, interval, replayAt);
+    primitive.candles = candles;
+    primitive.markers = markers;
+    series.setData(candles.map((b) => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close })));
+    if (!range) return;
+    const last = candles.length - 1;
+    const width = range.to - range.from;
+    if (replayAt !== null && last > range.to - 3) c.timeScale().setVisibleLogicalRange({ from: last - width * 0.7, to: last + width * 0.3 });
+    else c.timeScale().setVisibleLogicalRange(range);
+  }, [replayAt, built]);
+
   return <div className="chart" ref={container} />;
+}
+
+/** Candles and fill markers for the chart, cut off at `until` during a replay. */
+function chartData(chart: Extract<TradeChart, { status: 'ok' }>, trade: Trade, interval: Interval, until: number | null) {
+  const tz = chart.timeZone;
+  const size = interval * 60_000;
+  const bars = until === null ? chart.bars : chart.bars.filter((b) => b.time <= until);
+  const candles = aggregate(bars, interval).map((b) => ({ ...b, time: chartTime(b.time, tz) as UTCTimestamp }));
+
+  // Partial fills in the same second at the same price share one marker ("B 2 @ $79.00").
+  const entrySide = trade.direction === 'LONG' ? 'BUY' : 'SELL';
+  const groups = new Map<string, { time: number; isEntry: boolean; side: string; qty: number; optionPrice: number; underlying?: number }>();
+  for (const f of trade.fills) {
+    const point = chart.fills.find((p) => p.fillId === f.id);
+    if (!point || (until !== null && !filledBy(point.time, until))) continue;
+    const key = `${Math.floor(point.time / 1000)}|${f.side}|${f.price}`;
+    const g = groups.get(key);
+    if (g) g.qty += f.quantity;
+    else groups.set(key, { time: point.time, isEntry: f.side === entrySide, side: f.side, qty: f.quantity, optionPrice: f.price, underlying: point.underlyingPrice });
+  }
+  const markers: FillMarker[] = [];
+  for (const g of groups.values()) {
+    const candleTime = chartTime(Math.floor(g.time / size) * size, tz) as UTCTimestamp;
+    // Without an exact price, fall back to the close of the fill's candle.
+    const price = g.underlying ?? candles.find((c) => c.time === candleTime)?.close;
+    if (price === undefined) continue;
+    const text = `${g.side === 'BUY' ? 'B' : 'S'} ${g.qty} @ ${usd(g.optionPrice * 100)}${g.underlying === undefined ? ' (approx.)' : ''}`;
+    markers.push({ time: candleTime, price, kind: g.isEntry ? 'entry' : 'exit', text });
+  }
+  return { candles, markers };
+}
+
+const SPEEDS = [1, 2, 5, 10];
+
+/** Controls under the chart during a replay, plus where you stood at that minute. */
+function ReplayBar({ trade, chart, index, playing, speed, onPlay, onStep, onRestart, onSpeed, onSeek }: {
+  trade: Trade;
+  chart: Extract<TradeChart, { status: 'ok' }>;
+  index: number;
+  playing: boolean;
+  speed: number;
+  onPlay: () => void;
+  onStep: (by: number) => void;
+  onRestart: () => void;
+  onSpeed: (speed: number) => void;
+  onSeek: (index: number) => void;
+}) {
+  const bar = chart.bars[index];
+  const fillTimes = new Map(chart.fills.map((f) => [f.fillId, f.time]));
+  const pos = positionAt(trade, fillTimes, bar.time);
+  const clock = new Date(bar.time).toLocaleTimeString('en-US', { timeZone: chart.timeZone, hour: 'numeric', minute: '2-digit' });
+  return (
+    <div className="replay-bar">
+      <button onClick={onRestart} title="Back to the start">⏮</button>
+      <button onClick={() => onStep(-1)} title="Back one minute (←)">◀</button>
+      <button className="play" onClick={onPlay} title="Play or pause (space)">{playing ? '❚❚' : '▶'}</button>
+      <button onClick={() => onStep(1)} title="Forward one minute (→)">▶|</button>
+      <select value={speed} onChange={(e) => onSpeed(Number(e.target.value))} title="Candles per second">
+        {SPEEDS.map((s) => <option key={s} value={s}>{s}×</option>)}
+      </select>
+      <input type="range" min={0} max={chart.bars.length - 1} value={index} onChange={(e) => onSeek(Number(e.target.value))} />
+      <span className="replay-clock">{clock}</span>
+      <span className="muted">{trade.underlying} <b className="underlying-price">{usd(bar.close)}</b></span>
+      <span className="replay-pos">
+        {!pos.started ? <span className="muted">Not in yet</span>
+          : pos.held > 0 ? <>Holding <b>{pos.held}</b></>
+          : <span className="muted">Out</span>}
+        {pos.started && (pos.held === 0 || pos.realized !== 0) && (
+          <> · <span className="muted">{pos.held > 0 ? 'Locked in' : 'Result'}</span> <b className={pnlClass(pos.realized)}>{signedUsd(pos.realized)}</b></>
+        )}
+      </span>
+    </div>
+  );
 }
 
 /** Side panel section for placing stops and targets and reading the R they give. */

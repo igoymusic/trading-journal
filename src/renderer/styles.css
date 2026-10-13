@@ -227,7 +227,18 @@ button.link { background: none; border: none; color: var(--blue); padding: 6px; 
 .link-button { background: none !important; border: none !important; color: var(--blue) !important; padding: 4px 6px; }
 
 /* Reports */
-.reports { display: grid; grid-template-columns: repeat(auto-fill, minmax(560px, 1fr)); gap: 12px; padding: 0 20px 20px; align-items: start; }
+.reports { display: flex; gap: 12px; padding: 0 20px 20px; align-items: flex-start; }
+.report-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; min-height: 120px; }
+.report-slot { display: flex; flex-direction: column; gap: 12px; }
+.report-slot:empty { display: none; }
+.report.dragging { opacity: 0.4; }
+.report.collapsed { padding-bottom: 0; }
+.report.collapsed .report-head { padding-bottom: 12px; }
+.report-head { cursor: grab; user-select: none; }
+.report-head .collapse { border: none; background: none; padding: 0 2px; color: var(--muted); font-size: 13px; }
+.report-head .grip { margin-left: auto; color: var(--muted); letter-spacing: -2px; opacity: 0.6; }
+.report-head:hover .grip { opacity: 1; }
+.drop-marker { height: 4px; border-radius: 2px; background: var(--blue); box-shadow: 0 0 8px rgba(41, 98, 255, 0.6); }
 .reports-empty { padding: 0 20px; }
 .report { padding-bottom: 6px; }
 .report-head { display: flex; align-items: baseline; gap: 10px; padding: 12px 14px 4px; }
@@ -237,7 +248,7 @@ button.link { background: none; border: none; color: var(--blue); padding: 6px; 
 .report td, .report th { padding: 6px 10px; white-space: nowrap; }
 .report tr:last-child td { border-bottom: none; }
 .report-label { font-weight: 500; }
-.bar-col { width: 22%; min-width: 90px; }
+.bar-col { width: 16%; min-width: 70px; }
 .bar-track { position: relative; height: 10px; }
 .bar-track::before { content: ''; position: absolute; left: 50%; top: -3px; bottom: -3px; border-left: 1px solid var(--border); }
 .bar { position: absolute; left: 50%; top: 0; height: 100%; border-radius: 0 2px 2px 0; }
@@ -250,3 +261,39 @@ button.link { background: none; border: none; color: var(--blue); padding: 6px; 
 th.sortable { cursor: pointer; user-select: none; }
 th.sortable:hover { color: var(--text); }
 th.sorted { color: var(--text); }
+
+/* Trade replay */
+.chart-area.replaying .chart { bottom: 42px; }
+.replay-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 42px; display: flex; align-items: center; gap: 6px; padding: 0 10px; border-top: 1px solid var(--border); background: var(--panel); white-space: nowrap; }
+.replay-bar button { padding: 3px 9px; min-width: 32px; }
+.replay-bar button.play { background: var(--blue); border-color: var(--blue); color: #fff; }
+.replay-bar select { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 3px 4px; font: inherit; }
+.replay-bar input[type=range] { flex: 1; min-width: 80px; accent-color: var(--blue); }
+.replay-clock { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 64px; text-align: right; }
+.replay-pos { min-width: 150px; }
+
+/* Playbooks */
+.rules-editor { margin: 0 0 10px 34px; padding-left: 10px; border-left: 2px solid var(--border); }
+.rule-num { width: 18px; text-align: right; }
+.playbook { margin: 10px 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); }
+.playbook-head { display: flex; justify-content: space-between; margin-bottom: 6px; font-weight: 600; }
+.playbook label { display: flex; align-items: center; gap: 8px; padding: 3px 0; cursor: pointer; color: var(--muted); }
+.playbook label.followed { color: var(--text); }
+.report td.report-label { white-space: normal; min-width: 190px; }
+.report { overflow: hidden; }
+
+/* Goals */
+.home-side { display: flex; flex-direction: column; gap: 12px; }
+.goals { padding: 12px 14px; }
+.goals-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.goals-head h3 { margin: 0; font-size: 14px; }
+.goals p { margin: 4px 0 10px; }
+.goal-progress { margin-bottom: 10px; }
+.goal-progress-label { display: flex; justify-content: space-between; margin-bottom: 5px; }
+.goal-track { height: 8px; border-radius: 4px; background: var(--panel-2); overflow: hidden; }
+.goal-fill { height: 100%; border-radius: 4px; }
+.goal-row { display: flex; justify-content: space-between; padding: 6px 0; border-top: 1px solid #22262f; }
+.goal-flag { margin-left: 4px; font-size: 11px; }
+.goal-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; }
+.goal-input { display: flex; align-items: center; gap: 4px; }
+.goal-input input { width: 100%; }

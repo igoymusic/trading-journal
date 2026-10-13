@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import type { Goals } from '../core/goals';
+import type { PlaybookRule } from '../core/types';
 import type { SettingsView } from '../shared/api';
 import { newId, SETUP_COLORS, useJournal } from './journal';
 
@@ -70,6 +72,8 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
         )}
         {status && <p className={status.ok ? 'win' : 'loss'}>{status.message}</p>}
 
+        {settings && <GoalsEditor initial={settings.goals} />}
+
         <SetupsEditor />
         <MistakesEditor />
 
@@ -83,10 +87,53 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
+const GOAL_FIELDS: { key: keyof Goals; label: string; hint: string; dollars: boolean }[] = [
+  { key: 'dailyTarget', label: 'Daily profit target', hint: 'A day at or above this counts as hitting your target.', dollars: true },
+  { key: 'dailyMaxLoss', label: 'Max loss per day', hint: 'Days that lose more than this get flagged.', dollars: true },
+  { key: 'maxTradesPerDay', label: 'Max trades per day', hint: 'Days with more trades than this get flagged.', dollars: false },
+  { key: 'monthlyTarget', label: 'Monthly profit target', hint: 'Shown as a progress bar on Home.', dollars: true },
+];
+
+/** Goals and limits, saved as you type. Leave a box empty to not track that goal. */
+function GoalsEditor({ initial }: { initial: Goals }) {
+  const [goals, setGoals] = useState<Record<string, string>>(
+    Object.fromEntries(GOAL_FIELDS.map((f) => [f.key, initial[f.key] === undefined ? '' : String(initial[f.key])])),
+  );
+  function change(key: keyof Goals, text: string) {
+    const next = { ...goals, [key]: text };
+    setGoals(next);
+    const parsed: Goals = {};
+    for (const f of GOAL_FIELDS) {
+      const n = Number(next[f.key]);
+      if (next[f.key].trim() !== '' && Number.isFinite(n) && n > 0) parsed[f.key] = f.dollars ? n : Math.round(n);
+    }
+    window.journal.setGoals(parsed);
+  }
+  return (
+    <>
+      <h3>Goals</h3>
+      <p className="muted">Targets and limits for your trading. Home shows how this month is going, and the calendar marks days that hit the target or broke a limit. Leave a box empty to skip it.</p>
+      <div className="goal-fields">
+        {GOAL_FIELDS.map((f) => (
+          <label key={f.key} title={f.hint}>
+            {f.label}
+            <span className="goal-input">
+              {f.dollars && <span className="muted">$</span>}
+              <input type="number" min={0} step={f.dollars ? 10 : 1} value={goals[f.key]} onChange={(e) => change(f.key, e.target.value)} />
+            </span>
+          </label>
+        ))}
+      </div>
+    </>
+  );
+}
+
 /** Your setups: rename, recolor or delete. Deleting one clears it from its trades. */
 function SetupsEditor() {
   const { setups, saveSetups } = useJournal();
   const [name, setName] = useState('');
+  const [openRules, setOpenRules] = useState<string | null>(null);
+  const setRules = (id: string, rules: PlaybookRule[]) => saveSetups(setups.map((x) => (x.id === id ? { ...x, rules } : x)));
   const add = () => {
     if (!name.trim()) return;
     saveSetups([...setups, { id: newId(), name: name.trim(), color: SETUP_COLORS[setups.length % SETUP_COLORS.length] }]);
@@ -95,12 +142,21 @@ function SetupsEditor() {
   return (
     <>
       <h3>Setups</h3>
-      <p className="muted">The kinds of trades you take. Pick one on each trade to see later which setups make money.</p>
+      <p className="muted">
+        The kinds of trades you take. Pick one on each trade to see later which setups make money. Give a setup a
+        playbook (the rules you mean to follow every time) and you can tick off which ones you followed on each trade.
+      </p>
       {setups.map((s) => (
-        <div className="list-row" key={s.id}>
-          <input type="color" value={s.color} onChange={(e) => saveSetups(setups.map((x) => (x.id === s.id ? { ...x, color: e.target.value } : x)))} />
-          <RenameInput value={s.name} onSave={(v) => saveSetups(setups.map((x) => (x.id === s.id ? { ...x, name: v } : x)))} />
-          <button className="danger-link" onClick={() => saveSetups(setups.filter((x) => x.id !== s.id))}>Delete</button>
+        <div key={s.id}>
+          <div className="list-row">
+            <input type="color" value={s.color} onChange={(e) => saveSetups(setups.map((x) => (x.id === s.id ? { ...x, color: e.target.value } : x)))} />
+            <RenameInput value={s.name} onSave={(v) => saveSetups(setups.map((x) => (x.id === s.id ? { ...x, name: v } : x)))} />
+            <button className={openRules === s.id ? 'active' : ''} onClick={() => setOpenRules(openRules === s.id ? null : s.id)}>
+              Playbook ({s.rules?.length ?? 0})
+            </button>
+            <button className="danger-link" onClick={() => saveSetups(setups.filter((x) => x.id !== s.id))}>Delete</button>
+          </div>
+          {openRules === s.id && <RulesEditor rules={s.rules ?? []} onChange={(rules) => setRules(s.id, rules)} />}
         </div>
       ))}
       <div className="list-row">
@@ -108,6 +164,31 @@ function SetupsEditor() {
         <button onClick={add} disabled={!name.trim()}>Add</button>
       </div>
     </>
+  );
+}
+
+function RulesEditor({ rules, onChange }: { rules: PlaybookRule[]; onChange: (rules: PlaybookRule[]) => void }) {
+  const [text, setText] = useState('');
+  const add = () => {
+    if (!text.trim()) return;
+    onChange([...rules, { id: newId(), text: text.trim() }]);
+    setText('');
+  };
+  return (
+    <div className="rules-editor">
+      {rules.map((r, i) => (
+        <div className="list-row" key={r.id}>
+          <span className="muted rule-num">{i + 1}.</span>
+          <RenameInput value={r.text} onSave={(v) => onChange(rules.map((x) => (x.id === r.id ? { ...x, text: v } : x)))} />
+          <button className="danger-link" onClick={() => onChange(rules.filter((x) => x.id !== r.id))}>Delete</button>
+        </div>
+      ))}
+      <div className="list-row">
+        <input autoFocus placeholder="New rule, e.g. Wait for the first 5-minute candle to close" value={text}
+          onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
+        <button onClick={add} disabled={!text.trim()}>Add rule</button>
+      </div>
+    </div>
   );
 }
 

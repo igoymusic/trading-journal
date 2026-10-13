@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useReducer, useState } from 'react';
 import { statsByDay, tradeDay } from '../core/calendar';
+import type { Goals } from '../core/goals';
 import { applyFilter, EMPTY_FILTER, type TradeFilter } from '../core/reports';
 import { type Summary, summarizeTrades } from '../core/trades';
 import type { ImportResult, JournalData } from '../shared/api';
 import { DayView } from './DayView';
 import { FilterBar } from './FilterBar';
+import { GoalsCard } from './GoalsCard';
 import { JournalContext, type JournalContextValue, TradeJournalEditor } from './journal';
 import { pnlClass, signedUsd, usd } from './format';
 import { MonthView } from './MonthView';
@@ -28,6 +30,8 @@ export function App() {
   const [showSettings, setShowSettings] = useState(false);
   // Bumped when Settings closes so an open chart reloads with new keys or time zone.
   const [settingsVersion, setSettingsVersion] = useState(0);
+  const [goals, setGoals] = useState<Goals>({});
+  useEffect(() => { window.journal.getSettings().then((s) => setGoals(s.goals)); }, [settingsVersion]);
   // Which trades have their chart open on each day, so a Day tab remembers it while you switch tabs.
   const [openCharts, setOpenCharts] = useState<Record<string, string[]>>({});
   // Filters shared by the All trades and Reports tabs.
@@ -148,15 +152,19 @@ export function App() {
           {tabs.active === 'home' && (
             <div className="home">
               <PnlChart trades={data.trades} />
+              <div className="home-side">
               <div className="card">
                 <MonthView
                   compact
+                  goals={goals}
                   trades={data.trades}
                   year={homeMonth.year}
                   month={homeMonth.month}
                   onMonthChange={(year, month) => setHomeMonth({ year, month })}
                   onOpenDay={(date) => dispatch({ type: 'openDayFromHome', date })}
                 />
+              </div>
+              <GoalsCard trades={data.trades} goals={goals} year={homeMonth.year} month={homeMonth.month} onOpenSettings={() => setShowSettings(true)} />
               </div>
             </div>
           )}
@@ -172,6 +180,7 @@ export function App() {
           {activeMonth && (
             <MonthView
               trades={data.trades}
+              goals={goals}
               year={activeMonth.year}
               month={activeMonth.month}
               onMonthChange={(year, month) => dispatch({ type: 'openMonth', year, month })}
