@@ -8,6 +8,7 @@ import { buildTrades, summarizeTrades } from '../core/trades';
 import type { MistakeTag, PriceLevel, Setup, TradeJournal } from '../core/types';
 import type { ImportResult, JournalData, LabelOffset, TradeChart } from '../shared/api';
 import type { MarkerStyles } from '../core/markerStyles';
+import type { Indicator } from '../core/indicators';
 import { AlpacaClient } from '../core/alpaca';
 import type { Goals } from '../core/goals';
 import { dayChartTrade } from '../core/dayChart';
@@ -16,7 +17,7 @@ import { SchwabSync } from './schwab';
 import type { SchwabSlot } from './settings';
 import { JournalDb } from './db';
 import { moveDataFromOldName } from './migrate';
-import { buildTradeChart, levelOptionPrices } from './market';
+import { buildTradeChart, etfMinuteBars, historyDailyBars, historyMinuteBars, levelOptionPrices } from './market';
 import { Settings } from './settings';
 import { Screenshots } from './screenshots';
 import { Backups } from './backup';
@@ -179,7 +180,14 @@ app.whenReady().then(async () => {
     colors: settings.colors,
     markerStyles: settings.markerStyles,
     optionPriceDisplay: settings.optionPriceDisplay,
+    indicators: settings.indicators,
   }));
+  ipcMain.handle('settings:setIndicators', (_event, list: Indicator[]) => { settings.indicators = list; });
+  ipcMain.handle('market:historyMinutes', (_event, underlying: string, beforeDay: string, minutes: number, count: number, fromSchwab: boolean) =>
+    historyMinuteBars(underlying, beforeDay, minutes, Math.min(count, 5000), fromSchwab, db, settings, chartSource()).catch(() => []));
+  ipcMain.handle('market:etfMinutes', (_event, symbol: string, days: string[]) => etfMinuteBars(symbol, days, db, settings).catch(() => []));
+  ipcMain.handle('market:historyDays', (_event, underlying: string, beforeDay: string, count: number, fromSchwab: boolean) =>
+    historyDailyBars(underlying, beforeDay, Math.min(count, 2500), fromSchwab, db, settings, chartSource()).catch(() => []));
   ipcMain.handle('settings:setOptionPriceDisplay', (_event, mode: 'quote' | 'contract') => { settings.optionPriceDisplay = mode; });
   ipcMain.handle('settings:setMarkerStyles', (_event, styles: MarkerStyles | null) => { settings.markerStyles = styles ?? undefined; });
   ipcMain.handle('settings:setColors', (_event, colors: Record<string, string> | null) => { settings.colors = colors ?? undefined; });

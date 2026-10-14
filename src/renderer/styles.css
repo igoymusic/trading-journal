@@ -434,3 +434,20 @@ th.sorted { color: var(--text); }
 .markers-pop .marker-styles > button { justify-self: start; }
 .settings .marker-styles { max-width: 320px; }
 .markers-pop .marker-styles > button { width: auto; height: 26px; padding: 0 10px; font-size: 12px; }
+
+/* Chart indicators */
+.draw-style.indicators-pop { top: auto; bottom: 0; width: 280px; max-height: 70vh; overflow-y: auto; }
+.indicators { display: flex; flex-direction: column; gap: 8px; font-size: 12px; color: var(--muted); }
+.indicator-add { display: flex; flex-wrap: wrap; gap: 4px; }
+.indicators-pop .indicator-add button, .indicators-pop .indicator-head button { width: auto; height: 24px; padding: 0 8px; font-size: 12px; }
+.indicator { border-top: 1px solid var(--border); padding-top: 6px; display: flex; flex-direction: column; gap: 6px; }
+.indicator.hidden .indicator-name { opacity: 0.5; }
+.indicator-head { display: flex; align-items: center; gap: 4px; }
+.indicator-head input[type=color] { width: 22px; height: 22px; padding: 0; border: none; background: none; cursor: pointer; flex-shrink: 0; }
+.indicators-pop .indicator-head .indicator-name { flex: 1; justify-content: flex-start; color: var(--text); background: none; border: none; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.indicator-inputs { display: flex; flex-direction: column; gap: 6px; padding-left: 26px; }
+.draw-style .indicator-inputs label { display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 8px; }
+.indicator-inputs label.check { justify-content: flex-start; }
+.indicator-inputs input[type=number], .indicator-inputs select { width: 120px; }
+.indicator-inputs input[type=range] { accent-color: var(--blue); width: 120px; }
+.chart-legend { position: absolute; top: 4px; left: 8px; z-index: 3; display: flex; flex-direction: column; gap: 1px; font-size: 11px; pointer-events: none; text-shadow: 0 0 3px #131722; }
