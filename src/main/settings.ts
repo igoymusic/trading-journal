@@ -6,6 +6,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import type { AlpacaCredentials } from '../core/alpaca';
 import type { Goals } from '../core/goals';
 import { cleanMarkerStyles, type MarkerStyles } from '../core/markerStyles';
+import { cleanIndicators, type Indicator } from '../core/indicators';
 import type { SchwabSlot } from '../shared/api';
 
 interface StoredSettings {
@@ -23,6 +24,8 @@ interface StoredSettings {
   colors?: Record<string, string>;
   /** Accounts left out of the journal's numbers (by name). */
   hiddenAccounts?: string[];
+  /** Indicators shown on every chart. */
+  indicators?: Indicator[];
   /** Option prices as quoted ($0.15) or per contract ($15.00, the default). */
   optionPriceDisplay?: 'quote' | 'contract';
   /** How entry and exit markers look, when changed from the defaults. */
@@ -122,6 +125,16 @@ export class Settings {
     // Only keep real "#rrggbb" colors.
     const clean = Object.fromEntries(Object.entries(c ?? {}).filter(([, v]) => /^#[0-9a-f]{6}$/i.test(v)));
     this.data.colors = Object.keys(clean).length ? clean : undefined;
+    this.save();
+  }
+
+  get indicators(): Indicator[] {
+    return cleanIndicators(this.data.indicators);
+  }
+
+  set indicators(list: Indicator[]) {
+    const clean = cleanIndicators(list);
+    this.data.indicators = clean.length ? clean : undefined;
     this.save();
   }
 

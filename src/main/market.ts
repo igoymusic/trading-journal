@@ -3,6 +3,7 @@
 
 import { AlpacaClient, type Bar, occSymbol } from '../core/alpaca';
 import { type IndexProxy, indexProxy, parseFredCsv, ratioDay } from '../core/indexProxy';
+import type { DayBar } from '../core/indicators';
 import { type LevelPrice, priceLevels } from '../core/optionLevels';
 import { zonedToUtcMillis } from '../core/time';
 import type { PriceLevel, Trade } from '../core/types';
@@ -224,4 +225,112 @@ export async function levelOptionPrices(trade: Trade, stops: PriceLevel[], targe
     optionBars: await optionBars(trade, client, db),
   };
   return { stops: priceLevels({ ...common, levels: stops }), targets: priceLevels({ ...common, levels: targets }) };
+}
+
+/** Weekdays before `day` (New York date), newest first. */
+function weekdaysBefore(day: string, count: number): string[] {
+  const out: string[] = [];
+  for (let d = new Date(`${day}T12:00:00Z`); out.length < count;) {
+    d.setUTCDate(d.getUTCDate() - 1);
+    if (d.getUTCDay() !== 0 && d.getUTCDay() !== 6) out.push(d.toISOString().slice(0, 10));
+  }
+  return out;
+}
+
+/**
+ * Minute candles from the trading days before `beforeDay`, from the same source the chart uses,
+ * going back until there are at least `count` candles of `minutes` each (or about three months).
+ */
+export async function historyMinuteBars(
+  underlying: string, beforeDay: string, minutes: number, count: number, fromSchwab: boolean,
+  db: JournalDb, settings: Settings, schwab?: SchwabSync, fetchFn?: typeof fetch,
+): Promise<Bar[]> {
+  const schwabSymbol = SCHWAB_INDEX[underlying];
+  const creds = settings.alpacaCredentials();
+  const client = creds ? new AlpacaClient(creds, fetchFn as any, process.env.TJ_ALPACA_BASE_URL || undefined) : null;
+  const proxy = indexProxy(underlying);
+  const symbol = fromSchwab && schwabSymbol ? schwabSymbol : proxy?.etf ?? underlying;
+  const size = minutes * 60_000;
+  const days: Bar[][] = [];
+  const buckets = new Set<number>();
+  for (const day of weekdaysBefore(beforeDay, 65)) {
+    if (buckets.size >= count) break;
+    const start = zonedToUtcMillis(`${day}T${SESSION_START}`, 'America/New_York');
+    const end = zonedToUtcMillis(`${day}T${SESSION_END}`, 'America/New_York');
+    let bars: Bar[];
+    if (db.barDay(symbol, day)) bars = db.minuteBars(symbol, start, end);
+    else if (fromSchwab && schwabSymbol) {
+      // A day Schwab has nothing for (a holiday) is just empty.
+      bars = (await schwab?.indexBars(symbol, start, end)) ?? [];
+      db.saveBarDay(symbol, day, 'schwab', bars);
+    } else if (client) {
+      const fetched = await client.minuteBars(symbol, start, end);
+      db.saveBarDay(symbol, day, fetched.feed, fetched.bars);
+      bars = fetched.bars;
+    } else break;
+    if (proxy && !(fromSchwab && schwabSymbol) && bars.length && client) {
+      const r = await indexRatio(proxy, day, client, db, fetchFn ?? fetch).catch(() => undefined);
+      if (!r) continue;
+      bars = bars.map((b) => ({ ...b, open: b.open * r, high: b.high * r, low: b.low * r, close: b.close * r }));
+    }
+    for (const b of bars) buckets.add(Math.floor(b.time / size));
+    days.push(bars);
+  }
+  return days.reverse().flat();
+}
+
+/** Completed daily candles before `beforeDay`, at least `count` of them when available. */
+export async function historyDailyBars(
+  underlying: string, beforeDay: string, count: number, fromSchwab: boolean,
+  db: JournalDb, settings: Settings, schwab?: SchwabSync, fetchFn?: typeof fetch,
+): Promise<DayBar[]> {
+  const schwabSymbol = SCHWAB_INDEX[underlying];
+  const proxy = indexProxy(underlying);
+  const source = fromSchwab && schwabSymbol ? `schwab:${schwabSymbol}` : proxy ? `fred:${proxy.fredSeries}` : `alpaca:${underlying}`;
+  const cacheKey = `daily:${source}:${beforeDay}:${count}`;
+  const cached = db.getMeta(cacheKey);
+  if (cached) return JSON.parse(cached) as DayBar[];
+  // Calendar days to cover that many trading days, with room for holidays.
+  const span = Math.ceil(count * 1.5) + 10;
+  const startDate = new Date(`${beforeDay}T12:00:00Z`);
+  startDate.setUTCDate(startDate.getUTCDate() - span);
+  const startDay = startDate.toISOString().slice(0, 10);
+  let bars: DayBar[] = [];
+  if (fromSchwab && schwabSymbol) {
+    bars = (await schwab?.indexDailyBars(schwabSymbol, Date.parse(`${startDay}T00:00:00Z`), Date.parse(`${beforeDay}T00:00:00Z`))) ?? [];
+  } else if (proxy) {
+    // The index's official closes (no highs or lows, so those match the close).
+    const closes = await indexCloses(proxy.fredSeries, beforeDay, db, fetchFn ?? fetch);
+    bars = [...closes].filter(([d]) => d >= startDay).sort(([a], [b]) => a.localeCompare(b))
+      .map(([day, c]) => { const v = c * proxy.scale; return { day, open: v, high: v, low: v, close: v, volume: 0 }; });
+  } else {
+    const creds = settings.alpacaCredentials();
+    if (!creds) return [];
+    const client = new AlpacaClient(creds, fetchFn as any, process.env.TJ_ALPACA_BASE_URL || undefined);
+    const end = new Date(`${beforeDay}T12:00:00Z`);
+    end.setUTCDate(end.getUTCDate() - 1);
+    bars = await client.dailyBars(underlying, startDay, end.toISOString().slice(0, 10));
+  }
+  bars = bars.filter((b) => b.day < beforeDay);
+  // Past days don't change; only keep complete answers.
+  if (bars.length) db.setMeta(cacheKey, JSON.stringify(bars));
+  return bars;
+}
+
+/** A stock or ETF's minute candles on the given days (for borrowing SPY's volume for an index's VWAP). */
+export async function etfMinuteBars(symbol: string, days: string[], db: JournalDb, settings: Settings, fetchFn?: typeof fetch): Promise<Bar[]> {
+  const creds = settings.alpacaCredentials();
+  if (!creds) return [];
+  const client = new AlpacaClient(creds, fetchFn as any, process.env.TJ_ALPACA_BASE_URL || undefined);
+  const out: Bar[] = [];
+  for (const day of days.slice(0, 10)) {
+    const start = zonedToUtcMillis(`${day}T${SESSION_START}`, 'America/New_York');
+    const fullEnd = zonedToUtcMillis(`${day}T${SESSION_END}`, 'America/New_York');
+    if (db.barDay(symbol, day)) { out.push(...db.minuteBars(symbol, start, fullEnd)); continue; }
+    const end = Math.min(fullEnd, Date.now() - FREE_PLAN_DELAY_MS);
+    const fetched = await client.minuteBars(symbol, start, end);
+    if (end === fullEnd) db.saveBarDay(symbol, day, fetched.feed, fetched.bars);
+    out.push(...fetched.bars);
+  }
+  return out;
 }

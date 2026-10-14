@@ -19,6 +19,7 @@ import { ScreenshotGallery, useScreenshotCount } from './Screenshots';
 import { DrawingsPrimitive, type Xy } from './drawingsPrimitive';
 import { holdTime, pnlClass, shortDate, signedUsd, optionUsd, usd } from './format';
 import { useJournal } from './journal';
+import { useChartIndicators } from './useChartIndicators';
 
 type LevelKind = 'stops' | 'targets';
 interface Levels { stops: PriceLevel[]; targets: PriceLevel[] }
@@ -359,6 +360,7 @@ export function PriceChart({ trade, chart, interval, levels, placing, onPlace, o
   editingRef.current = editing;
   const replayAtRef = useRef(replayAt);
   replayAtRef.current = replayAt;
+  const legend = useChartIndicators(api, seriesRef, built, chart, trade.underlying, interval, replayAt);
 
   useEffect(() => {
     const el = container.current!;
@@ -710,6 +712,11 @@ export function PriceChart({ trade, chart, interval, levels, placing, onPlace, o
 
   return (
     <div className="chart" ref={container}>
+      {legend.length > 0 && (
+        <div className="chart-legend">
+          {legend.map((l) => <span key={l.id} style={{ color: l.color }}>{l.name}</span>)}
+        </div>
+      )}
       {editing && (
         <textarea
           className="note-editor"

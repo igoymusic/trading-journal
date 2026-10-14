@@ -1,3 +1,4 @@
+import type { DayBar, Indicator } from '../core/indicators';
 import type { MarkerStyles } from '../core/markerStyles';
 // The contract between the screens (renderer) and the main process.
 
@@ -121,6 +122,8 @@ export interface SettingsView {
   markerStyles: MarkerStyles;
   /** Option prices as quoted ($0.15) or as paid per contract ($15.00). */
   optionPriceDisplay: 'quote' | 'contract';
+  /** Indicators shown on every chart. */
+  indicators: Indicator[];
 }
 
 export interface TradeImage {
@@ -184,6 +187,13 @@ export interface JournalApi {
   /** Saves how entry and exit markers look; null goes back to the defaults. */
   setMarkerStyles(styles: MarkerStyles | null): Promise<void>;
   setOptionPriceDisplay(mode: 'quote' | 'contract'): Promise<void>;
+  setIndicators(indicators: Indicator[]): Promise<void>;
+  /** Minute candles from the days before `beforeDay`, enough for `count` candles of `minutes`. */
+  historyMinuteBars(underlying: string, beforeDay: string, minutes: number, count: number, fromSchwab: boolean): Promise<Bar[]>;
+  /** A stock or ETF's minute candles on those days (an index's VWAP borrows SPY's volume). */
+  etfMinuteBars(symbol: string, days: string[]): Promise<Bar[]>;
+  /** Completed daily candles before `beforeDay`. */
+  historyDailyBars(underlying: string, beforeDay: string, count: number, fromSchwab: boolean): Promise<DayBar[]>;
   setReportsLayout(layout: { columns: string[][]; collapsed: string[] }): Promise<void>;
   saveTradeJournal(tradeId: string, journal: TradeJournal): Promise<void>;
   saveSetups(setups: Setup[]): Promise<void>;

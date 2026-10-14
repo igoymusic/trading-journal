@@ -216,6 +216,21 @@ export class SchwabSync {
     return bars.length ? bars : null;
   }
 
+  /** Daily candles of an index like $SPX from Schwab, by New York date; null when unavailable. */
+  async indexDailyBars(symbol: string, startMillis: number, endMillis: number) {
+    if (!this.status().signedIn) return null;
+    const data = await this.get<{ candles?: { datetime: number; open: number; high: number; low: number; close: number; volume?: number }[] }>(
+      '/marketdata/v1/pricehistory', {
+        symbol, periodType: 'year', frequencyType: 'daily', frequency: '1', startDate: String(startMillis), endDate: String(endMillis),
+      },
+    ).catch(() => null);
+    const bars = (data?.candles ?? []).map((c) => ({
+      day: new Date(c.datetime).toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
+      open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume ?? 0,
+    }));
+    return bars.length ? bars : null;
+  }
+
   /** Forgets the sign-in; with `everything`, the app key and secret too. */
   disconnect(everything: boolean) {
     if (everything) this.settings.setSchwabApp(this.slot, null);

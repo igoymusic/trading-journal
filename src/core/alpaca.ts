@@ -92,6 +92,27 @@ export class AlpacaClient {
     return { bars: result, feed };
   }
 
+  /** Daily candles (split-adjusted) for New York dates from `startDay` to `endDay`, inclusive. */
+  async dailyBars(symbol: string, startDay: string, endDay: string): Promise<{ day: string; open: number; high: number; low: number; close: number; volume: number }[]> {
+    const { result } = await this.withFeed(async (feed) => {
+      const out: { day: string; open: number; high: number; low: number; close: number; volume: number }[] = [];
+      let pageToken: string | undefined;
+      do {
+        const body = await this.get(`/v2/stocks/${encodeURIComponent(symbol)}/bars`, {
+          timeframe: '1Day', start: startDay, end: endDay, adjustment: 'split', feed, limit: 10000,
+          ...(pageToken ? { page_token: pageToken } : {}),
+        });
+        for (const b of body.bars ?? []) {
+          const day = new Date(Date.parse(b.t)).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+          out.push({ day, open: b.o, high: b.h, low: b.l, close: b.c, volume: b.v });
+        }
+        pageToken = body.next_page_token ?? undefined;
+      } while (pageToken);
+      return out;
+    });
+    return result;
+  }
+
   /**
    * The last trade printed at or before the end of the given second, which is the
    * underlying's price at the moment an option filled. Looks back up to an hour.
