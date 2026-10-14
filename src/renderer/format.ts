@@ -19,6 +19,11 @@ export function optionUsd(quote: number): string {
   return money.format(optionDisplay === 'contract' ? quote * 100 : quote);
 }
 
+/** A per-contract dollar amount (like a trade's average entry, $15.00) in the style picked in Settings. */
+export function contractUsd(dollars: number): string {
+  return optionUsd(dollars / 100);
+}
+
 export function signedUsd(n: number): string {
   return n > 0 ? `+${money.format(n)}` : money.format(n);
 }
