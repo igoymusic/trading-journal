@@ -31,3 +31,10 @@ export function zonedToUtcMillis(localIso: string, timeZone: string): number {
 export function chartTime(utcMillis: number, timeZone: string): number {
   return Math.floor(utcMillis / 1000) + zoneOffsetMinutes(utcMillis, timeZone) * 60;
 }
+
+/** The reverse of `chartTime`: a chart axis time (seconds, shifted to the zone) -> epoch milliseconds. */
+export function fromChartTime(chartSeconds: number, timeZone: string): number {
+  let utc = chartSeconds * 1000 - zoneOffsetMinutes(chartSeconds * 1000, timeZone) * 60_000;
+  utc = chartSeconds * 1000 - zoneOffsetMinutes(utc, timeZone) * 60_000;
+  return utc;
+}

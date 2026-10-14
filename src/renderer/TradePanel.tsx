@@ -11,7 +11,13 @@ import { averageUnderlying, formatR, levelsFromExits, riskReward } from '../core
 import { EMPTY_JOURNAL, type PriceLevel, type Trade } from '../core/types';
 import type { LevelPrices, TradeChart } from '../shared/api';
 import { type FillMarker, FillMarkersPrimitive } from './fillMarkers';
-import { holdTime, pnlClass, shortDate, signedUsd, usd } from './format';
+import { exitKind } from '../core/markerStyles';
+import { onMarkerStylesChange } from './markerStyles';
+import { type Drawing, type ChartPoint, drawingStart, moveHandle, shiftDrawing } from '../core/drawings';
+import { DrawToolbar, type DrawingState, finishShape, pasteIntoChart, shapeFor, useDrawings } from './drawings';
+import { ScreenshotGallery, useScreenshotCount } from './Screenshots';
+import { DrawingsPrimitive, type Xy } from './drawingsPrimitive';
+import { holdTime, pnlClass, shortDate, signedUsd, optionUsd, usd } from './format';
 import { useJournal } from './journal';
 
 type LevelKind = 'stops' | 'targets';
@@ -46,7 +52,12 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
   const [placing, setPlacing] = useState<LevelKind | null>(null);
   // Replay: which minute bar is showing, whether it's playing, and how many candles a second.
   const [replay, setReplay] = useState<{ index: number; playing: boolean; speed: number } | null>(null);
+  const [tab, setTab] = useState<'chart' | 'shots'>('chart');
+  const [fullscreen, setFullscreen] = useFullscreen();
+  const [hint, setHint] = useState('');
+  const shotCount = useScreenshotCount(trade.id);
   const { saveTrade } = useJournal();
+  const sectionRef = useRef<HTMLElement>(null);
   const journal = trade.journal ?? EMPTY_JOURNAL;
   const levels: Levels = { stops: journal.stops ?? [], targets: journal.targets ?? [] };
 
@@ -57,6 +68,18 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
   }, [trade.id]);
 
   const bars = chart?.status === 'ok' ? chart.bars : [];
+  const draw = useDrawings(trade.underlying, bars[0]?.time, bars[bars.length - 1]?.time);
+  useEffect(() => {
+    if (!hint) return;
+    const t = window.setTimeout(() => setHint(''), 5000);
+    return () => window.clearTimeout(t);
+  }, [hint]);
+  async function paste() {
+    const at = chart?.status === 'ok' ? chart.fills[0]?.time ?? bars[0]?.time : undefined;
+    const message = await pasteIntoChart(draw, at ?? Date.now(), trade.id);
+    setHint(message);
+    if (message.startsWith('Screenshot')) setTab('shots');
+  }
   // Without a market data key the app works without charts: no chart, prices or R, just a hint.
   const chartsOff = chart?.status === 'needs-key';
   const playing = !!replay?.playing;
@@ -155,7 +178,18 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
   }
 
   return (
-    <section className="trade-panel">
+    <section
+      className={`trade-panel ${fullscreen ? 'fullscreen' : ''}`}
+      ref={sectionRef}
+      tabIndex={-1}
+      // Clicking anywhere in the panel lets Ctrl+V paste into it.
+      onMouseDownCapture={(e) => { if (!(e.target as HTMLElement).closest('input, textarea, select, button')) sectionRef.current?.focus({ preventScroll: true }); }}
+      onPaste={(e) => {
+        if ((e.target as HTMLElement).closest('input, textarea') || tab !== 'chart') return;
+        e.preventDefault();
+        paste();
+      }}
+    >
       <div className="panel-head">
         <div>
           <span className="panel-title">{trade.underlying} {trade.strike}{trade.putCall === 'CALL' ? 'C' : 'P'} {shortDate(trade.expiry)}</span>
@@ -165,21 +199,28 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
           {rr?.plannedR !== undefined && <span className="panel-r muted">planned 1 : {rr.plannedR.toFixed(1)}</span>}
         </div>
         <div className="panel-actions">
-          {chart?.status === 'ok' && (
+          <div className="view-tabs">
+            <button className={tab === 'chart' ? 'active' : ''} onClick={() => setTab('chart')}>Chart</button>
+            <button className={tab === 'shots' ? 'active' : ''} onClick={() => setTab('shots')}>Screenshots{shotCount ? ` (${shotCount})` : ''}</button>
+          </div>
+          {tab === 'chart' && chart?.status === 'ok' && (
             <button className={replay ? 'active' : ''} onClick={() => (replay ? setReplay(null) : startReplay())}
               title="Watch the trade play out minute by minute">
               {replay ? 'End replay' : '▶ Replay'}
             </button>
           )}
-          {!chartsOff && [1, 5, 15].map((m) => (
+          {tab === 'chart' && !chartsOff && [1, 5, 15].map((m) => (
             <button key={m} className={interval === m ? 'active' : ''} onClick={() => setInterval(m as Interval)}>{m}m</button>
           ))}
+          <button onClick={() => setFullscreen(!fullscreen)} title={fullscreen ? 'Exit full screen (Esc)' : 'Full screen'}>{fullscreen ? '🗗' : '⛶'}</button>
           {onClose && <button onClick={onClose} aria-label="Close">✕</button>}
         </div>
       </div>
 
       <div className={`panel-body ${chartsOff ? 'charts-off' : ''}`}>
-        {!chartsOff && <div className={`chart-area ${replay ? 'replaying' : ''}`}>
+        {tab === 'shots' && <div className="chart-area"><ScreenshotGallery tradeId={trade.id} /></div>}
+        {tab === 'chart' && !chartsOff && <div className={`chart-area ${replay ? 'replaying' : ''} ${draw && chart?.status === 'ok' ? 'with-tools' : ''}`}>
+          {draw && chart?.status === 'ok' && <DrawToolbar draw={draw} onPaste={paste} />}
           {!chart && <div className="chart-message">Loading {trade.underlying} prices…</div>}
           {chart?.status === 'error' && <div className="chart-message loss">Couldn't load prices: {chart.message}</div>}
           {chart?.status === 'ok' && (
@@ -192,6 +233,7 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
               onPlace={placeLevel}
               onMove={(kind, i, price) => changeLevel(kind, i, { price: round2(price) })}
               replayAt={replay ? bars[replay.index]?.time ?? null : null}
+              draw={draw}
             />
           )}
           {replay && chart?.status === 'ok' && (
@@ -208,6 +250,10 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
               onSeek={(index) => setReplay((r) => r && { ...r, playing: false, index })}
             />
           )}
+          {hint && <div className="placing-hint">{hint}</div>}
+          {!hint && draw && draw.tool !== 'select' && !placing && (
+            <div className="placing-hint">{draw.tool === 'hline' ? 'Click where the price line goes.' : draw.tool === 'text' ? 'Click where the note goes.' : 'Drag on the chart, or click two points.'} Esc cancels.</div>
+          )}
           {placing && <div className="placing-hint">Click the chart where your {placing === 'stops' ? 'stop' : 'target'} is. Press Esc to cancel.</div>}
         </div>}
 
@@ -220,7 +266,7 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
               <div className="fill-item" key={f.id}>
                 <div>
                   <span className={buy ? 'win' : 'loss'}>{f.orderType === 'EXPIRED' ? 'Expired' : buy ? 'Bought' : 'Sold'} {f.quantity}</span>
-                  <span> @ {usd(f.price * 100)}</span>
+                  <span> @ {optionUsd(f.price)}</span>
                 </div>
                 <div className="muted" title={f.account ? `From ${f.account}` : undefined}>
                   {f.timeExact === false ? 'time not reported' : f.execTime.slice(11)}
@@ -266,8 +312,26 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
   );
 }
 
-export function PriceChart({ trade, chart, interval, levels, placing, onPlace, onMove, replayAt, fillInfo }: {
+/** Full screen for a chart panel; Esc leaves it. */
+export function useFullscreen(): [boolean, (on: boolean) => void] {
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    if (!on) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || (e.target as HTMLElement).closest?.('input, textarea')) return;
+      setOn(false);
+    };
+    window.addEventListener('keydown', onKey);
+    document.body.classList.add('has-fullscreen');
+    return () => { window.removeEventListener('keydown', onKey); document.body.classList.remove('has-fullscreen'); };
+  }, [on]);
+  return [on, setOn];
+}
+
+export function PriceChart({ trade, chart, interval, levels, placing, onPlace, onMove, replayAt, fillInfo, draw }: {
   trade: Trade;
+  /** Drawing tools and the drawings to show; leave out for a chart without them. */
+  draw?: DrawingState | null;
   /** For a chart of several trades: which fills are entries, and a contract name for each label. */
   fillInfo?: FillInfo;
   chart: Extract<TradeChart, { status: 'ok' }>;
@@ -286,8 +350,13 @@ export function PriceChart({ trade, chart, interval, levels, placing, onPlace, o
   const markersRef = useRef<FillMarkersPrimitive | null>(null);
   const [built, setBuilt] = useState(0);
   // The chart's event handlers are set up once per build, so they read the latest props from here.
-  const live = useRef({ trade, levels, placing, onPlace, onMove });
-  live.current = { trade, levels, placing, onPlace, onMove };
+  const live = useRef({ trade, levels, placing, onPlace, onMove, draw });
+  live.current = { trade, levels, placing, onPlace, onMove, draw };
+  const drawingsRef = useRef<DrawingsPrimitive | null>(null);
+  // Typing a note: where the box is and what's in it.
+  const [editing, setEditing] = useState<{ id: string; a: ChartPoint; at: Xy; text: string } | null>(null);
+  const editingRef = useRef(editing);
+  editingRef.current = editing;
   const replayAtRef = useRef(replayAt);
   replayAtRef.current = replayAt;
 
@@ -312,6 +381,19 @@ export function PriceChart({ trade, chart, interval, levels, placing, onPlace, o
     const primitive = new FillMarkersPrimitive(markers, candles);
     series.attachPrimitive(primitive);
     markersRef.current = primitive;
+    // Labels you dragged before go back where you put them.
+    let gone = false;
+    window.journal.markerLabels(live.current.trade.fills.map((f) => f.id)).then((saved) => {
+      if (gone) return;
+      for (const [id, offset] of Object.entries(saved)) primitive.offsets.set(id, offset);
+      primitive.update();
+    });
+    const stopStyles = onMarkerStylesChange(() => primitive.update());
+    const drawings = new DrawingsPrimitive(
+      aggregate(chart.bars, interval).map((b) => chartTime(b.time, tz) as UTCTimestamp), interval * 60, tz,
+    );
+    series.attachPrimitive(drawings);
+    drawingsRef.current = drawings;
 
     // Frame the trade: from a bit before the entry to a bit after the exit.
     const first = chart.fills[0]?.time;
@@ -343,18 +425,123 @@ export function PriceChart({ trade, chart, interval, levels, placing, onPlace, o
       return null;
     };
     const yOf = (e: MouseEvent) => e.clientY - el.getBoundingClientRect().top;
+    const xyOf = (e: MouseEvent): Xy => { const r = el.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+    // Only the price area takes drawings, not the price scale on the right.
+    const inPane = (p: Xy) => p.x >= 0 && p.y >= 0 && p.x <= c.timeScale().width() && p.y <= el.clientHeight - c.timeScale().height();
     let drag: { kind: LevelKind; index: number; price: number } | null = null;
+    // Dragging a fill's label: which one, and where on the label it was grabbed.
+    let labelDrag: { id: string; tipX: number; y: number; grab: Xy; start: Xy; moved: boolean } | null = null;
+    const labelsMovable = () => !live.current.placing && !editingRef.current && (!live.current.draw || live.current.draw.tool === 'select');
+    // Drawing a line or box: where it started. Moving a drawing: what was grabbed and where.
+    let creating: { a: ChartPoint; start: Xy; moved: boolean; clicks: number } | null = null;
+    let moving: { original: Drawing; handle?: string; from: ChartPoint; start: Xy; moved: boolean } | null = null;
+    const lock = (on: boolean) => c.applyOptions({ handleScroll: !on, handleScale: !on });
+    const draft = (): Drawing | null => drawings.preview;
+    const setDraft = (d: Drawing | null) => { drawings.preview = d; drawings.update(); };
+
+    const onDraw = (e: MouseEvent): boolean => {
+      const d = live.current.draw;
+      const at = xyOf(e);
+      if (!d || live.current.placing || !inPane(at) || e.button !== 0) return false;
+      if (editingRef.current) return false;
+      const point = drawings.fromXy(at);
+      if (!point) return false;
+      if (d.tool === 'select') {
+        const hit = drawings.findAt(at);
+        if (!hit) { if (d.selected) d.setSelected(null); return false; }
+        const original = d.list.find((x) => x.id === hit.id)!;
+        d.setSelected(hit.id);
+        moving = { original, handle: hit.handle, from: point, start: at, moved: false };
+        return true;
+      }
+      if (creating) { creating.clicks++; return true; }
+      const base = { id: d.newId(), day: d.dayFor(point.time), color: d.color };
+      if (d.tool === 'hline') {
+        d.put({ ...base, ...d.style, kind: 'hline', price: round2(point.price) });
+        d.setSelected(base.id);
+        d.setTool('select');
+      } else if (d.tool === 'vline') {
+        d.put({ ...base, kind: 'vline', time: point.time });
+        d.setSelected(base.id);
+        d.setTool('select');
+      } else if (d.tool === 'text') {
+        setEditing({ id: base.id, a: point, at, text: '' });
+        d.setTool('select');
+      } else {
+        creating = { a: point, start: at, moved: false, clicks: 1 };
+        const first = shapeFor(d.tool, base, point, point, d.style);
+        setDraft(first.kind === 'path' ? { ...first, points: [point] } : first);
+      }
+      return true;
+    };
+
     const onDown = (e: MouseEvent) => {
+      const at = xyOf(e);
+      const label = e.button === 0 && labelsMovable() ? primitive.labelAt(at.x, at.y) : null;
+      if (label) {
+        e.stopPropagation();
+        e.preventDefault();
+        labelDrag = { id: label.id, tipX: label.tipX, y: label.y, grab: { x: at.x - label.rect.x, y: at.y - label.rect.y }, start: at, moved: false };
+        lock(true);
+        return;
+      }
       const hit = live.current.placing ? null : lineAt(yOf(e));
-      if (!hit) return;
+      if (!hit) {
+        if (onDraw(e)) { e.stopPropagation(); e.preventDefault(); lock(true); }
+        return;
+      }
       e.stopPropagation();
       e.preventDefault();
       drag = { ...hit, price: live.current.levels[hit.kind][hit.index].price };
-      c.applyOptions({ handleScroll: false, handleScale: false });
+      lock(true);
     };
     const onMoveMouse = (e: MouseEvent) => {
+      if (labelDrag) {
+        const at = xyOf(e);
+        if (Math.hypot(at.x - labelDrag.start.x, at.y - labelDrag.start.y) > 2) labelDrag.moved = true;
+        if (!labelDrag.moved) return;
+        // Keep the label inside the price area.
+        const hit = primitive.hits.find((h) => h.id === labelDrag!.id);
+        const w = hit?.rect.w ?? 0;
+        const h = hit?.rect.h ?? 0;
+        const x = Math.min(Math.max(at.x - labelDrag.grab.x, 0), c.timeScale().width() - w);
+        const y = Math.min(Math.max(at.y - labelDrag.grab.y, 0), el.clientHeight - c.timeScale().height() - h);
+        primitive.offsets.set(labelDrag.id, { dx: x - labelDrag.tipX, dy: y - labelDrag.y });
+        primitive.update();
+        return;
+      }
+      if (creating || moving) {
+        const at = xyOf(e);
+        const point = drawings.fromXy(at);
+        if (!point) return;
+        if (creating) {
+          const d = draft();
+          const tool = live.current.draw?.tool;
+          if (Math.hypot(at.x - creating.start.x, at.y - creating.start.y) > 4) creating.moved = true;
+          if (d && tool === 'brush' && d.kind === 'path') {
+            // Freehand: add a point whenever the mouse has moved a few pixels.
+            const last = drawings.toXy(d.points[d.points.length - 1]);
+            if (!last || Math.hypot(at.x - last.x, at.y - last.y) > 3) setDraft({ ...d, points: [...d.points, point] });
+          } else if (d && tool && tool !== 'select') setDraft(shapeFor(tool, d, creating.a, point, live.current.draw!.style));
+        } else if (moving) {
+          if (Math.hypot(at.x - moving.start.x, at.y - moving.start.y) > 2) moving.moved = true;
+          if (!moving.moved) return;
+          const o = moving.original;
+          const next = moving.handle
+            ? moveHandle(o, moving.handle, point)
+            : shiftDrawing(o, point.time - moving.from.time, point.price - moving.from.price);
+          setDraft(next);
+        }
+        return;
+      }
       if (!drag) {
-        el.style.cursor = live.current.placing ? 'crosshair' : lineAt(yOf(e)) ? 'ns-resize' : '';
+        const at = xyOf(e);
+        const d = live.current.draw;
+        el.style.cursor = live.current.placing ? 'crosshair'
+          : labelsMovable() && primitive.labelAt(at.x, at.y) ? 'move'
+          : lineAt(at.y) ? 'ns-resize'
+          : d && d.tool !== 'select' && inPane(at) ? 'crosshair'
+          : d && inPane(at) && drawings.findAt(at) ? 'move' : '';
         return;
       }
       const price = series.coordinateToPrice(yOf(e));
@@ -363,11 +550,81 @@ export function PriceChart({ trade, chart, interval, levels, placing, onPlace, o
       lines.current.get(`${drag.kind}:${drag.index}`)?.applyOptions({ price });
     };
     const onUp = () => {
+      if (labelDrag) {
+        const { id, moved } = labelDrag;
+        labelDrag = null;
+        lock(false);
+        const offset = primitive.offsets.get(id);
+        if (moved && offset) window.journal.setMarkerLabel(id, { dx: Math.round(offset.dx), dy: Math.round(offset.dy) });
+        return;
+      }
+      const d = live.current.draw;
+      if (creating) {
+        // A click without dragging starts a line; the next click finishes it. A brush stroke ends when you let go.
+        const brushing = d?.tool === 'brush';
+        if (!brushing && !creating.moved && creating.clicks < 2) return;
+        if (brushing && !creating.moved) { creating = null; setDraft(null); lock(false); return; }
+        const shape = draft();
+        const creatingStart = creating.a.time;
+        creating = null;
+        setDraft(null);
+        lock(false);
+        if (shape && d) {
+          const done = finishShape(shape, drawings.step * 1000);
+          d.put({ ...done, day: d.dayFor(drawingStart(done) ?? creatingStart) });
+          d.setSelected(shape.id);
+          d.setTool('select');
+        }
+        return;
+      }
+      if (moving) {
+        const shape = draft();
+        const wasMoved = moving.moved;
+        moving = null;
+        setDraft(null);
+        lock(false);
+        if (wasMoved && shape && d) {
+          const start = drawingStart(shape);
+          if (shape.kind === 'hline') d.put({ ...shape, price: round2(shape.price) });
+          else d.put(start === null ? shape : { ...shape, day: d.dayFor(start) });
+        }
+        return;
+      }
       if (!drag) return;
       live.current.onMove(drag.kind, drag.index, drag.price);
       drag = null;
       c.applyOptions({ handleScroll: true, handleScale: true });
     };
+    // Double-click a note to change its text.
+    const onDouble = (e: MouseEvent) => {
+      // Double-clicking a label you moved puts it back in its automatic spot.
+      const at = xyOf(e);
+      const label = labelsMovable() ? primitive.labelAt(at.x, at.y) : null;
+      if (label && primitive.offsets.has(label.id)) {
+        primitive.offsets.delete(label.id);
+        primitive.update();
+        window.journal.setMarkerLabel(label.id, null);
+        return;
+      }
+      const d = live.current.draw;
+      if (!d) return;
+      const hit = drawings.findAt(xyOf(e));
+      const note = hit && d.list.find((x) => x.id === hit.id);
+      if (note?.kind === 'text') setEditing({ id: note.id, a: note.a, at: drawings.toXy(note.a) ?? xyOf(e), text: note.text });
+    };
+    // Delete removes the selected drawing; Esc puts the pointer back.
+    const onKey = (e: KeyboardEvent) => {
+      const d = live.current.draw;
+      if (!d || (e.target as HTMLElement).closest?.('input, textarea, select')) return;
+      if ((e.key === 'Delete' || e.key === 'Backspace') && d.selected && d.list.some((x) => x.id === d.selected)) { e.preventDefault(); d.remove(d.selected); }
+      else if (e.key === 'Escape') {
+        if (creating) { creating = null; setDraft(null); lock(false); }
+        d.setTool('select');
+        d.setSelected(null);
+      }
+    };
+    el.addEventListener('dblclick', onDouble);
+    window.addEventListener('keydown', onKey);
     el.addEventListener('mousedown', onDown, true);
     el.addEventListener('mousemove', onMoveMouse);
     window.addEventListener('mousemove', onMoveMouse);
@@ -375,6 +632,10 @@ export function PriceChart({ trade, chart, interval, levels, placing, onPlace, o
     setBuilt((n) => n + 1);
 
     return () => {
+      gone = true;
+      stopStyles();
+      el.removeEventListener('dblclick', onDouble);
+      window.removeEventListener('keydown', onKey);
       el.removeEventListener('mousedown', onDown, true);
       el.removeEventListener('mousemove', onMoveMouse);
       window.removeEventListener('mousemove', onMoveMouse);
@@ -383,6 +644,7 @@ export function PriceChart({ trade, chart, interval, levels, placing, onPlace, o
       api.current = null;
       seriesRef.current = null;
       markersRef.current = null;
+      drawingsRef.current = null;
       lines.current.clear();
     };
   }, [chart, interval, trade.id]);
@@ -427,7 +689,47 @@ export function PriceChart({ trade, chart, interval, levels, placing, onPlace, o
     else c.timeScale().setVisibleLogicalRange(range);
   }, [replayAt, built]);
 
-  return <div className="chart" ref={container} />;
+  // Drawings, redrawn whenever they or the selection change.
+  useEffect(() => {
+    const p = drawingsRef.current;
+    if (!p) return;
+    p.drawings = draw?.list ?? [];
+    p.selected = draw?.selected ?? null;
+    p.update();
+  }, [draw?.list, draw?.selected, built]);
+
+  function finishNote() {
+    const e = editingRef.current;
+    setEditing(null);
+    if (!e || !draw) return;
+    const old = draw.list.find((d) => d.id === e.id);
+    if (!e.text.trim()) { if (old) draw.remove(e.id); return; }
+    draw.put({ ...(old ?? { id: e.id, day: draw.dayFor(e.a.time), color: draw.color }), kind: 'text', a: e.a, text: e.text.trim() } as Drawing);
+    draw.setSelected(e.id);
+  }
+
+  return (
+    <div className="chart" ref={container}>
+      {editing && (
+        <textarea
+          className="note-editor"
+          autoFocus
+          rows={Math.max(1, editing.text.split('\n').length)}
+          style={{ left: editing.at.x, top: editing.at.y - 24 }}
+          placeholder="Note… (Enter to save)"
+          value={editing.text}
+          onMouseDown={(e) => e.stopPropagation()}
+          onChange={(e) => setEditing({ ...editing, text: e.target.value })}
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); finishNote(); }
+            if (e.key === 'Escape') setEditing(null);
+          }}
+          onBlur={finishNote}
+        />
+      )}
+    </div>
+  );
 }
 
 /** Candles and fill markers for the chart, cut off at `until` during a replay. */
@@ -441,7 +743,7 @@ function chartData(chart: Extract<TradeChart, { status: 'ok' }>, trade: Trade, i
 
   // Partial fills in the same second at the same price share one marker ("B 2 @ $79.00").
   const entrySide = trade.direction === 'LONG' ? 'BUY' : 'SELL';
-  const groups = new Map<string, { time: number; isEntry: boolean; side: string; qty: number; optionPrice: number; underlying?: number; contract?: string }>();
+  const groups = new Map<string, { id: string; time: number; isEntry: boolean; side: string; qty: number; optionPrice: number; underlying?: number; contract?: string }>();
   for (const f of trade.fills) {
     const point = chart.fills.find((p) => p.fillId === f.id);
     if (!point || (until !== null && !filledBy(point.time, until))) continue;
@@ -450,9 +752,19 @@ function chartData(chart: Extract<TradeChart, { status: 'ok' }>, trade: Trade, i
     const g = groups.get(key);
     if (g) g.qty += f.quantity;
     else groups.set(key, {
-      time: point.time, isEntry: info ? info.entryIds.has(f.id) : f.side === entrySide, side: f.side, qty: f.quantity,
+      id: f.id, time: point.time, isEntry: info ? info.entryIds.has(f.id) : f.side === entrySide, side: f.side, qty: f.quantity,
       optionPrice: f.price, underlying: point.underlyingPrice, contract,
     });
+  }
+  // Average entry price per contract, to tell exits in profit from exits at a loss.
+  const entries = new Map<string, { side: 'BUY' | 'SELL'; cost: number; qty: number }>();
+  for (const f of trade.fills) {
+    if (!(info ? info.entryIds.has(f.id) : f.side === entrySide)) continue;
+    const k = info?.contract.get(f.id) ?? '';
+    const e = entries.get(k) ?? { side: f.side as 'BUY' | 'SELL', cost: 0, qty: 0 };
+    e.cost += f.price * f.quantity;
+    e.qty += f.quantity;
+    entries.set(k, e);
   }
   const markers: FillMarker[] = [];
   for (const g of groups.values()) {
@@ -460,8 +772,10 @@ function chartData(chart: Extract<TradeChart, { status: 'ok' }>, trade: Trade, i
     // Without an exact price, fall back to the close of the fill's candle.
     const price = g.underlying ?? candles.find((c) => c.time === candleTime)?.close;
     if (price === undefined) continue;
-    const text = `${g.side === 'BUY' ? 'B' : 'S'} ${g.qty}${g.contract ? ` ${g.contract}` : ''} @ ${usd(g.optionPrice * 100)}${g.underlying === undefined ? ' (approx.)' : ''}`;
-    markers.push({ time: candleTime, price, kind: g.isEntry ? 'entry' : 'exit', text });
+    const text = `${g.side === 'BUY' ? 'B' : 'S'} ${g.qty}${g.contract ? ` ${g.contract}` : ''} @ ${optionUsd(g.optionPrice)}${g.underlying === undefined ? ' (approx.)' : ''}`;
+    const e = entries.get(g.contract ?? '');
+    const style = g.isEntry ? 'entry' : exitKind(e?.side ?? (entrySide as 'BUY' | 'SELL'), e?.qty ? e.cost / e.qty : undefined, g.optionPrice);
+    markers.push({ id: g.id, time: candleTime, price, kind: g.isEntry ? 'entry' : 'exit', style, text });
   }
   return { candles, markers };
 }
@@ -547,7 +861,7 @@ function RiskPanel({ trade, levels, placing, onPlacing, onChange, canMeasure, rr
                   ? 'The option\'s real price when the underlying reached this line'
                   : 'Estimated with Black-Scholes from your entry\'s implied volatility, as if reached at your exit'}
               >
-                {matched[kind][i]!.source === 'market' ? '' : '≈'}{usd(matched[kind][i]!.optionPrice * 100)}
+                {matched[kind][i]!.source === 'market' ? '' : '≈'}{optionUsd(matched[kind][i]!.optionPrice)}
               </span>
             )}
           </span>

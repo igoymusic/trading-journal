@@ -1,9 +1,27 @@
-// Display helpers. Option prices are shown per contract in dollars ($0.20 quote -> $20).
+// Display helpers. Option prices show as quoted ($0.20) or per contract ($20.00), as picked in Settings.
 
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 });
 
 export function usd(n: number): string {
   return money.format(n);
+}
+
+export type OptionPriceDisplay = 'quote' | 'contract';
+let optionDisplay: OptionPriceDisplay = 'contract';
+
+/** Shows option prices as quoted ($0.15) or as paid per contract ($15.00). */
+export function setOptionPriceDisplay(mode: OptionPriceDisplay | undefined) {
+  optionDisplay = mode ?? 'contract';
+}
+
+/** An option's price (as quoted) in the style picked in Settings. */
+export function optionUsd(quote: number): string {
+  return money.format(optionDisplay === 'contract' ? quote * 100 : quote);
+}
+
+/** A per-contract dollar amount (like a trade's average entry, $15.00) in the style picked in Settings. */
+export function contractUsd(dollars: number): string {
+  return optionUsd(dollars / 100);
 }
 
 export function signedUsd(n: number): string {

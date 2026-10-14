@@ -6,7 +6,8 @@ import path from 'node:path';
 import { parseTosStatement } from '../core/tosCsv';
 import { buildTrades, summarizeTrades } from '../core/trades';
 import type { MistakeTag, PriceLevel, Setup, TradeJournal } from '../core/types';
-import type { ImportResult, JournalData, TradeChart } from '../shared/api';
+import type { ImportResult, JournalData, LabelOffset, TradeChart } from '../shared/api';
+import type { MarkerStyles } from '../core/markerStyles';
 import { AlpacaClient } from '../core/alpaca';
 import type { Goals } from '../core/goals';
 import { dayChartTrade } from '../core/dayChart';
@@ -17,12 +18,18 @@ import { JournalDb } from './db';
 import { moveDataFromOldName } from './migrate';
 import { buildTradeChart, levelOptionPrices } from './market';
 import { Settings } from './settings';
+import { Screenshots } from './screenshots';
+import { Backups } from './backup';
+import { nyDay } from '../core/drawings';
+import type { Drawing } from '../core/drawings';
 
 let db: JournalDb;
 let settings: Settings;
 let brokers: BrokerSync;
 let schwab: SchwabSync;
 let schwabData: SchwabSync;
+let shots: Screenshots;
+let backups: Backups;
 
 function importFile(file: string): ImportResult {
   const { fills, skipped, unmatchedFees } = parseTosStatement(readFileSync(file, 'utf8'));
@@ -91,6 +98,8 @@ app.whenReady().then(async () => {
   schwab = new SchwabSync(db, settings, 'trading');
   schwabData = new SchwabSync(db, settings, 'marketData');
   brokers.schwab = schwab;
+  backups = new Backups(db, settings, app.getPath('userData'));
+  shots = new Screenshots(db, path.join(app.getPath('userData'), 'screenshots'), path.join(app.getPath('userData'), 'clipboard-sample.json'));
   brokers.debugFile = path.join(app.getPath('userData'), 'sync-sample.json');
   if (process.env.TJ_IMPORT_FILE) importFile(process.env.TJ_IMPORT_FILE);
 
@@ -111,6 +120,28 @@ app.whenReady().then(async () => {
   ipcMain.handle('journal:saveMistakes', (_event, mistakes: MistakeTag[]) => db.saveMistakeTags(mistakes));
   ipcMain.handle('journal:savePositives', (_event, positives: MistakeTag[]) => db.savePositiveTags(positives));
   ipcMain.handle('journal:saveDayNote', (_event, date: string, notes: string) => db.saveDayNote(date, notes));
+
+  ipcMain.handle('drawings:get', (_event, symbol: string, days: string[]) => db.drawings(symbol, days));
+  ipcMain.handle('drawings:put', (_event, symbol: string, drawing: Drawing) => db.putDrawing(symbol, drawing));
+  ipcMain.handle('drawings:putMany', (_event, symbol: string, drawings: Drawing[]) => db.putDrawings(symbol, drawings));
+  ipcMain.handle('drawings:delete', (_event, symbol: string, id: string) => db.deleteDrawing(symbol, id));
+  ipcMain.handle('markers:labels', (_event, ids: string[]) => db.markerLabels(ids));
+  ipcMain.handle('markers:setLabel', (_event, id: string, offset: LabelOffset | null) => db.setMarkerLabel(id, offset));
+  ipcMain.handle('clipboard:readPaste', () => shots.readPaste());
+  ipcMain.handle('shots:list', (_event, tradeId: string) => shots.list(tradeId));
+  ipcMain.handle('shots:counts', () => db.tradeImageCounts());
+  ipcMain.handle('shots:paste', (_event, tradeId: string) => shots.addFromClipboard(tradeId));
+  ipcMain.handle('shots:pick', async (event, tradeId: string) => {
+    const pick = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {
+      title: 'Add screenshots',
+      filters: [{ name: 'Pictures', extensions: ['png', 'jpg', 'jpeg'] }],
+      properties: ['openFile', 'multiSelections'],
+    });
+    return pick.canceled ? 0 : shots.addFiles(tradeId, pick.filePaths);
+  });
+  ipcMain.handle('shots:addData', (_event, tradeId: string, data: Uint8Array) => shots.addData(tradeId, data));
+  ipcMain.handle('shots:caption', (_event, id: string, caption: string) => db.setImageCaption(id, caption));
+  ipcMain.handle('shots:remove', (_event, id: string) => shots.remove(id));
 
   ipcMain.handle('market:dayChart', async (_event, date: string, underlying: string): Promise<TradeChart> => {
     const day = dayChartTrade(buildTrades(db.allFills()), date, underlying);
@@ -146,7 +177,11 @@ app.whenReady().then(async () => {
     reportsLayout: settings.reportsLayout,
     hiddenAccounts: settings.hiddenAccounts,
     colors: settings.colors,
+    markerStyles: settings.markerStyles,
+    optionPriceDisplay: settings.optionPriceDisplay,
   }));
+  ipcMain.handle('settings:setOptionPriceDisplay', (_event, mode: 'quote' | 'contract') => { settings.optionPriceDisplay = mode; });
+  ipcMain.handle('settings:setMarkerStyles', (_event, styles: MarkerStyles | null) => { settings.markerStyles = styles ?? undefined; });
   ipcMain.handle('settings:setColors', (_event, colors: Record<string, string> | null) => { settings.colors = colors ?? undefined; });
   ipcMain.handle('settings:setHiddenAccounts', (_event, names: string[]) => { settings.hiddenAccounts = names; });
   ipcMain.handle('settings:setReportsLayout', (_event, layout: { columns: string[][]; collapsed: string[] }) => { settings.reportsLayout = layout; });
@@ -208,8 +243,72 @@ app.whenReady().then(async () => {
     }
   });
 
+  ipcMain.handle('backup:status', () => backupStatus());
+  ipcMain.handle('backup:save', async (event) => {
+    const pick = await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender)!, {
+      title: 'Save a backup of Moon Journal',
+      defaultPath: path.join(app.getPath('documents'), `Moon Journal backup ${nyDay(Date.now())}.moonbackup`),
+      filters: [{ name: 'Moon Journal backup', extensions: ['moonbackup'] }],
+    });
+    if (pick.canceled || !pick.filePath) return null;
+    return { file: pick.filePath, size: backups.write(pick.filePath) };
+  });
+  ipcMain.handle('backup:chooseFolder', async (event) => {
+    const pick = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {
+      title: 'Pick a folder for daily backups (OneDrive or Google Drive keeps them off this computer)',
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    if (pick.canceled || !pick.filePaths[0]) return backupStatus();
+    settings.backupFolder = pick.filePaths[0];
+    settings.lastAutoBackup = undefined;
+    backups.autoBackup(nyDay(Date.now()));
+    return backupStatus();
+  });
+  ipcMain.handle('backup:stopAuto', () => { settings.backupFolder = undefined; return backupStatus(); });
+  ipcMain.handle('backup:restore', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)!;
+    const pick = await dialog.showOpenDialog(win, {
+      title: 'Restore Moon Journal from a backup',
+      defaultPath: settings.backupFolder ?? app.getPath('documents'),
+      filters: [{ name: 'Moon Journal backup', extensions: ['moonbackup'] }],
+      properties: ['openFile'],
+    });
+    if (pick.canceled || !pick.filePaths[0]) return null;
+    const file = pick.filePaths[0];
+    const { manifest } = Backups.read(file);
+    const shotCount = manifest.files.filter((f) => f.name.startsWith('screenshots/')).length;
+    const answer = await dialog.showMessageBox(win, {
+      type: 'warning',
+      title: 'Restore from backup',
+      message: `Replace this computer's journal with the backup from ${new Date(manifest.created).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}?`,
+      detail: `It has your trades, notes, tags, drawings, settings and ${shotCount} screenshot${shotCount === 1 ? '' : 's'}. `
+        + 'What\'s here now is saved first in the Moon Journal data folder (backups\\before-restore), so nothing is lost. '
+        + 'Your Alpaca key and broker sign-ins stay as they are on this computer. Moon Journal restarts when it\'s done.',
+      buttons: ['Restore', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+    });
+    if (answer.response !== 0) return null;
+    const dataDir = app.getPath('userData');
+    backups.write(path.join(dataDir, 'backups', `before-restore ${new Date().toISOString().replace(/[:.]/g, '-')}.moonbackup`));
+    db.close();
+    Backups.restore(file, dataDir, settings);
+    app.relaunch();
+    app.exit(0);
+    return true;
+  });
+
   await createWindow();
+
+  // The daily backup, if a folder is set: now, and again if the app is still open the next day.
+  const autoBackup = () => { try { backups.autoBackup(nyDay(Date.now())); } catch (err) { console.error('Automatic backup failed:', err); } };
+  autoBackup();
+  setInterval(autoBackup, 60 * 60_000);
 });
+
+function backupStatus() {
+  return { folder: settings.backupFolder ?? null, latest: backups.latestAuto() };
+}
 
 app.on('window-all-closed', () => {
   db?.close();

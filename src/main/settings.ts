@@ -5,6 +5,7 @@ import { safeStorage } from 'electron';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import type { AlpacaCredentials } from '../core/alpaca';
 import type { Goals } from '../core/goals';
+import { cleanMarkerStyles, type MarkerStyles } from '../core/markerStyles';
 import type { SchwabSlot } from '../shared/api';
 
 interface StoredSettings {
@@ -22,6 +23,10 @@ interface StoredSettings {
   colors?: Record<string, string>;
   /** Accounts left out of the journal's numbers (by name). */
   hiddenAccounts?: string[];
+  /** Option prices as quoted ($0.15) or per contract ($15.00, the default). */
+  optionPriceDisplay?: 'quote' | 'contract';
+  /** How entry and exit markers look, when changed from the defaults. */
+  markerStyles?: MarkerStyles;
   /** When broker sync last ran (ISO time). */
   lastBrokerSync?: string;
   /** Base64 of the encrypted "keyId\nsecretKey". */
@@ -30,7 +35,13 @@ interface StoredSettings {
   schwab?: StoredSchwab;
   /** A second Schwab app used only for market data (Schwab allows one app per product). */
   schwabData?: StoredSchwab;
+  /** Folder for the automatic daily backup (e.g. in OneDrive), and the day it last ran. */
+  backupFolder?: string;
+  lastAutoBackup?: string;
 }
+
+/** Settings that can't move to another computer: secrets locked to this one, and this computer's folders. */
+const LOCAL_ONLY = ['alpaca', 'snaptrade', 'schwab', 'schwabData', 'lastBrokerSync', 'backupFolder', 'lastAutoBackup'] as const;
 
 interface StoredSchwab { app: string; callbackUrl: string; tokens?: string; signedInAt?: string; lastSync?: string; marketDataOnly?: boolean }
 
@@ -111,6 +122,24 @@ export class Settings {
     // Only keep real "#rrggbb" colors.
     const clean = Object.fromEntries(Object.entries(c ?? {}).filter(([, v]) => /^#[0-9a-f]{6}$/i.test(v)));
     this.data.colors = Object.keys(clean).length ? clean : undefined;
+    this.save();
+  }
+
+  get optionPriceDisplay(): 'quote' | 'contract' {
+    return this.data.optionPriceDisplay === 'quote' ? 'quote' : 'contract';
+  }
+
+  set optionPriceDisplay(mode: 'quote' | 'contract') {
+    this.data.optionPriceDisplay = mode === 'quote' ? 'quote' : undefined;
+    this.save();
+  }
+
+  get markerStyles(): MarkerStyles {
+    return cleanMarkerStyles(this.data.markerStyles);
+  }
+
+  set markerStyles(s: MarkerStyles | undefined) {
+    this.data.markerStyles = s ? cleanMarkerStyles(s) : undefined;
     this.save();
   }
 
@@ -267,6 +296,40 @@ export class Settings {
   set schwabLastSync(iso: string | undefined) {
     if (!this.data.schwab) return;
     this.data.schwab.lastSync = iso;
+    this.save();
+  }
+
+  get backupFolder() {
+    return this.data.backupFolder;
+  }
+
+  set backupFolder(folder: string | undefined) {
+    this.data.backupFolder = folder;
+    this.save();
+  }
+
+  get lastAutoBackup() {
+    return this.data.lastAutoBackup;
+  }
+
+  set lastAutoBackup(day: string | undefined) {
+    this.data.lastAutoBackup = day;
+    this.save();
+  }
+
+  /** The settings worth taking to another computer (no keys or sign-ins, not even encrypted). */
+  portable(): Partial<StoredSettings> {
+    const copy: Partial<StoredSettings> = { ...this.data };
+    for (const k of LOCAL_ONLY) delete copy[k];
+    return copy;
+  }
+
+  /** Takes settings from a backup, keeping this computer's keys, sign-ins and backup folder. */
+  restorePortable(from: Partial<StoredSettings>) {
+    const local = Object.fromEntries(LOCAL_ONLY.map((k) => [k, this.data[k]]));
+    const incoming = { ...from };
+    for (const k of LOCAL_ONLY) delete incoming[k];
+    this.data = { ...DEFAULTS, ...incoming, ...local } as StoredSettings;
     this.save();
   }
 }

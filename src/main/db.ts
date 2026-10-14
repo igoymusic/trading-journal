@@ -3,6 +3,8 @@
 import { DatabaseSync } from 'node:sqlite';
 import { matchFills } from '../core/fills';
 import type { Bar } from '../core/alpaca';
+import type { Drawing } from '../core/drawings';
+import type { LabelOffset } from '../shared/api';
 import type { Fill, MistakeTag, Setup, TradeJournal } from '../core/types';
 
 export class JournalDb {
@@ -82,6 +84,21 @@ export class JournalDb {
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
       CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS chart_drawings (
+        symbol TEXT NOT NULL,
+        day TEXT NOT NULL,
+        drawings TEXT NOT NULL,
+        PRIMARY KEY (symbol, day)
+      );
+      CREATE TABLE IF NOT EXISTS trade_images (
+        id TEXT PRIMARY KEY,
+        trade_id TEXT NOT NULL,
+        created TEXT NOT NULL DEFAULT (datetime('now')),
+        caption TEXT NOT NULL DEFAULT '',
+        position INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS trade_images_trade ON trade_images (trade_id);
+      CREATE TABLE IF NOT EXISTS marker_labels (fill_id TEXT PRIMARY KEY, dx REAL NOT NULL, dy REAL NOT NULL);
     `);
     // Added after the first journal release: stop/target levels for R.
     const cols = (this.db.prepare('PRAGMA table_info(trade_journal)').all() as { name: string }[]).map((c) => c.name);
@@ -312,6 +329,103 @@ export class JournalDb {
       ON CONFLICT (date) DO UPDATE SET notes = excluded.notes, updated_at = excluded.updated_at`).run(date, notes);
   }
 
+  /** Where you dragged these fills' labels. */
+  markerLabels(fillIds: string[]): Record<string, LabelOffset> {
+    const get = this.db.prepare('SELECT dx, dy FROM marker_labels WHERE fill_id = ?');
+    const out: Record<string, LabelOffset> = {};
+    for (const id of fillIds) {
+      const row = get.get(id) as { dx: number; dy: number } | undefined;
+      if (row) out[id] = { dx: row.dx, dy: row.dy };
+    }
+    return out;
+  }
+
+  setMarkerLabel(fillId: string, offset: LabelOffset | null) {
+    if (!offset) this.db.prepare('DELETE FROM marker_labels WHERE fill_id = ?').run(fillId);
+    else this.db.prepare(`
+      INSERT INTO marker_labels (fill_id, dx, dy) VALUES (?, ?, ?)
+      ON CONFLICT (fill_id) DO UPDATE SET dx = excluded.dx, dy = excluded.dy`).run(fillId, offset.dx, offset.dy);
+  }
+
+  /** A ticker's drawings on the given days, plus price lines from earlier days marked to keep. */
+  drawings(symbol: string, days: string[]): Drawing[] {
+    if (!days.length) return [];
+    const first = [...days].sort()[0];
+    const rows = this.db.prepare('SELECT day, drawings FROM chart_drawings WHERE symbol = ?').all(symbol) as { day: string; drawings: string }[];
+    const want = new Set(days);
+    return rows.flatMap((r) => {
+      const list = JSON.parse(r.drawings) as Drawing[];
+      if (want.has(r.day)) return list;
+      return r.day < first ? list.filter((d) => d.kind === 'hline' && d.keep) : [];
+    });
+  }
+
+  /** Adds or replaces one drawing, filing it under its day (it may have moved to another day). */
+  putDrawing(symbol: string, drawing: Drawing) {
+    this.transaction(() => {
+      this.dropDrawing(symbol, drawing.id);
+      const row = this.db.prepare('SELECT drawings FROM chart_drawings WHERE symbol = ? AND day = ?').get(symbol, drawing.day) as { drawings: string } | undefined;
+      const list = row ? (JSON.parse(row.drawings) as Drawing[]) : [];
+      this.writeDrawings(symbol, drawing.day, [...list, drawing]);
+    });
+  }
+
+  /** Adds many drawings at once (a TradingView paste). */
+  putDrawings(symbol: string, drawings: Drawing[]) {
+    this.transaction(() => {
+      const byDay = new Map<string, Drawing[]>();
+      for (const d of drawings) byDay.set(d.day, [...(byDay.get(d.day) ?? []), d]);
+      for (const [day, list] of byDay) {
+        const row = this.db.prepare('SELECT drawings FROM chart_drawings WHERE symbol = ? AND day = ?').get(symbol, day) as { drawings: string } | undefined;
+        const ids = new Set(list.map((d) => d.id));
+        const existing = row ? (JSON.parse(row.drawings) as Drawing[]).filter((d) => !ids.has(d.id)) : [];
+        this.writeDrawings(symbol, day, [...existing, ...list]);
+      }
+    });
+  }
+
+  deleteDrawing(symbol: string, id: string) {
+    this.transaction(() => this.dropDrawing(symbol, id));
+  }
+
+  private dropDrawing(symbol: string, id: string) {
+    const rows = this.db.prepare('SELECT day, drawings FROM chart_drawings WHERE symbol = ?').all(symbol) as { day: string; drawings: string }[];
+    for (const r of rows) {
+      const list = JSON.parse(r.drawings) as Drawing[];
+      if (list.some((d) => d.id === id)) this.writeDrawings(symbol, r.day, list.filter((d) => d.id !== id));
+    }
+  }
+
+  private writeDrawings(symbol: string, day: string, drawings: Drawing[]) {
+    if (!drawings.length) this.db.prepare('DELETE FROM chart_drawings WHERE symbol = ? AND day = ?').run(symbol, day);
+    else this.db.prepare(`
+      INSERT INTO chart_drawings (symbol, day, drawings) VALUES (?, ?, ?)
+      ON CONFLICT (symbol, day) DO UPDATE SET drawings = excluded.drawings`).run(symbol, day, JSON.stringify(drawings));
+  }
+
+  tradeImages(tradeId: string): { id: string; caption: string; created: string }[] {
+    return this.db.prepare('SELECT id, caption, created FROM trade_images WHERE trade_id = ? ORDER BY position, created').all(tradeId) as never;
+  }
+
+  /** How many screenshots each trade has. */
+  tradeImageCounts(): Record<string, number> {
+    const rows = this.db.prepare('SELECT trade_id, COUNT(*) AS n FROM trade_images GROUP BY trade_id').all() as { trade_id: string; n: number }[];
+    return Object.fromEntries(rows.map((r) => [r.trade_id, r.n]));
+  }
+
+  addTradeImage(id: string, tradeId: string) {
+    const next = (this.db.prepare('SELECT COALESCE(MAX(position), -1) + 1 AS n FROM trade_images WHERE trade_id = ?').get(tradeId) as { n: number }).n;
+    this.db.prepare('INSERT INTO trade_images (id, trade_id, position) VALUES (?, ?, ?)').run(id, tradeId, next);
+  }
+
+  setImageCaption(id: string, caption: string) {
+    this.db.prepare('UPDATE trade_images SET caption = ? WHERE id = ?').run(caption, id);
+  }
+
+  removeTradeImage(id: string) {
+    this.db.prepare('DELETE FROM trade_images WHERE id = ?').run(id);
+  }
+
   private transaction(work: () => void) {
     this.db.exec('BEGIN');
     try {
@@ -321,6 +435,11 @@ export class JournalDb {
       this.db.exec('ROLLBACK');
       throw err;
     }
+  }
+
+  /** A consistent copy of the whole database in another file. */
+  copyTo(file: string) {
+    this.db.prepare('VACUUM INTO ?').run(file);
   }
 
   close() {

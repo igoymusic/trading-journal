@@ -1,5 +1,7 @@
+import type { MarkerStyles } from '../core/markerStyles';
 // The contract between the screens (renderer) and the main process.
 
+import type { Drawing, PastedDrawing } from '../core/drawings';
 import type { Bar } from '../core/alpaca';
 import type { Goals } from '../core/goals';
 import type { LevelPrice } from '../core/optionLevels';
@@ -88,6 +90,9 @@ export interface BrokerStatus {
   lastSync?: string;
 }
 
+/** Where a dragged fill label sits, in pixels from its arrow's point to the label's top-left corner. */
+export interface LabelOffset { dx: number; dy: number }
+
 /** Colors you can change in Settings, as "#rrggbb". */
 export interface ColorScheme {
   win: string;
@@ -112,6 +117,27 @@ export interface SettingsView {
   hiddenAccounts: string[];
   /** Only the colors you changed. */
   colors?: Partial<ColorScheme>;
+  /** How entry and exit markers look. */
+  markerStyles: MarkerStyles;
+  /** Option prices as quoted ($0.15) or as paid per contract ($15.00). */
+  optionPriceDisplay: 'quote' | 'contract';
+}
+
+export interface TradeImage {
+  id: string;
+  caption: string;
+  created: string;
+  /** The picture itself, as a data: URL. */
+  url: string;
+}
+
+export interface PasteResult {
+  drawings: PastedDrawing[];
+  /** TradingView drawing types on the clipboard that can't be drawn here yet. */
+  skipped: string[];
+  hasImage: boolean;
+  /** True when a TradingView copy was saved to clipboard-sample.json. */
+  sampleSaved: boolean;
 }
 
 export interface JournalApi {
@@ -155,12 +181,51 @@ export interface JournalApi {
   setHiddenAccounts(names: string[]): Promise<void>;
   /** Saves your colors; null goes back to the defaults. */
   setColors(colors: Partial<ColorScheme> | null): Promise<void>;
+  /** Saves how entry and exit markers look; null goes back to the defaults. */
+  setMarkerStyles(styles: MarkerStyles | null): Promise<void>;
+  setOptionPriceDisplay(mode: 'quote' | 'contract'): Promise<void>;
   setReportsLayout(layout: { columns: string[][]; collapsed: string[] }): Promise<void>;
   saveTradeJournal(tradeId: string, journal: TradeJournal): Promise<void>;
   saveSetups(setups: Setup[]): Promise<void>;
   saveMistakes(mistakes: MistakeTag[]): Promise<void>;
   savePositives(positives: MistakeTag[]): Promise<void>;
   saveDayNote(date: string, notes: string): Promise<void>;
+  /** A ticker's drawings for those days, plus kept price lines from earlier days. */
+  getDrawings(symbol: string, days: string[]): Promise<Drawing[]>;
+  /** Adds or replaces one drawing. */
+  putDrawing(symbol: string, drawing: Drawing): Promise<void>;
+  putDrawings(symbol: string, drawings: Drawing[]): Promise<void>;
+  deleteDrawing(symbol: string, id: string): Promise<void>;
+  /** Where you dragged fill labels, by fill id, in pixels from the arrow's point. */
+  markerLabels(fillIds: string[]): Promise<Record<string, LabelOffset>>;
+  /** Saves where a fill's label sits; null puts it back to automatic. */
+  setMarkerLabel(fillId: string, offset: LabelOffset | null): Promise<void>;
+  /** Reads the clipboard for TradingView drawings or a picture. */
+  readPaste(): Promise<PasteResult>;
+  listScreenshots(tradeId: string): Promise<TradeImage[]>;
+  screenshotCounts(): Promise<Record<string, number>>;
+  /** Adds the picture on the clipboard; false if there isn't one. */
+  pasteScreenshot(tradeId: string): Promise<boolean>;
+  /** Opens a file picker; returns how many pictures were added. */
+  pickScreenshots(tradeId: string): Promise<number>;
+  /** Adds a dropped picture file's bytes. */
+  addScreenshotData(tradeId: string, data: Uint8Array): Promise<boolean>;
+  captionScreenshot(id: string, caption: string): Promise<void>;
+  removeScreenshot(id: string): Promise<void>;
+  backupStatus(): Promise<BackupStatus>;
+  /** Asks where to save, then writes a backup. Null if cancelled. */
+  saveBackup(): Promise<{ file: string; size: number } | null>;
+  /** Picks the folder for daily backups and saves one there right away. */
+  chooseBackupFolder(): Promise<BackupStatus>;
+  stopAutoBackup(): Promise<BackupStatus>;
+  /** Picks a backup, confirms, restores it and restarts the app. Null if cancelled. */
+  restoreBackup(): Promise<true | null>;
+}
+
+export interface BackupStatus {
+  /** Where daily backups go; null when they're off. */
+  folder: string | null;
+  latest: { file: string; when: string } | null;
 }
 
 declare global {

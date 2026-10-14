@@ -2,7 +2,7 @@
 
 import type { ReactNode } from 'react';
 import { playbookScore, type Setup, type Trade } from '../core/types';
-import { holdTime, pnlClass, shortDate, signedUsd, timeOf, usd } from './format';
+import { holdTime, pnlClass, shortDate, contractUsd, signedUsd, timeOf, usd } from './format';
 import { formatR, riskReward } from '../core/rr';
 import { MistakeNames, PositiveNames, RulesCell, SetupBadge, Stars } from './journal';
 import type { SortValue } from './sorting';
@@ -48,8 +48,8 @@ export const COLUMNS: Column[] = [
   { id: 'qty', label: 'Max qty', sort: (t) => t.maxContracts, numeric: true, render: (t) => t.maxContracts },
   { id: 'contracts', label: 'Contracts traded', sort: (t) => contractsTraded(t), numeric: true, render: (t) => contractsTraded(t) },
   { id: 'fills', label: 'Fills', sort: (t) => t.fills.length, numeric: true, render: (t) => t.fills.length },
-  { id: 'avgEntry', label: 'Avg entry', sort: (t) => t.avgEntry, numeric: true, render: (t) => usd(t.avgEntry) },
-  { id: 'avgExit', label: 'Avg exit', sort: (t) => t.avgExit, numeric: true, render: (t) => (t.avgExit === undefined ? '' : usd(t.avgExit)) },
+  { id: 'avgEntry', label: 'Avg entry', sort: (t) => t.avgEntry, numeric: true, render: (t) => contractUsd(t.avgEntry) },
+  { id: 'avgExit', label: 'Avg exit', sort: (t) => t.avgExit, numeric: true, render: (t) => (t.avgExit === undefined ? '' : contractUsd(t.avgExit)) },
   { id: 'held', label: 'Held', sort: (t) => (t.closeTime ? Date.parse(t.closeTime) - Date.parse(t.openTime) : null), numeric: true, render: (t) => holdTime(t.openTime, t.closeTime) },
   { id: 'gross', label: 'Gross P&L', sort: (t) => t.grossPnl, numeric: true, render: (t) => <span className={pnlClass(t.grossPnl)}>{signedUsd(t.grossPnl)}</span> },
   { id: 'fees', label: 'Fees', sort: (t) => t.fees, numeric: true, render: (t) => <span className="muted">{usd(t.fees)}</span> },

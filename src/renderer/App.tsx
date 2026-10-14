@@ -15,6 +15,8 @@ import { ReportsView } from './ReportsView';
 import { AccountPicker, accountOf, accountsIn } from './AccountPicker';
 import { describeSync } from './BrokersSettings';
 import { applyColors } from './colors';
+import { applyMarkerStyles } from './markerStyles';
+import { setOptionPriceDisplay } from './format';
 import { SettingsDialog } from './SettingsDialog';
 import { ErrorBoundary } from './ErrorBoundary';
 import { TradePanel } from './TradePanel';
@@ -31,7 +33,7 @@ export function App() {
   useEffect(() => { window.journal.getSettings().then((s) => setHiddenAccounts(s.hiddenAccounts)); }, []);
   // Your colors; charts redraw (the view remounts) when they change.
   const [colorsVersion, setColorsVersion] = useState(0);
-  useEffect(() => { window.journal.getSettings().then((s) => { applyColors(s.colors); setColorsVersion((v) => v + 1); }); }, []);
+  useEffect(() => { window.journal.getSettings().then((s) => { applyColors(s.colors); applyMarkerStyles(s.markerStyles); setOptionPriceDisplay(s.optionPriceDisplay); setColorsVersion((v) => v + 1); }); }, []);
   const accounts = useMemo(() => accountsIn(allData?.trades ?? []), [allData]);
   const data = useMemo(() => {
     if (!allData || !hiddenAccounts.length) return allData;

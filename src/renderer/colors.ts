@@ -21,8 +21,6 @@ export const COLOR_LABELS: { key: keyof ColorScheme; label: string; group: strin
   { key: 'accent', label: 'Buttons and highlights', group: 'Numbers and calendar' },
   { key: 'candleUp', label: 'Up candles', group: 'Charts' },
   { key: 'candleDown', label: 'Down candles', group: 'Charts' },
-  { key: 'entry', label: 'Entry markers', group: 'Charts' },
-  { key: 'exit', label: 'Exit markers', group: 'Charts' },
   { key: 'stop', label: 'Stop lines', group: 'Charts' },
   { key: 'target', label: 'Target lines', group: 'Charts' },
 ];
@@ -44,4 +42,13 @@ export function applyColors(saved: Partial<ColorScheme> | undefined) {
 export function withAlpha(hex: string, alpha: number): string {
   const n = parseInt(hex.slice(1), 16);
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+}
+
+/** Dark or white text, whichever reads better on this "#rrggbb" background. */
+export function readableText(hex: string): string {
+  const n = parseInt(hex.slice(1, 7), 16);
+  const lin = (c: number) => { const s = c / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; };
+  const lum = 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255);
+  // White suits the mid-tone reds, greens and blues; light colors get dark text.
+  return lum > 0.4 ? '#131722' : '#ffffff';
 }
