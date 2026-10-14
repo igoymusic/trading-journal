@@ -18,6 +18,8 @@ interface StoredSettings {
   relayUrl?: string;
   /** This person's SnapTrade sign-in: the user id, and the secret encrypted like the Alpaca keys. */
   snaptrade?: { userId: string; secret: string };
+  /** Colors changed from the defaults, e.g. { win: "#00c853" }. */
+  colors?: Record<string, string>;
   /** Accounts left out of the journal's numbers (by name). */
   hiddenAccounts?: string[];
   /** When broker sync last ran (ISO time). */
@@ -98,6 +100,17 @@ export class Settings {
 
   set relayUrl(url: string) {
     this.data.relayUrl = url.trim() || undefined;
+    this.save();
+  }
+
+  get colors() {
+    return this.data.colors;
+  }
+
+  set colors(c: Record<string, string> | undefined) {
+    // Only keep real "#rrggbb" colors.
+    const clean = Object.fromEntries(Object.entries(c ?? {}).filter(([, v]) => /^#[0-9a-f]{6}$/i.test(v)));
+    this.data.colors = Object.keys(clean).length ? clean : undefined;
     this.save();
   }
 

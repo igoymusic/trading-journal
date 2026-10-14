@@ -88,6 +88,19 @@ export interface BrokerStatus {
   lastSync?: string;
 }
 
+/** Colors you can change in Settings, as "#rrggbb". */
+export interface ColorScheme {
+  win: string;
+  loss: string;
+  accent: string;
+  candleUp: string;
+  candleDown: string;
+  entry: string;
+  exit: string;
+  stop: string;
+  target: string;
+}
+
 export interface SettingsView {
   timeZone: string;
   hasAlpacaKey: boolean;
@@ -97,6 +110,8 @@ export interface SettingsView {
   reportsLayout?: { columns: string[][]; collapsed: string[] };
   /** Accounts left out of the journal's numbers. */
   hiddenAccounts: string[];
+  /** Only the colors you changed. */
+  colors?: Partial<ColorScheme>;
 }
 
 export interface JournalApi {
@@ -138,6 +153,8 @@ export interface JournalApi {
   connectSchwab(slot: SchwabSlot): Promise<SyncResult | null>;
   disconnectSchwab(slot: SchwabSlot): Promise<void>;
   setHiddenAccounts(names: string[]): Promise<void>;
+  /** Saves your colors; null goes back to the defaults. */
+  setColors(colors: Partial<ColorScheme> | null): Promise<void>;
   setReportsLayout(layout: { columns: string[][]; collapsed: string[] }): Promise<void>;
   saveTradeJournal(tradeId: string, journal: TradeJournal): Promise<void>;
   saveSetups(setups: Setup[]): Promise<void>;

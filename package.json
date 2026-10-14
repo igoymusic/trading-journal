@@ -33,18 +33,25 @@
     "appId": "com.yogi.tradingjournal",
     "productName": "Moon Journal",
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "build"
     },
     "files": [
       "dist/**",
       "package.json"
     ],
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "build/icon.png"
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Moon Journal",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false
     }
   },
   "productName": "Moon Journal"

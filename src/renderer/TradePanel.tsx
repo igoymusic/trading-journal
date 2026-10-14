@@ -1,3 +1,4 @@
+import { colors } from './colors';
 import {
   CandlestickSeries, ColorType, createChart, CrosshairMode, type IChartApi, type IPriceLine, type ISeriesApi, LineStyle, type UTCTimestamp,
 } from 'lightweight-charts';
@@ -15,7 +16,6 @@ import { useJournal } from './journal';
 
 type LevelKind = 'stops' | 'targets';
 interface Levels { stops: PriceLevel[]; targets: PriceLevel[] }
-const LEVEL_COLORS = { stops: '#ef5350', targets: '#26a69a' };
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export type Interval = 1 | 5 | 15;
@@ -303,7 +303,7 @@ export function PriceChart({ trade, chart, interval, levels, placing, onPlace, o
     });
     api.current = c;
     const series = c.addSeries(CandlestickSeries, {
-      upColor: '#26a69a', downColor: '#ef5350', borderVisible: false, wickUpColor: '#26a69a', wickDownColor: '#ef5350',
+      upColor: colors().candleUp, downColor: colors().candleDown, borderVisible: false, wickUpColor: colors().candleUp, wickDownColor: colors().candleDown,
     });
 
     const tz = chart.timeZone;
@@ -397,7 +397,7 @@ export function PriceChart({ trade, chart, interval, levels, placing, onPlace, o
       levels[kind].forEach((l, i) => {
         lines.current.set(`${kind}:${i}`, series.createPriceLine({
           price: l.price,
-          color: LEVEL_COLORS[kind],
+          color: kind === 'stops' ? colors().stop : colors().target,
           lineWidth: 2,
           lineStyle: LineStyle.Dashed,
           axisLabelVisible: true,

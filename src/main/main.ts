@@ -145,7 +145,9 @@ app.whenReady().then(async () => {
     timeZone: settings.timeZone, hasAlpacaKey: settings.alpacaCredentials() !== null, tradeColumns: settings.tradeColumns, goals: settings.goals,
     reportsLayout: settings.reportsLayout,
     hiddenAccounts: settings.hiddenAccounts,
+    colors: settings.colors,
   }));
+  ipcMain.handle('settings:setColors', (_event, colors: Record<string, string> | null) => { settings.colors = colors ?? undefined; });
   ipcMain.handle('settings:setHiddenAccounts', (_event, names: string[]) => { settings.hiddenAccounts = names; });
   ipcMain.handle('settings:setReportsLayout', (_event, layout: { columns: string[][]; collapsed: string[] }) => { settings.reportsLayout = layout; });
   // Removes CSV-imported fills, then re-reads the brokers' full history, since sync skipped

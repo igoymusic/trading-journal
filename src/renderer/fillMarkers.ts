@@ -1,6 +1,7 @@
 // Draws trade executions the way trading platforms do: a small arrow beside the candle, pointing in
 // at the exact price, with a label placed where it doesn't cover any candles.
 
+import { colors } from './colors';
 import type { CanvasRenderingTarget2D } from 'fancy-canvas';
 import type {
   IChartApiBase, IPrimitivePaneRenderer, IPrimitivePaneView, ISeriesApi, ISeriesPrimitive,
@@ -28,7 +29,6 @@ const ARROW = 11;
 const GAP = 3;
 const LABEL_H = 18;
 const PAD_X = 6;
-const COLORS = { entry: '#2962ff', exit: '#ff9800' };
 
 function overlaps(a: Rect, b: Rect) {
   return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
@@ -93,7 +93,7 @@ class Renderer implements IPrimitivePaneRenderer {
       const labels = placeLabels(arrows, [...candleRects, ...arrowRects], mediaSize.height);
 
       arrows.forEach((a, i) => {
-        const color = COLORS[a.kind];
+        const color = colors()[a.kind];
         const label = labels[i];
         const dir = a.kind === 'entry' ? -1 : 1;
 

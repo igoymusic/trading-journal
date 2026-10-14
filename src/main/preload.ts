@@ -29,6 +29,7 @@ const api: JournalApi = {
   saveSchwabApp: (slot, app) => ipcRenderer.invoke('schwab:saveApp', slot, app),
   connectSchwab: (slot) => ipcRenderer.invoke('schwab:connect', slot),
   disconnectSchwab: (slot) => ipcRenderer.invoke('schwab:disconnect', slot),
+  setColors: (colors) => ipcRenderer.invoke('settings:setColors', colors),
   setHiddenAccounts: (names) => ipcRenderer.invoke('settings:setHiddenAccounts', names),
   setReportsLayout: (layout) => ipcRenderer.invoke('settings:setReportsLayout', layout),
   saveTradeJournal: (tradeId, journal) => ipcRenderer.invoke('journal:saveTrade', tradeId, journal),
