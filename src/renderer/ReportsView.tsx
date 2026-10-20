@@ -193,7 +193,7 @@ function useVisuals(trades: Trade[]): Record<string, ReactNode | null> {
             {score.axes.map((a) => (
               <li key={a.key} title={a.explain}>
                 <span>{a.label}</span><b>{a.value}</b>
-                <div className="score-track"><div style={{ width: `${a.score}%`, background: colors().accent }} /></div>
+                <div className="score-track"><div style={{ width: `${a.score}%`, background: colors().chart }} /></div>
               </li>
             ))}
           </ul>

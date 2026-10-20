@@ -99,6 +99,8 @@ export interface ColorScheme {
   win: string;
   loss: string;
   accent: string;
+  /** Lines and shapes on the Home and Reports charts (score radar, running P&L). */
+  chart: string;
   candleUp: string;
   candleDown: string;
   entry: string;

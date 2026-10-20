@@ -74,13 +74,13 @@ export function RadarChart({ score, width = 240, radius = 54 }: { score: TradeSc
   };
   const ring = (v: number) => score.axes.map((_, i) => at(i, v).join(',')).join(' ');
   const shape = score.axes.map((a, i) => at(i, Math.max(a.score, 3)).join(',')).join(' ');
-  const accent = colors().accent;
+  const line = colors().chart;
   return (
     <div className="chart-box radar" ref={t.box} onMouseLeave={t.hide}>
       <svg width={width} height={height} role="img" aria-label={`Trading score ${score.overall} out of 100`}>
         {[25, 50, 75, 100].map((v) => <polygon key={v} points={ring(v)} fill="none" stroke={GRID} strokeWidth={1} />)}
         {score.axes.map((_, i) => { const [x, y] = at(i, 100); return <line key={i} x1={c} y1={cy} x2={x} y2={y} stroke={GRID} strokeWidth={1} />; })}
-        <polygon points={shape} fill={withAlpha(accent, 0.28)} stroke={accent} strokeWidth={2} strokeLinejoin="round" />
+        <polygon points={shape} fill={withAlpha(line, 0.28)} stroke={line} strokeWidth={2} strokeLinejoin="round" />
         {score.axes.map((a, i) => {
           const [x, y] = at(i, Math.max(a.score, 3));
           const [lx, ly0] = at(i, 100 + 100 * (10 / r));
@@ -90,7 +90,7 @@ export function RadarChart({ score, width = 240, radius = 54 }: { score: TradeSc
           const tip = (e: React.MouseEvent) => t.show(e, <><b>{a.label}: {a.value}</b><div>Score {a.score} / 100</div><div className="muted">{a.explain}</div></>);
           return (
             <g key={a.key} onMouseMove={tip}>
-              <circle cx={x} cy={y} r={4} fill={accent} stroke="var(--panel)" strokeWidth={2} />
+              <circle cx={x} cy={y} r={4} fill={line} stroke="var(--panel)" strokeWidth={2} />
               <circle cx={x} cy={y} r={12} fill="transparent" />
               <text x={lx} y={ly} textAnchor={anchor} dominantBaseline="middle" fontSize={10.5} fill={MUTED}>{a.label}</text>
               <text x={lx} y={ly + 13} textAnchor={anchor} dominantBaseline="middle" fontSize={11} fill={INK} fontWeight={600}>{a.value}</text>
@@ -390,7 +390,7 @@ export function EquityDrawdown({ points, height = 230 }: { points: { date: strin
               <text x={left - 6} y={ey(v)} textAnchor="end" dominantBaseline="middle" fontSize={10} fill={MUTED}>{shortUsd(v)}</text>
             </g>
           ))}
-          <path d={line((p) => p.equity, ey)} fill="none" stroke={colors().accent} strokeWidth={2} strokeLinejoin="round" />
+          <path d={line((p) => p.equity, ey)} fill="none" stroke={colors().chart} strokeWidth={2} strokeLinejoin="round" />
           <text x={width - 8} y={4 + eqH + gap - 9} textAnchor="end" fontSize={10} fill={MUTED}>Drawdown: how far below the last high</text>
           {[dLo, 0].map((v) => (
             <g key={`d${v}`}>
@@ -403,7 +403,7 @@ export function EquityDrawdown({ points, height = 230 }: { points: { date: strin
           {hover !== null && (
             <g>
               <line x1={px(hover)} x2={px(hover)} y1={4} y2={dy(dLo)} stroke={MUTED} strokeDasharray="3 3" />
-              <circle cx={px(hover)} cy={ey(points[hover].equity)} r={4} fill={colors().accent} stroke="var(--panel)" strokeWidth={2} />
+              <circle cx={px(hover)} cy={ey(points[hover].equity)} r={4} fill={colors().chart} stroke="var(--panel)" strokeWidth={2} />
               <circle cx={px(hover)} cy={dy(points[hover].drawdown)} r={4} fill={colors().loss} stroke="var(--panel)" strokeWidth={2} />
             </g>
           )}
