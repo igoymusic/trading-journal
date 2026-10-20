@@ -6,11 +6,10 @@ import { type Summary, summarizeTrades } from '../core/trades';
 import type { ImportResult, JournalData, SyncResult } from '../shared/api';
 import { DayView } from './DayView';
 import { FilterBar } from './FilterBar';
-import { GoalsCard } from './GoalsCard';
+import { Home } from './Home';
 import { JournalContext, type JournalContextValue, TradeJournalEditor } from './journal';
 import { pnlClass, signedUsd, usd } from './format';
 import { MonthView } from './MonthView';
-import { PnlChart } from './PnlChart';
 import { ReportsView } from './ReportsView';
 import { AccountPicker, accountOf, accountsIn } from './AccountPicker';
 import { describeSync } from './BrokersSettings';
@@ -218,25 +217,16 @@ export function App() {
       {!data ? null : !hasTrades ? <EmptyState onImport={importCsv} onOpenSettings={() => setShowSettings(true)} /> : (
         <main className="view" key={colorsVersion}>
           {filterTab && <FilterBar trades={data.trades} filter={filter} onChange={setFilter} shown={filtered.length} />}
-          {scoped && <SummaryBar s={scoped} />}
+          {scoped && tabs.active !== 'home' && <SummaryBar s={scoped} />}
           {tabs.active === 'home' && (
-            <div className="home">
-              <PnlChart trades={data.trades} />
-              <div className="home-side">
-              <div className="card">
-                <MonthView
-                  compact
-                  goals={goals}
-                  trades={data.trades}
-                  year={homeMonth.year}
-                  month={homeMonth.month}
-                  onMonthChange={(year, month) => setHomeMonth({ year, month })}
-                  onOpenDay={(date) => dispatch({ type: 'openDayFromHome', date })}
-                />
-              </div>
-              <GoalsCard trades={data.trades} goals={goals} year={homeMonth.year} month={homeMonth.month} onOpenSettings={() => setShowSettings(true)} />
-              </div>
-            </div>
+            <Home
+              trades={data.trades}
+              goals={goals}
+              month={homeMonth}
+              onMonthChange={(year, month) => setHomeMonth({ year, month })}
+              onOpenDay={(date) => dispatch({ type: 'openDayFromHome', date })}
+              onOpenSettings={() => setShowSettings(true)}
+            />
           )}
           {tabs.active === 'year' && (
             <YearView

@@ -15,7 +15,7 @@ interface StoredSettings {
   tradeColumns?: string[];
   goals?: Goals;
   /** Report sections' columns, order and collapsed state. */
-  reportsLayout?: { columns: string[][]; collapsed: string[] };
+  reportsLayout?: { columns: string[][]; collapsed: string[]; charts?: string[] };
   /** Address of the SnapTrade relay; empty uses the one built into the app. */
   relayUrl?: string;
   /** This person's SnapTrade sign-in: the user id, and the secret encrypted like the Alpaca keys. */
