@@ -91,7 +91,7 @@ export function TradeTable({ trades, selectedId, onSelect, expanded, renderDetai
     return (
       <tr className="day-row" key={`bar:${day}`}>
         <td colSpan={Math.max(1, pnlAt + lead)}>
-          {longDate(day)} <span className="muted">· {plural(dayTrades.length, 'trade')} · {plural(wins, 'win')}</span>
+          {longDate(day)} <span className="muted">· {plural(dayTrades.length, 'trade')} · {plural(wins, 'win')}{listed.length > dayTrades.length ? ` · ${listed.length - dayTrades.length} not included` : ''}</span>
           {rs.length > 0 && <span className={pnlClass(dayR)} title={`Realized R over ${plural(rs.length, 'trade')} with a stop`}> · {formatR(dayR)}</span>}
         </td>
         <td className={`num ${pnlClass(dayPnl)}`}>{signedUsd(dayPnl)}</td>
