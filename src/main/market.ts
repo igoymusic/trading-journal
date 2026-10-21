@@ -39,7 +39,15 @@ const SCHWAB_INDEX: Record<string, string> = {
   SPX: '$SPX', SPXW: '$SPX', XSP: '$XSP', NDX: '$NDX', NDXP: '$NDX', RUT: '$RUT', RUTW: '$RUT', VIX: '$VIX', DJX: '$DJX',
 };
 
+/** The ETF an index option's chart shows as-is (SPY for SPX), when the setting says to. */
+export function chartEtf(underlying: string, settings: Settings): string | undefined {
+  return settings.indexChart === 'etf' ? indexProxy(underlying)?.etf : undefined;
+}
+
 export async function buildTradeChart(trade: Trade, db: JournalDb, settings: Settings, fetchFn?: typeof fetch, schwab?: SchwabSync): Promise<TradeChart> {
+  // SPX trades on a plain SPY chart: SPY's own prices, nothing scaled.
+  const etf = chartEtf(trade.underlying, settings);
+  if (etf) return etfChart(trade, etf, db, settings, fetchFn);
   // Index options chart the real index when Schwab is signed in and has its minutes.
   const schwabSymbol = SCHWAB_INDEX[trade.underlying];
   if (schwabSymbol && schwab?.status().signedIn) {
@@ -116,6 +124,15 @@ export async function buildTradeChart(trade: Trade, db: JournalDb, settings: Set
     status: 'ok', symbol: proxy ? trade.underlying : symbol, timeZone: tz, feed, bars: proxy ? bars.map(scale) : bars, fills,
     ...(proxy ? { estimatedFrom: proxy.etf } : {}),
   };
+}
+
+/** An index option's trade drawn on its ETF's own chart, with the ETF's price at each fill. */
+async function etfChart(trade: Trade, etf: string, db: JournalDb, settings: Settings, fetchFn?: typeof fetch): Promise<TradeChart> {
+  // Fill prices on the scaled chart are saved under the fill's id, so these get their own key.
+  const fills = trade.fills.map((f) => ({ ...f, id: `${f.id}@${etf}` }));
+  const chart = await buildTradeChart({ ...trade, underlying: etf, fills }, db, settings, fetchFn);
+  if (chart.status !== 'ok') return chart;
+  return { ...chart, fills: chart.fills.map((p) => ({ ...p, fillId: p.fillId.slice(0, -etf.length - 1) })) };
 }
 
 /** The trade on the index's own one-minute prices from Schwab; null if Schwab doesn't have every day. */
@@ -209,6 +226,14 @@ async function indexRatio(proxy: IndexProxy, day: string, client: AlpacaClient, 
   return ratio * proxy.scale;
 }
 
+/**
+ * Index ÷ ETF for pricing an index option off its ETF's chart. Without the index's daily closes,
+ * SPX has run close to 10.03 times SPY, which is near enough for the estimate.
+ */
+async function etfToIndex(proxy: IndexProxy, day: string, client: AlpacaClient, db: JournalDb, fetchFn: typeof fetch): Promise<number> {
+  return (await indexRatio(proxy, day, client, db, fetchFn).catch(() => undefined)) ?? 10.03 * proxy.scale;
+}
+
 /** Alpaca's option history starts here. */
 const OPTION_DATA_START = Date.UTC(2024, 1, 1);
 
@@ -248,15 +273,21 @@ export async function levelOptionPrices(trade: Trade, stops: PriceLevel[], targe
   if (!entryFill || point?.underlyingPrice === undefined) return null;
 
   const client = new AlpacaClient(settings.alpacaCredentials()!, fetchFn as any, process.env.TJ_ALPACA_BASE_URL || undefined);
+  // On a SPY chart of an SPX trade, the lines and prices are SPY's: the option's value comes from
+  // SPX, so everything is scaled up by SPX ÷ SPY for the pricing.
+  const proxy = chartEtf(trade.underlying, settings) ? indexProxy(trade.underlying) : undefined;
+  const r = proxy ? await etfToIndex(proxy, trade.openTime.slice(0, 10), client, db, fetchFn ?? fetch) : 1;
+  const up = (b: Bar): Bar => ({ ...b, open: b.open * r, high: b.high * r, low: b.low * r, close: b.close * r });
+  const upLevels = (ls: PriceLevel[]) => ls.map((l) => ({ ...l, price: l.price * r }));
   const common = {
     trade,
-    bars: chart.bars,
-    entry: { time: point.time, underlying: point.underlyingPrice, optionPrice: entryFill.price },
+    bars: r === 1 ? chart.bars : chart.bars.map(up),
+    entry: { time: point.time, underlying: point.underlyingPrice * r, optionPrice: entryFill.price },
     exitTime: trade.closeTime ? zonedToUtcMillis(trade.closeTime, settings.timeZone) : Date.now(),
     expiryTime: zonedToUtcMillis(`${trade.expiry}T16:00:00`, 'America/New_York'),
     optionBars: await optionBars(trade, client, db),
   };
-  return { stops: priceLevels({ ...common, levels: stops }), targets: priceLevels({ ...common, levels: targets }) };
+  return { stops: priceLevels({ ...common, levels: upLevels(stops) }), targets: priceLevels({ ...common, levels: upLevels(targets) }) };
 }
 
 /** Weekdays before `day` (New York date), newest first. */

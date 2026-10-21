@@ -25,7 +25,7 @@ export function DayChart({ trades, date, version }: { trades: Trade[]; date: str
   const day = useMemo(() => (shown ? dayChartTrade(trades, date, shown) : null), [trades, date, shown]);
 
   const bars = chart?.status === 'ok' ? chart.bars : [];
-  const draw = useDrawings(shown ?? '', bars[0]?.time, bars[bars.length - 1]?.time);
+  const draw = useDrawings(chart?.status === 'ok' ? chart.symbol : shown ?? '', bars[0]?.time, bars[bars.length - 1]?.time);
   const [hint, setHint] = useState('');
   const [fullscreen, setFullscreen] = useFullscreen();
   useEffect(() => {

@@ -35,6 +35,7 @@ const api: JournalApi = {
   etfMinuteBars: (symbol, days) => ipcRenderer.invoke('market:etfMinutes', symbol, days),
   historyDailyBars: (underlying, beforeDay, count, fromSchwab) => ipcRenderer.invoke('market:historyDays', underlying, beforeDay, count, fromSchwab),
   setOptionPriceDisplay: (mode) => ipcRenderer.invoke('settings:setOptionPriceDisplay', mode),
+  setIndexChart: (mode) => ipcRenderer.invoke('settings:setIndexChart', mode),
   setMarkerStyles: (styles) => ipcRenderer.invoke('settings:setMarkerStyles', styles),
   setHiddenAccounts: (names) => ipcRenderer.invoke('settings:setHiddenAccounts', names),
   setReportsLayout: (layout) => ipcRenderer.invoke('settings:setReportsLayout', layout),

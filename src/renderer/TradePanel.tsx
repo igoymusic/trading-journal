@@ -69,7 +69,9 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
   }, [trade.id]);
 
   const bars = chart?.status === 'ok' ? chart.bars : [];
-  const draw = useDrawings(trade.underlying, bars[0]?.time, bars[bars.length - 1]?.time);
+  // What the chart's prices are in: SPY for an SPX trade charted on SPY.
+  const priceSymbol = chart?.status === 'ok' ? chart.symbol : trade.underlying;
+  const draw = useDrawings(priceSymbol, bars[0]?.time, bars[bars.length - 1]?.time);
   useEffect(() => {
     if (!hint) return;
     const t = window.setTimeout(() => setHint(''), 5000);
@@ -274,7 +276,7 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
                 </div>
                 {(!chart || chart.status === 'ok') && (
                   <div className="muted">
-                    {trade.underlying} {point?.underlyingPrice !== undefined ? <b className="underlying-price">{usd(point.underlyingPrice)}</b> : chart || f.timeExact === false ? 'n/a' : '…'}
+                    {priceSymbol} {point?.underlyingPrice !== undefined ? <b className="underlying-price">{usd(point.underlyingPrice)}</b> : chart || f.timeExact === false ? 'n/a' : '…'}
                   </div>
                 )}
               </div>
@@ -283,6 +285,7 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
           {chart?.status === 'ok' && (
             <RiskPanel
               trade={trade}
+              priceSymbol={priceSymbol}
               levels={levels}
               placing={placing}
               onPlacing={setPlacing}
@@ -360,7 +363,7 @@ export function PriceChart({ trade, chart, interval, levels, placing, onPlace, o
   editingRef.current = editing;
   const replayAtRef = useRef(replayAt);
   replayAtRef.current = replayAt;
-  const legend = useChartIndicators(api, seriesRef, built, chart, trade.underlying, interval, replayAt);
+  const legend = useChartIndicators(api, seriesRef, built, chart, chart.symbol, interval, replayAt);
 
   useEffect(() => {
     const el = container.current!;
@@ -817,7 +820,7 @@ function ReplayBar({ trade, chart, index, playing, speed, onPlay, onStep, onRest
       </select>
       <input type="range" min={0} max={chart.bars.length - 1} value={index} onChange={(e) => onSeek(Number(e.target.value))} />
       <span className="replay-clock">{clock}</span>
-      <span className="muted">{trade.underlying} <b className="underlying-price">{usd(bar.close)}</b></span>
+      <span className="muted">{chart.symbol} <b className="underlying-price">{usd(bar.close)}</b></span>
       <span className="replay-pos">
         {!pos.started ? <span className="muted">Not in yet</span>
           : pos.held > 0 ? <>Holding <b>{pos.held}</b></>
@@ -831,8 +834,9 @@ function ReplayBar({ trade, chart, index, playing, speed, onPlay, onStep, onRest
 }
 
 /** Side panel section for placing stops and targets and reading the R they give. */
-function RiskPanel({ trade, levels, placing, onPlacing, onChange, canMeasure, rr, prices }: {
+function RiskPanel({ trade, priceSymbol, levels, placing, onPlacing, onChange, canMeasure, rr, prices }: {
   trade: Trade;
+  priceSymbol: string;
   levels: Levels;
   placing: LevelKind | null;
   onPlacing: (kind: LevelKind | null) => void;
@@ -885,7 +889,7 @@ function RiskPanel({ trade, levels, placing, onPlacing, onChange, canMeasure, rr
       )))}
       {rr ? (
         <div className="rr-summary">
-          <div><span className="muted">Risk</span> {usd(rr.risk)} <span className="muted">on {trade.underlying}</span></div>
+          <div><span className="muted">Risk</span> {usd(rr.risk)} <span className="muted">on {priceSymbol}</span></div>
           {rr.realizedR !== undefined && <div><span className="muted">Result</span> <b className={pnlClass(rr.realizedR)}>{formatR(rr.realizedR)}</b></div>}
           {rr.plannedR !== undefined && <div><span className="muted">Planned R:R</span> <b>1 : {rr.plannedR.toFixed(1)}</b></div>}
           {dollars?.risk !== undefined && (
