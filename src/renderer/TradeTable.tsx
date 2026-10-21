@@ -26,6 +26,42 @@ export function TradeTable({ trades, selectedId, onSelect, expanded, renderDetai
   const [pickerOpen, setPickerOpen] = useState(false);
   const [dragging, setDragging] = useState<string | null>(null);
   const [sort, setSort] = useState<SortState | null>(null);
+  // Column widths you've dragged, in pixels, remembered on this computer. Columns without one share the rest.
+  const [widths, setWidths] = useState<Record<string, number>>(() => {
+    try { return JSON.parse(localStorage.getItem('tradeColumnWidths') ?? '{}'); } catch { return {}; }
+  });
+  const [resizing, setResizing] = useState<string | null>(null);
+  const tableRef = useRef<HTMLTableElement>(null);
+  // A resize ends with a click on the header; that click shouldn't sort.
+  const justResized = useRef(false);
+  function saveWidths(next: Record<string, number>) {
+    setWidths(next);
+    try { localStorage.setItem('tradeColumnWidths', JSON.stringify(next)); } catch { /* not remembered; fine */ }
+  }
+  function startResize(e: React.MouseEvent, id: string) {
+    e.preventDefault();
+    e.stopPropagation();
+    // The other columns grow or shrink to keep the table the width of the page.
+    const start: Record<string, number> = { ...widths };
+    const th = (e.currentTarget as HTMLElement).closest('th');
+    const x0 = e.clientX;
+    const w0 = Math.round(th?.getBoundingClientRect().width ?? 100);
+    setResizing(id);
+    const move = (m: MouseEvent) => saveWidths({ ...start, [id]: Math.max(40, Math.round(w0 + m.clientX - x0)) });
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+      setResizing(null);
+      justResized.current = true;
+      setTimeout(() => { justResized.current = false; }, 0);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  }
+  function resetWidth(id: string) {
+    const { [id]: _, ...rest } = widths;
+    saveWidths(rest);
+  }
   const { setups } = useJournal();
 
   useEffect(() => {
@@ -133,7 +169,11 @@ export function TradeTable({ trades, selectedId, onSelect, expanded, renderDetai
           )}
         </div>
       </div>
-      <table>
+      <table ref={tableRef}>
+        <colgroup>
+          {lead > 0 && <col style={{ width: 22 }} />}
+          {columns.map((c) => <col key={c.id} style={widths[c.id] ? { width: widths[c.id] } : undefined} />)}
+        </colgroup>
         <thead>
           {/* A single day's summary bar sits above the column labels. Several days each get one in the list, or none when sorted. */}
           {days.length === 1 && dayBar(days[0][0], days[0][1])}
@@ -142,12 +182,17 @@ export function TradeTable({ trades, selectedId, onSelect, expanded, renderDetai
             {columns.map((c) => (
               <th
                 key={c.id}
+                data-col={c.id}
                 className={`sortable ${c.numeric ? 'num' : ''} ${dragging === c.id ? 'dragging' : ''} ${sort?.id === c.id ? 'sorted' : ''}`}
-                title="Click to sort, drag to move"
-                onClick={() => setSort(nextSort(sort, c.id))}
+                title="Click to sort, drag to move, drag the right edge to resize"
+                onClick={() => { if (!justResized.current) setSort(nextSort(sort, c.id)); }}
                 {...dragProps(c.id)}
+                draggable={!resizing}
               >
                 {c.label}{sortArrow(sort, c.id)}
+                <span className={`col-resize ${resizing === c.id ? 'active' : ''}`} title="Drag to resize; double-click to reset"
+                  onMouseDown={(e) => startResize(e, c.id)} onClick={(e) => e.stopPropagation()}
+                  onDoubleClick={(e) => { e.stopPropagation(); resetWidth(c.id); }} />
               </th>
             ))}
           </tr>
