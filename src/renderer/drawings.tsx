@@ -2,13 +2,14 @@
 
 import { MarkerStyleEditor } from './MarkerStyleEditor';
 import { IndicatorsEditor } from './IndicatorsEditor';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { screenshotsChanged } from './Screenshots';
 import {
   type ChartPoint, type Drawing, type PastedDrawing, type PositionLabels, FIB_LEVELS, daysBetween, drawingStart, drawingSymbol, nyDay, toolName,
 } from '../core/drawings';
 import { opacityOf, withOpacity } from './drawingsPrimitive';
 import { LevelStyleEditor } from './levelStyle';
+import { historyKey, record, redo, undo, useHistory } from './chartHistory';
 
 export type Tool = 'select' | 'hline' | 'vline' | 'trend' | 'arrow' | 'brush' | 'rect' | 'range' | 'fib' | 'long' | 'short' | 'text';
 
@@ -26,6 +27,8 @@ const CHANGED = 'drawings-changed';
 
 export interface DrawingState {
   symbol: string;
+  /** Which chart's undo list changes go on (see chartHistory). */
+  scope: string;
   list: Drawing[];
   /** Whether `list` has been read for the chart's current days. */
   loaded: boolean;
@@ -40,8 +43,9 @@ export interface DrawingState {
   setStyle: (patch: Partial<DrawStyle>) => void;
   selected: string | null;
   setSelected: (id: string | null) => void;
-  put: (d: Drawing) => void;
-  remove: (id: string) => void;
+  /** Saves a drawing. `quiet` changes (made by the app, not you) can't be undone. */
+  put: (d: Drawing, quiet?: boolean) => void;
+  remove: (id: string, quiet?: boolean) => void;
   /** The chart day an instant belongs to (instants outside the chart go to its first or last day). */
   dayFor: (ms: number) => string;
   newId: () => string;
@@ -51,8 +55,14 @@ function remembered<T>(key: string, fallback: T): T {
   try { const v = localStorage.getItem(key); return v ? { ...fallback, ...JSON.parse(v) } : fallback; } catch { return fallback; }
 }
 
+/** Saves (or with null, deletes) one drawing and tells every chart of that ticker. */
+function write(symbol: string, id: string, d: Drawing | null) {
+  (d ? window.journal.putDrawing(symbol, d) : window.journal.deleteDrawing(symbol, id))
+    .then(() => window.dispatchEvent(new CustomEvent(CHANGED, { detail: symbol })));
+}
+
 /** Drawings for a ticker over a chart's days. Every chart of that ticker stays in step. */
-export function useDrawings(underlying: string, firstMs: number | undefined, lastMs: number | undefined): DrawingState | null {
+export function useDrawings(underlying: string, firstMs: number | undefined, lastMs: number | undefined, scope: string): DrawingState | null {
   const symbol = drawingSymbol(underlying);
   const days = useMemo(() => (firstMs === undefined || lastMs === undefined ? [] : daysBetween(nyDay(firstMs), nyDay(lastMs))), [firstMs, lastMs]);
   const daysKey = days.join(',');
@@ -87,7 +97,7 @@ export function useDrawings(underlying: string, firstMs: number | undefined, las
     stopFill: withOpacity(styleSettings.lossColor, styleSettings.fillOpacity),
   } as Partial<Drawing>;
   return {
-    symbol, list, loaded: loadedFor === `${symbol}|${daysKey}`, tool, setTool, color, selected, setSelected, style, styleSettings,
+    symbol, scope, list, loaded: loadedFor === `${symbol}|${daysKey}`, tool, setTool, color, selected, setSelected, style, styleSettings,
     setColor: (c) => {
       setColorState(c);
       try { localStorage.setItem('drawColor', c); } catch { /* not remembered; fine */ }
@@ -113,10 +123,12 @@ export function useDrawings(underlying: string, firstMs: number | undefined, las
       put(updated);
     },
     put,
-    remove: (id) => {
+    remove: (id, quiet) => {
+      const before = list.find((d) => d.id === id);
       setList((l) => l.filter((d) => d.id !== id));
       if (selected === id) setSelected(null);
       window.journal.deleteDrawing(symbol, id).then(changed);
+      if (!quiet && before) record({ scope, undo: () => write(symbol, id, before), redo: () => write(symbol, id, null) });
     },
     dayFor: (ms) => {
       const d = nyDay(ms);
@@ -125,9 +137,11 @@ export function useDrawings(underlying: string, firstMs: number | undefined, las
     newId: () => crypto.randomUUID(),
   };
 
-  function put(d: Drawing) {
+  function put(d: Drawing, quiet?: boolean) {
+    const before = list.find((x) => x.id === d.id) ?? null;
     setList((l) => [...l.filter((x) => x.id !== d.id), d]);
     window.journal.putDrawing(symbol, d).then(changed);
+    if (!quiet) record({ scope, key: `drawing:${d.id}`, undo: () => write(symbol, d.id, before), redo: () => write(symbol, d.id, d) });
   }
 }
 
@@ -181,10 +195,18 @@ export async function addPasted(draw: DrawingState, pasted: PastedDrawing[], fal
     days.add(day);
     bySymbol.set(symbol, [...(bySymbol.get(symbol) ?? []), { ...p, id: draw.newId(), day, color: p.color ?? draw.color } as Drawing]);
   }
-  for (const [symbol, list] of bySymbol) {
-    await window.journal.putDrawings(symbol, list);
-    window.dispatchEvent(new CustomEvent(CHANGED, { detail: symbol }));
-  }
+  const putAll = async () => {
+    for (const [symbol, list] of bySymbol) {
+      await window.journal.putDrawings(symbol, list);
+      window.dispatchEvent(new CustomEvent(CHANGED, { detail: symbol }));
+    }
+  };
+  await putAll();
+  record({
+    scope: draw.scope,
+    undo: () => { for (const [symbol, list] of bySymbol) for (const d of list) write(symbol, d.id, null); },
+    redo: () => { putAll(); },
+  });
   const n = pasted.length;
   const symbols = [...bySymbol.keys()];
   const when = [...days].sort().map((d) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }));
@@ -238,13 +260,42 @@ const POSITION_LABELS: [keyof PositionLabels, string][] = [['price', 'Prices'], 
 
 const HAS_FILL = new Set(['rect', 'range', 'fib', 'ellipse', 'channel', 'path']);
 
+/** Undo and redo buttons for a chart's header. */
+export function UndoRedo({ scope }: { scope: string }) {
+  const history = useHistory(scope);
+  return (
+    <>
+      <button title="Undo (Ctrl+Z)" disabled={!history.canUndo} onClick={() => undo(scope)}>↶</button>
+      <button title="Redo (Ctrl+Y)" disabled={!history.canRedo} onClick={() => redo(scope)}>↷</button>
+    </>
+  );
+}
+
 /** The strip of drawing tools down the left side of a chart. */
 export function DrawToolbar({ draw, onPaste }: { draw: DrawingState; onPaste: () => void }) {
   const [picking, setPicking] = useState(false);
   const [markers, setMarkers] = useState(false);
   const [studies, setStudies] = useState(false);
   const [levelsPop, setLevelsPop] = useState(false);
+  const toolsRef = useRef<HTMLDivElement>(null);
+  // Ctrl+Z and Ctrl+Y act on the chart you last clicked (or the only chart showing).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const action = historyKey(e);
+      const panel = toolsRef.current?.closest('.trade-panel');
+      if (!action || !panel) return;
+      const active = document.activeElement;
+      const mine = active && active !== document.body ? panel.contains(active) : document.querySelectorAll('.draw-tools').length === 1;
+      if (!mine) return;
+      e.preventDefault();
+      (action === 'undo' ? undo : redo)(draw.scope);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [draw.scope]);
   const sel = draw.list.find((d) => d.id === draw.selected);
+  // Clicking a drawing opens its settings; clicking off it closes them.
+  useEffect(() => { setPicking(!!draw.selected); }, [draw.selected]);
   // Show the selected drawing's formatting, or what new drawings will get.
   const position = sel ? (sel.kind === 'position' ? sel : null) : null;
   const shown: DrawStyle = sel
@@ -258,7 +309,7 @@ export function DrawToolbar({ draw, onPaste }: { draw: DrawingState; onPaste: ()
   const isPosition = sel ? !!position : draw.tool === 'long' || draw.tool === 'short';
   const fillable = isPosition || (sel ? HAS_FILL.has(sel.kind) : ['rect', 'range', 'fib'].includes(draw.tool));
   return (
-    <div className="draw-tools" onMouseDown={(e) => e.stopPropagation()}>
+    <div className="draw-tools" ref={toolsRef} onMouseDown={(e) => e.stopPropagation()}>
       {TOOLS.map((t) => (
         <button key={t.tool} className={draw.tool === t.tool ? 'active' : ''} title={t.title} onClick={() => draw.setTool(t.tool)}>{t.icon}</button>
       ))}
@@ -315,7 +366,7 @@ export function DrawToolbar({ draw, onPaste }: { draw: DrawingState; onPaste: ()
       {sel && <button title="Delete (Del)" onClick={() => draw.remove(sel.id)}>🗑</button>}
       <span className="draw-spacer" />
       <div className="draw-color-wrap">
-        <button className={levelsPop ? 'active' : ''} title="Stop and target lines: colors and opacity; position box on or off" onClick={() => { setLevelsPop((v) => !v); setStudies(false); setMarkers(false); }}>⇅</button>
+        <button className={levelsPop ? 'active' : ''} title="Stop and target lines: colors and opacity; automatic position box" onClick={() => { setLevelsPop((v) => !v); setStudies(false); setMarkers(false); }}>⇅</button>
         {levelsPop && <div className="draw-style levels-pop"><LevelStyleEditor /></div>}
       </div>
       <div className="draw-color-wrap">

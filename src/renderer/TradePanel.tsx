@@ -9,19 +9,20 @@ import { chartTime } from '../core/time';
 import { dollarRiskReward } from '../core/optionLevels';
 import { averageUnderlying, bias, formatR, levelsFromExits, riskReward } from '../core/rr';
 import { indexProxy } from '../core/indexProxy';
-import { EMPTY_JOURNAL, type PriceLevel, type Trade } from '../core/types';
+import { EMPTY_JOURNAL, type PriceLevel, type Trade, type TradeJournal } from '../core/types';
 import type { ChartView, LevelPrices, TradeChart } from '../shared/api';
 import { type FillMarker, FillMarkersPrimitive } from './fillMarkers';
 import { exitKind } from '../core/markerStyles';
 import { onMarkerStylesChange } from './markerStyles';
 import { type Drawing, type ChartPoint, drawingStart, moveHandle, shiftDrawing } from '../core/drawings';
-import { DrawToolbar, type DrawingState, finishShape, pasteIntoChart, shapeFor, useDrawings } from './drawings';
+import { DrawToolbar, type DrawingState, UndoRedo, finishShape, pasteIntoChart, shapeFor, useDrawings } from './drawings';
 import { ScreenshotGallery, useScreenshotCount } from './Screenshots';
 import { DrawingsPrimitive, withOpacity, type Xy } from './drawingsPrimitive';
 import { levelStyle, onLevelStyleChange, stopColor, targetColor } from './levelStyle';
 import { holdTime, pnlClass, shortDate, signedUsd, optionUsd, usd } from './format';
 import { useJournal } from './journal';
 import { useChartIndicators } from './useChartIndicators';
+import { applyTo, record, setApplier } from './chartHistory';
 
 type LevelKind = 'stops' | 'targets';
 interface Levels { stops: PriceLevel[]; targets: PriceLevel[] }
@@ -77,7 +78,7 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
   const bars = chart?.status === 'ok' ? chart.bars : [];
   // What the chart's prices are in: SPY for an SPX trade charted on SPY.
   const priceSymbol = chart?.status === 'ok' ? chart.symbol : trade.underlying;
-  const draw = useDrawings(priceSymbol, bars[0]?.time, bars[bars.length - 1]?.time);
+  const draw = useDrawings(priceSymbol, bars[0]?.time, bars[bars.length - 1]?.time, `trade:${trade.id}`);
   useEffect(() => {
     if (!hint) return;
     const t = window.setTimeout(() => setHint(''), 5000);
@@ -160,14 +161,22 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
     return () => { current = false; clearTimeout(timer); };
   }, [chart, levelsKey]);
 
-  function saveLevels(next: Levels) {
-    saveTrade(trade.id, {
-      ...journal,
+  // Undoing a line change puts back the saved lines (in the prices they were saved in).
+  type SavedLines = Pick<TradeJournal, 'stops' | 'targets' | 'underlyingEntry' | 'underlyingExit'>;
+  const linesName = `levels:${trade.id}`;
+  setApplier(linesName, (lines) => saveTrade(trade.id, { ...journal, ...(lines as SavedLines) }));
+
+  /** Saves the lines; `quiet` changes (made by the app, not you) can't be undone. */
+  function saveLevels(next: Levels, quiet?: boolean) {
+    const before: SavedLines = { stops: journal.stops, targets: journal.targets, underlyingEntry: journal.underlyingEntry, underlyingExit: journal.underlyingExit };
+    const after: SavedLines = {
       stops: next.stops,
       targets: next.targets,
       underlyingEntry: underlyingEntry ?? journal.underlyingEntry,
       underlyingExit: underlyingExit ?? journal.underlyingExit,
-    });
+    };
+    saveTrade(trade.id, { ...journal, ...after });
+    if (!quiet) record({ scope: `trade:${trade.id}`, key: linesName, undo: () => applyTo(linesName, before), redo: () => applyTo(linesName, after) });
   }
 
   // The first time a trade's chart loads, start its lines at the exits you actually took.
@@ -176,50 +185,30 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
     if (chart?.status !== 'ok' || journal.stops !== undefined || journal.targets !== undefined) return;
     const prices = new Map(chart.fills.flatMap((f) => (f.underlyingPrice === undefined ? [] : [[f.fillId, f.underlyingPrice] as const])));
     const found = levelsFromExits(trade, prices);
-    if (found) saveLevels(found);
+    if (found) saveLevels(found, true);
   }, [chart]);
 
-  // The trade's position box is one of your drawings, so it can be moved and restyled like any other.
-  // It follows the furthest stop and target; dragging its stop or target edge moves that line.
+  // Once a trade has a stop and a target, a long or short position box is drawn for it. From then on
+  // it's an ordinary drawing: moving it doesn't move the lines, and moving the lines doesn't move it.
   const boxId = `trade-box:${trade.id}`;
   const [styleVersion, setStyleVersion] = useState(0);
   useEffect(() => onLevelStyleChange(() => setStyleVersion((v) => v + 1)), []);
-  const boxSynced = useRef<{ stop: number; target: number } | null>(null);
-  useEffect(() => { boxSynced.current = null; }, [trade.id, view]);
   useEffect(() => {
-    if (!draw?.loaded || chart?.status !== 'ok') return;
-    const box = draw.list.find((d) => d.id === boxId);
+    if (!draw?.loaded || chart?.status !== 'ok' || !levelStyle().showBox) return;
+    if (journal.boxesPlaced?.includes(draw.symbol)) return;
     const plan = planBox(trade, chart, levels);
-    const moved = (a: number, b: number) => Math.abs(a - b) > 0.004;
-    if (box?.kind === 'position' && plan && boxSynced.current) {
-      const was = boxSynced.current;
-      if (moved(box.stop, was.stop) || moved(box.target, was.target)) {
-        boxSynced.current = { stop: box.stop, target: box.target };
-        const furthest = (kind: LevelKind, price: number) => levels[kind].findIndex((l) => l.price === price);
-        const next = { stops: [...levels.stops], targets: [...levels.targets] };
-        if (moved(box.stop, was.stop)) { const i = furthest('stops', plan.stop); if (i >= 0) next.stops[i] = { ...next.stops[i], price: round2(box.stop) }; }
-        if (moved(box.target, was.target)) { const i = furthest('targets', plan.target); if (i >= 0) next.targets[i] = { ...next.targets[i], price: round2(box.target) }; }
-        saveLevels(next);
-        return;
-      }
-    }
-    if (!plan || !levelStyle().showBox) {
-      if (box) draw.remove(boxId);
-      boxSynced.current = null;
-      return;
-    }
-    boxSynced.current = { stop: plan.stop, target: plan.target };
-    if (!box) {
+    if (!plan) return;
+    if (!draw.list.some((d) => d.id === boxId)) {
       const style = levelStyle();
       draw.put({
         id: boxId, day: draw.dayFor(plan.a.time), kind: 'position', ...plan, color: '#787b86',
         targetFill: withOpacity(targetColor().slice(0, 7), style.boxOpacity), stopFill: withOpacity(stopColor().slice(0, 7), style.boxOpacity),
         labels: draw.styleSettings.positionLabels,
-      });
-    } else if (box.kind === 'position' && (moved(box.stop, plan.stop) || moved(box.target, plan.target) || box.ratio !== plan.ratio || box.side !== plan.side)) {
-      draw.put({ ...box, stop: plan.stop, target: plan.target, ratio: plan.ratio, side: plan.side });
+      }, true);
     }
-  }, [draw?.loaded, draw?.list, chart, levelsKey, styleVersion]);
+    // Remembered, so a box you delete stays deleted.
+    saveTrade(trade.id, { ...journal, boxesPlaced: [...(journal.boxesPlaced ?? []), draw.symbol] });
+  }, [draw?.loaded, draw?.symbol, chart, levelsKey, styleVersion]);
 
   function placeLevel(price: number) {
     if (!placing) return;
@@ -263,6 +252,7 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
             <button className={tab === 'chart' ? 'active' : ''} onClick={() => setTab('chart')}>Chart</button>
             <button className={tab === 'shots' ? 'active' : ''} onClick={() => setTab('shots')}>Screenshots{shotCount ? ` (${shotCount})` : ''}</button>
           </div>
+          {tab === 'chart' && draw && chart?.status === 'ok' && <UndoRedo scope={draw.scope} />}
           {tab === 'chart' && chart?.status === 'ok' && (
             <button className={replay ? 'active' : ''} onClick={() => (replay ? setReplay(null) : startReplay())}
               title="Watch the trade play out minute by minute">
@@ -705,10 +695,13 @@ export function PriceChart({ trade, chart, interval, levels, placing, onPlace, o
       if (moving) {
         const shape = draft();
         const wasMoved = moving.moved;
+        const resized = !!moving.handle;
         moving = null;
         setDraft(null);
         lock(false);
         if (wasMoved && shape && d) {
+          // A resized position shows its own reward to risk, not the trade's planned R it started with.
+          if (resized && shape.kind === 'position') delete shape.ratio;
           const start = drawingStart(shape);
           if (shape.kind === 'hline') d.put({ ...shape, price: round2(shape.price) });
           else d.put(start === null ? shape : { ...shape, day: d.dayFor(start) });

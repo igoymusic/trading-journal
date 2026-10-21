@@ -83,6 +83,8 @@ export interface TradeJournal {
   underlyingExit?: number;
   /** Ids of the setup's playbook rules you followed on this trade; the rest count as broken. */
   rulesFollowed?: string[];
+  /** Chart tickers this trade's position box has been drawn on (so one you delete stays deleted). */
+  boxesPlaced?: string[];
 }
 
 /** A price on the underlying and how many contracts it applies to. */

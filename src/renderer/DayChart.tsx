@@ -6,7 +6,7 @@ import type { ChartView, TradeChart } from '../shared/api';
 import { signedUsd, pnlClass } from './format';
 import { indexProxy } from '../core/indexProxy';
 import { ChartViewSwitch, type Interval, PanelResizer, PriceChart, useFullscreen, usePanelHeight } from './TradePanel';
-import { DrawToolbar, pasteIntoChart, useDrawings } from './drawings';
+import { DrawToolbar, pasteIntoChart, UndoRedo, useDrawings } from './drawings';
 
 const NO_LEVELS = { stops: [], targets: [] };
 
@@ -27,7 +27,7 @@ export function DayChart({ trades, date, version }: { trades: Trade[]; date: str
   const day = useMemo(() => (shown ? dayChartTrade(trades, date, shown) : null), [trades, date, shown]);
 
   const bars = chart?.status === 'ok' ? chart.bars : [];
-  const draw = useDrawings(chart?.status === 'ok' ? chart.symbol : shown ?? '', bars[0]?.time, bars[bars.length - 1]?.time);
+  const draw = useDrawings(chart?.status === 'ok' ? chart.symbol : shown ?? '', bars[0]?.time, bars[bars.length - 1]?.time, `day:${date}`);
   const [hint, setHint] = useState('');
   const [fullscreen, setFullscreen] = useFullscreen();
   const [height, startResize] = usePanelHeight('dayChartHeight');
@@ -63,6 +63,7 @@ export function DayChart({ trades, date, version }: { trades: Trade[]; date: str
           <span className={`panel-pnl ${pnlClass(day.trade.netPnl)}`}>{signedUsd(day.trade.netPnl)}</span>
         </div>
         <div className="panel-actions" onClick={(e) => e.stopPropagation()}>
+          {!collapsed && draw && chart?.status === 'ok' && <><UndoRedo scope={draw.scope} /><span className="divider" /></>}
           {tickers.length > 1 && tickers.map((t) => (
             <button key={t} className={t === shown ? 'active' : ''} onClick={() => setTicker(t)}>{t}</button>
           ))}
