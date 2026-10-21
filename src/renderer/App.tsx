@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useReducer, useState } from 'react';
 import { statsByDay, tradeDay } from '../core/calendar';
 import type { Goals } from '../core/goals';
-import { applyFilter, EMPTY_FILTER, type TradeFilter } from '../core/reports';
+import { applyFilter, DEFAULT_FILTER, type TradeFilter } from '../core/reports';
 import { type Summary, summarizeTrades } from '../core/trades';
+import { formatR, riskReward } from '../core/rr';
+import { isCounted, type Trade } from '../core/types';
 import type { ImportResult, JournalData, SyncResult } from '../shared/api';
 import { DayView } from './DayView';
 import { FilterBar } from './FilterBar';
@@ -58,7 +60,8 @@ export function App() {
   // Which trades have their chart open on each day, so a Day tab remembers it while you switch tabs.
   const [openCharts, setOpenCharts] = useState<Record<string, string[]>>({});
   // Filters shared by the All trades and Reports tabs.
-  const [filter, setFilter] = useState<TradeFilter>(EMPTY_FILTER);
+  // Kept while the app is open; back to month to date next time.
+  const [filter, setFilter] = useState<TradeFilter>(DEFAULT_FILTER);
   const filtered = useMemo(() => applyFilter(data?.trades ?? [], filter), [data, filter]);
   const filterTab = tabs.active === 'trades' || tabs.active === 'reports';
   const selected = data?.trades.find((t) => t.id === selectedId) ?? null;
@@ -154,15 +157,17 @@ export function App() {
   }
 
   // The summary tiles follow the tab: everything, the year, the month, or the day.
-  const scoped = useMemo(() => {
+  // The trades the numbers across the top cover.
+  const scopedTrades = useMemo(() => {
     if (!data) return null;
-    const pick = (prefix: string) => summarizeTrades(data.trades.filter((t) => tradeDay(t).startsWith(prefix)));
+    const pick = (prefix: string) => data.trades.filter((t) => tradeDay(t).startsWith(prefix));
     if (tabs.active === 'year') return pick(String(tabs.year));
     if (activeMonth) return pick(monthKey(activeMonth.year, activeMonth.month));
     if (activeDay) return pick(activeDay);
-    if (tabs.active === 'trades' || tabs.active === 'reports') return summarizeTrades(filtered);
-    return data.summary;
+    if (tabs.active === 'trades' || tabs.active === 'reports') return filtered;
+    return data.trades;
   }, [data, tabs, filtered]);
+  const scoped = useMemo(() => (scopedTrades ? summarizeTrades(scopedTrades) : null), [scopedTrades]);
 
   const hasTrades = !!data && data.trades.length > 0;
   // Net P&L shown on each Month and Day tab.
@@ -218,7 +223,7 @@ export function App() {
       {!data ? null : !hasTrades ? <EmptyState onImport={importCsv} onOpenSettings={() => setShowSettings(true)} /> : (
         <main className="view" key={colorsVersion}>
           {filterTab && <FilterBar trades={data.trades} filter={filter} onChange={setFilter} shown={filtered.length} />}
-          {scoped && <SummaryBar s={scoped} />}
+          {scoped && <SummaryBar s={scoped} trades={scopedTrades ?? []} day={!!activeDay} />}
           {tabs.active === 'home' && (
             <div className="home">
               <PnlChart trades={data.trades} />
@@ -361,11 +366,24 @@ function EmptyState({ onImport, onOpenSettings }: { onImport: () => void; onOpen
   );
 }
 
-function SummaryBar({ s }: { s: Summary }) {
+/** Realized R from the trades that have a stop: their total, and the average per trade. */
+function realizedRTile(trades: Trade[]) {
+  const rs = trades.filter(isCounted).map((t) => riskReward(t, t.journal)?.realizedR).filter((r): r is number => r !== undefined);
+  if (!rs.length) return { label: 'Realized R', value: '—', sub: 'Add a stop to a trade to measure R' };
+  const total = rs.reduce((a, r) => a + r, 0);
+  return { label: 'Realized R', value: formatR(total), tone: pnlClass(total), sub: `avg ${formatR(total / rs.length)} over ${rs.length} trade${rs.length === 1 ? '' : 's'}` };
+}
+
+/** The numbers across the top. On a single day, realized R takes the place of profit factor. */
+function SummaryBar({ s, trades, day }: { s: Summary; trades: Trade[]; day: boolean }) {
   const tiles: { label: string; value: string; tone?: string; sub?: string }[] = [
     { label: 'Net P&L', value: signedUsd(s.netPnl), tone: pnlClass(s.netPnl), sub: `${usd(s.fees)} fees` },
     { label: 'Win rate', value: `${(s.winRate * 100).toFixed(1)}%`, sub: `${s.wins} W / ${s.losses} L` },
-    { label: 'Profit factor', value: s.profitFactor.toFixed(2), tone: s.profitFactor >= 1 ? 'win' : 'loss' },
+    // Total won ÷ total lost. With wins and no losses it's unlimited, not zero. A single day shows R instead.
+    ...(day ? [] : [s.losses === 0 && s.wins > 0
+      ? { label: 'Profit factor', value: '∞', tone: 'win' }
+      : { label: 'Profit factor', value: s.profitFactor.toFixed(2), tone: s.profitFactor >= 1 ? 'win' : 'loss' }]),
+    realizedRTile(trades),
     { label: 'Avg win', value: signedUsd(s.avgWin), tone: 'win' },
     { label: 'Avg loss', value: signedUsd(s.avgLoss), tone: 'loss' },
     { label: 'Trades', value: String(s.trades) },

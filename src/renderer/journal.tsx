@@ -66,20 +66,28 @@ export function RulesCell({ trade }: { trade: Trade }) {
   </span>;
 }
 
+/** A 1-5 rating in half stars. */
 export function Stars({ value, onChange, size = 'normal' }: { value: number | null; onChange?: (v: number | null) => void; size?: 'small' | 'normal' }) {
   const [hover, setHover] = useState<number | null>(null);
   const shown = hover ?? value ?? 0;
   return (
     <span className={`stars ${size} ${onChange ? 'editable' : ''}`} onMouseLeave={() => setHover(null)}>
-      {[1, 2, 3, 4, 5].map((n) => (
-        <span
-          key={n}
-          className={n <= shown ? 'on' : ''}
-          onMouseEnter={onChange ? () => setHover(n) : undefined}
-          // Clicking the current rating clears it.
-          onClick={onChange ? (e) => { e.stopPropagation(); onChange(value === n ? null : n); } : undefined}
-        >★</span>
-      ))}
+      {[1, 2, 3, 4, 5].map((n) => {
+        // The left half of a star picks a half star.
+        const at = (e: React.MouseEvent<HTMLSpanElement>) => {
+          const r = e.currentTarget.getBoundingClientRect();
+          return e.clientX - r.left < r.width / 2 ? n - 0.5 : n;
+        };
+        return (
+          <span
+            key={n}
+            className={n <= shown ? 'on' : n - 0.5 === shown ? 'half' : ''}
+            onMouseMove={onChange ? (e) => setHover(at(e)) : undefined}
+            // Clicking the current rating clears it.
+            onClick={onChange ? (e) => { e.stopPropagation(); const v = at(e); onChange(value === v ? null : v); } : undefined}
+          >★</span>
+        );
+      })}
     </span>
   );
 }
@@ -247,5 +255,16 @@ export function DayNote({ date, initial, onSave }: { date: string; initial: stri
       value={text}
       onChange={(e) => setText(e.target.value)}
     />
+  );
+}
+
+/** The Include box: untick it to leave a trade out of the day's (and every other) total. */
+export function IncludeBox({ trade }: { trade: Trade }) {
+  const { saveTrade } = useJournal();
+  const journal = trade.journal ?? EMPTY_JOURNAL;
+  return (
+    <input type="checkbox" checked={!journal.excluded} title="Count this trade in the totals"
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => saveTrade(trade.id, { ...journal, excluded: !e.target.checked })} />
   );
 }
