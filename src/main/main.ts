@@ -17,6 +17,7 @@ import { SchwabSync } from './schwab';
 import type { SchwabSlot } from './settings';
 import { JournalDb } from './db';
 import { moveDataFromOldName } from './migrate';
+import { fetchWithTimeout } from './fetchTimeout';
 import { buildTradeChart, etfMinuteBars, historyDailyBars, historyMinuteBars, levelOptionPrices } from './market';
 import { Settings } from './settings';
 import { Screenshots } from './screenshots';
@@ -91,6 +92,9 @@ async function createWindow() {
 function chartSource() {
   return schwabData?.status().signedIn ? schwabData : schwab;
 }
+
+// Every request the app makes gives up after 30 seconds rather than hanging a screen forever.
+globalThis.fetch = fetchWithTimeout(globalThis.fetch, 30_000);
 
 moveDataFromOldName(app.getPath('appData'), app.getPath('userData'));
 

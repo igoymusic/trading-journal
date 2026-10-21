@@ -65,7 +65,7 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
   useEffect(() => {
     setChart(null);
     setReplay(null);
-    window.journal.getTradeChart(trade.id).then(setChart);
+    window.journal.getTradeChart(trade.id).then(setChart, (err: Error) => setChart({ status: 'error', message: err.message }));
   }, [trade.id]);
 
   const bars = chart?.status === 'ok' ? chart.bars : [];

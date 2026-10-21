@@ -9,6 +9,7 @@ import { zonedToUtcMillis } from '../core/time';
 import type { PriceLevel, Trade } from '../core/types';
 import type { LevelPrices, TradeChart } from '../shared/api';
 import type { JournalDb } from './db';
+import { fetchWithTimeout } from './fetchTimeout';
 import type { SchwabSync } from './schwab';
 import type { Settings } from './settings';
 
@@ -142,6 +143,9 @@ async function schwabIndexChart(trade: Trade, symbol: string, db: JournalDb, set
 }
 
 /** The index's daily closes from FRED (free, no account), cached; refetched when a newer day is needed. */
+/** How long to wait for FRED's daily index closes. */
+export const FRED_TIMEOUT_MS = 15_000;
+
 async function indexCloses(series: string, day: string, db: JournalDb, fetchFn: typeof fetch): Promise<Map<string, number>> {
   const key = `fred:${series}`;
   const cached = db.getMeta(key);
@@ -150,11 +154,14 @@ async function indexCloses(series: string, day: string, db: JournalDb, fetchFn: 
   const newest = [...closes.keys()].sort().pop() ?? '';
   if (newest < day && Date.now() - fetchedAt > 60 * 60_000) {
     const base = process.env.TJ_FRED_URL || 'https://fred.stlouisfed.org/graph/fredgraph.csv';
-    const res = await fetchFn(`${base}?id=${encodeURIComponent(series)}`);
-    if (res.ok) {
-      closes = parseFredCsv(await res.text());
-      db.setMeta(key, JSON.stringify({ fetchedAt: Date.now(), closes: [...closes] }));
-    }
+    // FRED sometimes stalls instead of answering. Give up quickly and keep using the closes
+    // already saved, and don't ask again for an hour so every chart doesn't wait on it.
+    const res = await fetchWithTimeout(fetchFn, FRED_TIMEOUT_MS)(`${base}?id=${encodeURIComponent(series)}`, {
+      headers: { 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Moon Journal', accept: 'text/csv,*/*' },
+    }).catch(() => null);
+    const fresh = res?.ok ? parseFredCsv(await res.text().catch(() => '')) : null;
+    if (fresh?.size) closes = fresh;
+    db.setMeta(key, JSON.stringify({ fetchedAt: Date.now(), closes: [...closes] }));
   }
   return closes;
 }

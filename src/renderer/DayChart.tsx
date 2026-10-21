@@ -38,7 +38,7 @@ export function DayChart({ trades, date, version }: { trades: Trade[]; date: str
   useEffect(() => {
     if (!shown) return;
     setChart(null);
-    window.journal.getDayChart(date, shown).then(setChart);
+    window.journal.getDayChart(date, shown).then(setChart, (err: Error) => setChart({ status: 'error', message: err.message }));
   }, [date, shown, version]);
 
   if (!day || chart?.status === 'needs-key') return null;
