@@ -3,6 +3,8 @@ import { statsByDay, tradeDay } from '../core/calendar';
 import type { Goals } from '../core/goals';
 import { applyFilter, EMPTY_FILTER, type TradeFilter } from '../core/reports';
 import { type Summary, summarizeTrades } from '../core/trades';
+import { formatR, riskReward } from '../core/rr';
+import type { Trade } from '../core/types';
 import type { ImportResult, JournalData, SyncResult } from '../shared/api';
 import { DayView } from './DayView';
 import { FilterBar } from './FilterBar';
@@ -221,7 +223,7 @@ export function App() {
       {!data ? null : !hasTrades ? <EmptyState onImport={importCsv} onOpenSettings={() => setShowSettings(true)} /> : (
         <main className="view" key={colorsVersion}>
           {filterTab && <FilterBar trades={data.trades} filter={filter} onChange={setFilter} shown={filtered.length} />}
-          {scoped && tabs.active !== 'home' && <SummaryBar s={scoped} />}
+          {scoped && tabs.active !== 'home' && <SummaryBar s={scoped} dayTrades={activeDay ? data.trades.filter((t) => tradeDay(t) === activeDay) : undefined} />}
           {tabs.active === 'home' && (
             <Home
               trades={data.trades}
@@ -355,12 +357,22 @@ function EmptyState({ onImport, onOpenSettings }: { onImport: () => void; onOpen
   );
 }
 
-function SummaryBar({ s }: { s: Summary }) {
+/** The day's R from trades that have a stop: their total, and the average per trade. */
+function realizedRTile(trades: Trade[]) {
+  const rs = trades.map((t) => riskReward(t, t.journal)?.realizedR).filter((r): r is number => r !== undefined);
+  if (!rs.length) return { label: 'Realized R', value: '—', sub: 'Add a stop to a trade to measure R' };
+  const total = rs.reduce((a, r) => a + r, 0);
+  return { label: 'Realized R', value: formatR(total), tone: pnlClass(total), sub: `avg ${formatR(total / rs.length)} over ${rs.length} trade${rs.length === 1 ? '' : 's'}` };
+}
+
+/** The numbers across the top. On a single day, realized R takes the place of profit factor. */
+function SummaryBar({ s, dayTrades }: { s: Summary; dayTrades?: Trade[] }) {
   const tiles: { label: string; value: string; tone?: string; sub?: string }[] = [
     { label: 'Net P&L', value: signedUsd(s.netPnl), tone: pnlClass(s.netPnl), sub: `${usd(s.fees)} fees` },
     { label: 'Win rate', value: `${(s.winRate * 100).toFixed(1)}%`, sub: `${s.wins} W / ${s.losses} L` },
+    dayTrades ? realizedRTile(dayTrades)
     // Total won ÷ total lost. With wins and no losses it's unlimited, not zero.
-    s.losses === 0 && s.wins > 0
+    : s.losses === 0 && s.wins > 0
       ? { label: 'Profit factor', value: '∞', tone: 'win' }
       : { label: 'Profit factor', value: s.profitFactor.toFixed(2), tone: s.profitFactor >= 1 ? 'win' : 'loss' },
     { label: 'Avg win', value: signedUsd(s.avgWin), tone: 'win' },
