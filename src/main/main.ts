@@ -6,7 +6,7 @@ import path from 'node:path';
 import { parseTosStatement } from '../core/tosCsv';
 import { buildTrades, summarizeTrades } from '../core/trades';
 import type { MistakeTag, PriceLevel, Setup, TradeJournal } from '../core/types';
-import type { ImportResult, JournalData, LabelOffset, TradeChart } from '../shared/api';
+import type { ChartView, ImportResult, JournalData, LabelOffset, TradeChart } from '../shared/api';
 import type { MarkerStyles } from '../core/markerStyles';
 import type { Indicator } from '../core/indicators';
 import { AlpacaClient } from '../core/alpaca';
@@ -150,30 +150,30 @@ app.whenReady().then(async () => {
   ipcMain.handle('shots:caption', (_event, id: string, caption: string) => db.setImageCaption(id, caption));
   ipcMain.handle('shots:remove', (_event, id: string) => shots.remove(id));
 
-  ipcMain.handle('market:dayChart', async (_event, date: string, underlying: string): Promise<TradeChart> => {
+  ipcMain.handle('market:dayChart', async (_event, date: string, underlying: string, view?: ChartView): Promise<TradeChart> => {
     const day = dayChartTrade(buildTrades(db.allFills()), date, underlying);
     if (!day) return { status: 'error', message: 'No trades on this day.' };
     try {
-      return await buildTradeChart(day.trade, db, settings, undefined, chartSource());
+      return await buildTradeChart(day.trade, db, settings, undefined, chartSource(), view);
     } catch (err) {
       return { status: 'error', message: (err as Error).message };
     }
   });
-  ipcMain.handle('market:tradeChart', async (_event, tradeId: string): Promise<TradeChart> => {
+  ipcMain.handle('market:tradeChart', async (_event, tradeId: string, view?: ChartView): Promise<TradeChart> => {
     const trade = buildTrades(db.allFills()).find((t) => t.id === tradeId);
     if (!trade) return { status: 'error', message: 'Trade not found.' };
     try {
-      return await buildTradeChart(trade, db, settings, undefined, chartSource());
+      return await buildTradeChart(trade, db, settings, undefined, chartSource(), view);
     } catch (err) {
       return { status: 'error', message: (err as Error).message };
     }
   });
 
-  ipcMain.handle('market:levelPrices', async (_event, tradeId: string, stops: PriceLevel[], targets: PriceLevel[]) => {
+  ipcMain.handle('market:levelPrices', async (_event, tradeId: string, stops: PriceLevel[], targets: PriceLevel[], view?: ChartView) => {
     const trade = buildTrades(db.allFills()).find((t) => t.id === tradeId);
     if (!trade) return null;
     try {
-      return await levelOptionPrices(trade, stops, targets, db, settings);
+      return await levelOptionPrices(trade, stops, targets, db, settings, undefined, view);
     } catch {
       return null;
     }
@@ -186,7 +186,6 @@ app.whenReady().then(async () => {
     colors: settings.colors,
     markerStyles: settings.markerStyles,
     optionPriceDisplay: settings.optionPriceDisplay,
-    indexChart: settings.indexChart,
     indicators: settings.indicators,
   }));
   ipcMain.handle('settings:setIndicators', (_event, list: Indicator[]) => { settings.indicators = list; });
@@ -196,7 +195,6 @@ app.whenReady().then(async () => {
   ipcMain.handle('market:historyDays', (_event, underlying: string, beforeDay: string, count: number, fromSchwab: boolean) =>
     historyDailyBars(underlying, beforeDay, Math.min(count, 2500), fromSchwab, db, settings, chartSource()).catch(() => []));
   ipcMain.handle('settings:setOptionPriceDisplay', (_event, mode: 'quote' | 'contract') => { settings.optionPriceDisplay = mode; });
-  ipcMain.handle('settings:setIndexChart', (_event, mode: 'etf' | 'index') => { settings.indexChart = mode; });
   ipcMain.handle('settings:setMarkerStyles', (_event, styles: MarkerStyles | null) => { settings.markerStyles = styles ?? undefined; });
   ipcMain.handle('settings:setColors', (_event, colors: Record<string, string> | null) => { settings.colors = colors ?? undefined; });
   ipcMain.handle('settings:setHiddenAccounts', (_event, names: string[]) => { settings.hiddenAccounts = names; });

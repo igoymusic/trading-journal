@@ -38,6 +38,9 @@ export interface FillPoint {
   priceTime?: number;
 }
 
+/** For SPX trades: SPY's own chart ('etf', the default) or SPX itself ('index'). */
+export type ChartView = 'etf' | 'index';
+
 export type TradeChart =
   | { status: 'needs-key' }
   | { status: 'error'; message: string }
@@ -122,7 +125,6 @@ export interface SettingsView {
   markerStyles: MarkerStyles;
   /** Option prices as quoted ($0.15) or as paid per contract ($15.00). */
   optionPriceDisplay: 'quote' | 'contract';
-  indexChart: 'etf' | 'index';
   /** Indicators shown on every chart. */
   indicators: Indicator[];
 }
@@ -148,10 +150,10 @@ export interface JournalApi {
   getJournal(): Promise<JournalData>;
   /** Opens a file picker; resolves to null if the user cancels. */
   importThinkorswim(): Promise<ImportResult | null>;
-  getTradeChart(tradeId: string): Promise<TradeChart>;
+  getTradeChart(tradeId: string, view?: ChartView): Promise<TradeChart>;
   /** One chart of a day's trades on one ticker. */
-  getDayChart(date: string, underlying: string): Promise<TradeChart>;
-  getLevelPrices(tradeId: string, stops: PriceLevel[], targets: PriceLevel[]): Promise<LevelPrices | null>;
+  getDayChart(date: string, underlying: string, view?: ChartView): Promise<TradeChart>;
+  getLevelPrices(tradeId: string, stops: PriceLevel[], targets: PriceLevel[], view?: ChartView): Promise<LevelPrices | null>;
   getSettings(): Promise<SettingsView>;
   /** Saves (or clears, with null) the Alpaca keys after checking they work. */
   saveAlpacaKeys(keys: { keyId: string; secretKey: string } | null): Promise<{ ok: boolean; message: string }>;
@@ -188,7 +190,6 @@ export interface JournalApi {
   /** Saves how entry and exit markers look; null goes back to the defaults. */
   setMarkerStyles(styles: MarkerStyles | null): Promise<void>;
   setOptionPriceDisplay(mode: 'quote' | 'contract'): Promise<void>;
-  setIndexChart(mode: 'etf' | 'index'): Promise<void>;
   setIndicators(indicators: Indicator[]): Promise<void>;
   /** Minute candles from the days before `beforeDay`, enough for `count` candles of `minutes`. */
   historyMinuteBars(underlying: string, beforeDay: string, minutes: number, count: number, fromSchwab: boolean): Promise<Bar[]>;
