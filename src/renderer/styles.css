@@ -546,3 +546,7 @@ th.sorted { color: var(--text); }
 /* Drag a chart panel's bottom edge to resize it. */
 .panel-resize { position: absolute; left: 0; right: 0; bottom: -5px; height: 10px; cursor: ns-resize; z-index: 5; }
 .panel-resize:hover { background: linear-gradient(transparent 4px, var(--blue) 4px, var(--blue) 6px, transparent 6px); }
+
+/* Resizable trade table columns. */
+.trades th .col-resize { position: absolute; top: 0; right: -3px; width: 7px; height: 100%; cursor: col-resize; z-index: 3; }
+.trades th .col-resize:hover, .trades th .col-resize.active { background: var(--blue); opacity: 0.6; }
