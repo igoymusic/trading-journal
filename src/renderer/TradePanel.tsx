@@ -20,6 +20,7 @@ import { ScreenshotGallery, useScreenshotCount } from './Screenshots';
 import { DrawingsPrimitive, type Xy } from './drawingsPrimitive';
 import { holdTime, pnlClass, shortDate, signedUsd, optionUsd, usd } from './format';
 import { useJournal } from './journal';
+import { InfoTip } from './InfoTip';
 import { useChartIndicators } from './useChartIndicators';
 
 type LevelKind = 'stops' | 'targets';
@@ -260,7 +261,13 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
         </div>}
 
         <div className="fill-list">
-          <div className="fill-list-head">Fills</div>
+          <div className="fill-list-head">Fills
+            {!!trade.assumedContracts && (
+              <InfoTip>
+                {trade.assumedContracts} contract{trade.assumedContracts === 1 ? ' was' : 's were'} closed without an opening fill, so {trade.assumedContracts === 1 ? 'it counts' : 'they count'} as {trade.direction === 'LONG' ? 'bought' : 'sold'} at the average entry.
+              </InfoTip>
+            )}
+          </div>
           {shownFills(trade).map((f) => {
             const point = priceByFill.get(f.id);
             const buy = f.side === 'BUY';
@@ -933,11 +940,6 @@ function CombineBox({ trade }: { trade: Trade }) {
         <div className="combine-row">
           <span className="muted">Combined from {trade.merged.length} trades.</span>
           <button onClick={() => splitTrade(trade.id)} title="Show them as separate trades again">Split apart</button>
-        </div>
-      )}
-      {!!trade.assumedContracts && (
-        <div className="muted combine-note">
-          {trade.assumedContracts} contract{trade.assumedContracts === 1 ? ' was' : 's were'} closed without an opening fill, so {trade.assumedContracts === 1 ? 'it counts' : 'they count'} as {trade.direction === 'LONG' ? 'bought' : 'sold'} at the average entry.
         </div>
       )}
       {others.length > 0 && (
