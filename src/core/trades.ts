@@ -139,6 +139,17 @@ function summarize(fills: Fill[], requested: Trade['status'] | 'AUTO'): Trade {
   };
 }
 
+/**
+ * The trade's fills as shown on charts and in the fill list: contracts closed without an opening fill
+ * are added to the first entry, as if they'd been bought (or sold) with it.
+ */
+export function shownFills(t: Trade): Fill[] {
+  if (!t.assumedContracts) return t.fills;
+  const entrySide = t.direction === 'LONG' ? 'BUY' : 'SELL';
+  const first = t.fills.find((f) => f.side === entrySide);
+  return t.fills.map((f) => (f === first ? { ...f, quantity: f.quantity + t.assumedContracts! } : f));
+}
+
 export interface Summary {
   netPnl: number;
   grossPnl: number;
