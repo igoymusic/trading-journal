@@ -12,10 +12,15 @@ export interface JournalContextValue {
   saveSetups(setups: Setup[]): void;
   saveMistakes(mistakes: MistakeTag[]): void;
   savePositives(positives: MistakeTag[]): void;
+  /** Every trade, for picking ones to combine. */
+  trades: Trade[];
+  combineTrades(ids: string[]): void;
+  splitTrade(id: string): void;
 }
 
 export const JournalContext = createContext<JournalContextValue>({
   setups: [], mistakes: [], positives: [], saveTrade() {}, saveSetups() {}, saveMistakes() {}, savePositives() {},
+  trades: [], combineTrades() {}, splitTrade() {},
 });
 
 export const useJournal = () => useContext(JournalContext);

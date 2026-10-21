@@ -58,6 +58,10 @@ export interface Trade {
   account?: string;
   /** Your notes and labels for this trade, if you've added any. */
   journal?: TradeJournal;
+  /** Ids of the trades you combined into this one. */
+  merged?: string[];
+  /** Contracts closed without an opening fill, counted as bought (or sold) at the average entry. */
+  assumedContracts?: number;
 }
 
 /** What you record about a trade: the setup it was, mistakes made, a 1-5 rating and free notes. */

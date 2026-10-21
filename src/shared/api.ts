@@ -159,6 +159,10 @@ export interface JournalApi {
   setTradeColumns(ids: string[] | null): Promise<void>;
   setGoals(goals: Goals): Promise<void>;
   /** Deletes every thinkorswim CSV import, then re-syncs brokers from the start. */
+  /** Counts these trades as one; returns the journal with the change. */
+  combineTrades(ids: string[]): Promise<JournalData>;
+  /** Undoes a combine. */
+  splitTrade(id: string): Promise<JournalData>;
   removeImported(): Promise<{ removed: number; sync: SyncResult | null }>;
   /** Each account in the journal with how many fills it has; null is CSV imports with no account. */
   accountFillCounts(): Promise<{ account: string | null; fills: number }[]>;

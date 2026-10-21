@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Bar } from '../core/alpaca';
 import { filledBy, positionAt, replayStartIndex } from '../core/replay';
 import { chartTime } from '../core/time';
+import { shownFills } from '../core/trades';
 import { dollarRiskReward } from '../core/optionLevels';
 import { averageUnderlying, formatR, levelsFromExits, riskReward } from '../core/rr';
 import { EMPTY_JOURNAL, type PriceLevel, type Trade } from '../core/types';
@@ -19,6 +20,7 @@ import { ScreenshotGallery, useScreenshotCount } from './Screenshots';
 import { DrawingsPrimitive, type Xy } from './drawingsPrimitive';
 import { holdTime, pnlClass, shortDate, signedUsd, optionUsd, usd } from './format';
 import { useJournal } from './journal';
+import { InfoTip } from './InfoTip';
 import { useChartIndicators } from './useChartIndicators';
 
 type LevelKind = 'stops' | 'targets';
@@ -259,14 +261,22 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
         </div>}
 
         <div className="fill-list">
-          <div className="fill-list-head">Fills</div>
-          {trade.fills.map((f) => {
+          <div className="fill-list-head">Fills
+            {!!trade.assumedContracts && (
+              <InfoTip>
+                {trade.assumedContracts} contract{trade.assumedContracts === 1 ? ' was' : 's were'} closed without an opening fill, so {trade.assumedContracts === 1 ? 'it counts' : 'they count'} as {trade.direction === 'LONG' ? 'bought' : 'sold'} at the average entry.
+              </InfoTip>
+            )}
+          </div>
+          {shownFills(trade).map((f) => {
             const point = priceByFill.get(f.id);
             const buy = f.side === 'BUY';
+            const added = f.quantity - (trade.fills.find((x) => x.id === f.id)?.quantity ?? f.quantity);
             return (
               <div className="fill-item" key={f.id}>
                 <div>
-                  <span className={buy ? 'win' : 'loss'}>{f.orderType === 'EXPIRED' ? 'Expired' : buy ? 'Bought' : 'Sold'} {f.quantity}</span>
+                  <span className={buy ? 'win' : 'loss'}
+                    title={added ? `${f.quantity - added} filled, plus ${added} closed without an opening fill` : undefined}>{f.orderType === 'EXPIRED' ? 'Expired' : buy ? 'Bought' : 'Sold'} {f.quantity}</span>
                   <span> @ {optionUsd(f.price)}</span>
                 </div>
                 <div className="muted" title={f.account ? `From ${f.account}` : undefined}>
@@ -280,6 +290,7 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
               </div>
             );
           })}
+          <CombineBox trade={trade} />
           {chart?.status === 'ok' && (
             <RiskPanel
               trade={trade}
@@ -750,8 +761,9 @@ function chartData(chart: Extract<TradeChart, { status: 'ok' }>, trade: Trade, i
 
   // Partial fills in the same second at the same price share one marker ("B 2 @ $79.00").
   const entrySide = trade.direction === 'LONG' ? 'BUY' : 'SELL';
+  const fills = shownFills(trade);
   const groups = new Map<string, { id: string; time: number; isEntry: boolean; side: string; qty: number; optionPrice: number; underlying?: number; contract?: string }>();
-  for (const f of trade.fills) {
+  for (const f of fills) {
     const point = chart.fills.find((p) => p.fillId === f.id);
     if (!point || (until !== null && !filledBy(point.time, until))) continue;
     const contract = info?.contract.get(f.id);
@@ -765,7 +777,7 @@ function chartData(chart: Extract<TradeChart, { status: 'ok' }>, trade: Trade, i
   }
   // Average entry price per contract, to tell exits in profit from exits at a loss.
   const entries = new Map<string, { side: 'BUY' | 'SELL'; cost: number; qty: number }>();
-  for (const f of trade.fills) {
+  for (const f of fills) {
     if (!(info ? info.entryIds.has(f.id) : f.side === entrySide)) continue;
     const k = info?.contract.get(f.id) ?? '';
     const e = entries.get(k) ?? { side: f.side as 'BUY' | 'SELL', cost: 0, qty: 0 };
@@ -906,6 +918,38 @@ function RiskPanel({ trade, levels, placing, onPlacing, onChange, canMeasure, rr
       {rr && losing && !levels.targets.length && <div className="muted small">Losing trade: add the target you were aiming for to see its planned R:R.</div>}
       {levels.stops.length + levels.targets.length > 0 && (
         <div className="muted small">Lines start at your actual exits: winners as targets, losers as stops. Drag a line on the chart to move it. Option prices marked ≈ are estimates; the rest are what the option traded at when the underlying got there.</div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Combine this trade with others on the same contract, e.g. when a closing fill has no opening
+ * fill and shows up as its own open trade. A combined trade can be split back apart.
+ */
+function CombineBox({ trade }: { trade: Trade }) {
+  const { trades, combineTrades, splitTrade } = useJournal();
+  const [pick, setPick] = useState('');
+  const same = (t: Trade) => t.underlying === trade.underlying && t.expiry === trade.expiry && t.strike === trade.strike && t.putCall === trade.putCall;
+  const others = trades.filter((t) => t.id !== trade.id && same(t)).sort((a, b) => a.openTime.localeCompare(b.openTime));
+  const label = (t: Trade) => `${shortDate(t.openTime.slice(0, 10))} ${t.openTime.slice(11, 16)} · ${t.direction === 'LONG' ? 'Long' : 'Short'} ${t.maxContracts}`
+    + ` · ${t.status === 'OPEN' ? 'open' : signedUsd(t.netPnl)}${t.merged ? ` · ${t.merged.length} combined` : ''}`;
+  return (
+    <div className="combine-box">
+      {trade.merged && (
+        <div className="combine-row">
+          <span className="muted">Combined from {trade.merged.length} trades.</span>
+          <button onClick={() => splitTrade(trade.id)} title="Show them as separate trades again">Split apart</button>
+        </div>
+      )}
+      {others.length > 0 && (
+        <div className="combine-row">
+          <select value={pick} onChange={(e) => setPick(e.target.value)} aria-label="Trade to combine with">
+            <option value="">Combine with another {trade.underlying} {trade.strike}{trade.putCall === 'CALL' ? 'C' : 'P'} trade…</option>
+            {others.map((t) => <option key={t.id} value={t.id}>{label(t)}</option>)}
+          </select>
+          <button disabled={!pick} onClick={() => { combineTrades([trade.id, pick]); setPick(''); }} title="Count these as one trade">Combine</button>
+        </div>
       )}
     </div>
   );
