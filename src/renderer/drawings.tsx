@@ -314,7 +314,7 @@ export function DrawToolbar({ draw, onPaste }: { draw: DrawingState; onPaste: ()
         <button key={t.tool} className={draw.tool === t.tool ? 'active' : ''} title={t.title} onClick={() => draw.setTool(t.tool)}>{t.icon}</button>
       ))}
       <div className="draw-color-wrap">
-        <button className="draw-color" title="Color and line style" onClick={() => setPicking((p) => !p)}><span style={{ background: sel?.color ?? draw.color }} /></button>
+        <button className={`draw-settings ${picking ? 'active' : ''}`} title="Drawing settings: color, line style, labels" onClick={() => setPicking((p) => !p)}>⚙</button>
         {picking && (
           <div className="draw-style">
             <div className="draw-colors">
