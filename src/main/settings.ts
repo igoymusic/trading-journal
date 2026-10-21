@@ -11,6 +11,8 @@ import type { SchwabSlot } from '../shared/api';
 
 interface StoredSettings {
   timeZone: string;
+  /** Where the window was when you last closed it. */
+  windowBounds?: { x: number; y: number; width: number; height: number; maximized?: boolean };
   /** Trade table columns, in display order. */
   tradeColumns?: string[];
   goals?: Goals;
@@ -70,6 +72,15 @@ export class Settings {
 
   private save() {
     writeFileSync(this.file, JSON.stringify(this.data, null, 2));
+  }
+
+  get windowBounds() {
+    return this.data.windowBounds;
+  }
+
+  set windowBounds(bounds: StoredSettings['windowBounds']) {
+    this.data.windowBounds = bounds;
+    this.save();
   }
 
   get timeZone() {
