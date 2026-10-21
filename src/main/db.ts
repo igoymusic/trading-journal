@@ -261,7 +261,7 @@ export class JournalDb {
       ON CONFLICT (trade_id) DO UPDATE SET notes = excluded.notes, setup_id = excluded.setup_id, mistakes = excluded.mistakes, positives = excluded.positives,
         rating = excluded.rating, levels = excluded.levels, rules_followed = excluded.rules_followed, updated_at = excluded.updated_at`)
       .run(tradeId, j.notes, j.setupId, JSON.stringify(j.mistakes), JSON.stringify(j.positives ?? []), j.rating,
-        JSON.stringify({ stops: j.stops, targets: j.targets, underlyingEntry: j.underlyingEntry, underlyingExit: j.underlyingExit, boxesPlaced: j.boxesPlaced }),
+        JSON.stringify({ stops: j.stops, targets: j.targets, underlyingEntry: j.underlyingEntry, underlyingExit: j.underlyingExit, boxesPlaced: j.boxesPlaced, excluded: j.excluded || undefined }),
         j.rulesFollowed ? JSON.stringify(j.rulesFollowed) : null);
   }
 

@@ -79,6 +79,8 @@ export interface TradeJournal {
   underlyingExit?: number;
   /** Ids of the setup's playbook rules you followed on this trade; the rest count as broken. */
   rulesFollowed?: string[];
+  /** Left out of every total (day, month, reports, goals) while still listed. */
+  excluded?: boolean;
   /** Chart tickers this trade's position box has been drawn on (so one you delete stays deleted). */
   boxesPlaced?: string[];
 }
@@ -122,3 +124,6 @@ export interface MistakeTag {
 }
 
 export const CONTRACT_MULTIPLIER = 100;
+
+/** Whether a trade counts toward totals: every trade does unless you unticked its Include box. */
+export const isCounted = (t: Trade) => !t.journal?.excluded;

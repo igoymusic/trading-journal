@@ -257,3 +257,14 @@ export function DayNote({ date, initial, onSave }: { date: string; initial: stri
     />
   );
 }
+
+/** The Include box: untick it to leave a trade out of the day's (and every other) total. */
+export function IncludeBox({ trade }: { trade: Trade }) {
+  const { saveTrade } = useJournal();
+  const journal = trade.journal ?? EMPTY_JOURNAL;
+  return (
+    <input type="checkbox" checked={!journal.excluded} title="Count this trade in the totals"
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => saveTrade(trade.id, { ...journal, excluded: !e.target.checked })} />
+  );
+}
