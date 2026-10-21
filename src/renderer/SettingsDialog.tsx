@@ -115,6 +115,7 @@ export function SettingsDialog({ onClose, onSynced, onColorsChanged }: { onClose
         {removed && <p className="win">{removed}</p>}
 
         {settings && <OptionPriceToggle initial={settings.optionPriceDisplay} onChange={onColorsChanged} />}
+        {settings && <IndexChartToggle initial={settings.indexChart} />}
         {settings && <ColorsEditor initial={settings.colors} onChange={onColorsChanged} />}
 
         <h3>Time zone of your broker exports</h3>
@@ -436,6 +437,28 @@ function OptionPriceToggle({ initial, onChange }: { initial: OptionPriceDisplay;
         <button className={mode === 'contract' ? 'active' : ''} onClick={() => pick('contract')}>Price paid ($15.00)</button>
       </div>
       <p className="muted small">Used for fills, chart labels, stop and target prices, and the Avg entry and Avg exit columns.</p>
+    </>
+  );
+}
+
+/** Whether SPX trades show on a SPY chart or on SPX itself. */
+function IndexChartToggle({ initial }: { initial: 'etf' | 'index' }) {
+  const [mode, setMode] = useState(initial);
+  const pick = (next: 'etf' | 'index') => {
+    setMode(next);
+    window.journal.setIndexChart(next);
+  };
+  return (
+    <>
+      <h3>SPX trades chart on</h3>
+      <div className="toggle">
+        <button className={mode === 'etf' ? 'active' : ''} onClick={() => pick('etf')}>SPY</button>
+        <button className={mode === 'index' ? 'active' : ''} onClick={() => pick('index')}>SPX</button>
+      </div>
+      <p className="muted small">
+        SPY shows SPY's own prices, so lines and drawings match a SPY chart in TradingView. SPX uses Schwab's SPX prices
+        when you're signed in, or estimates them from SPY. Applies the next time you open a chart.
+      </p>
     </>
   );
 }

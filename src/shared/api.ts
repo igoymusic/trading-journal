@@ -124,6 +124,7 @@ export interface SettingsView {
   markerStyles: MarkerStyles;
   /** Option prices as quoted ($0.15) or as paid per contract ($15.00). */
   optionPriceDisplay: 'quote' | 'contract';
+  indexChart: 'etf' | 'index';
   /** Indicators shown on every chart. */
   indicators: Indicator[];
 }
@@ -193,6 +194,7 @@ export interface JournalApi {
   /** Saves how entry and exit markers look; null goes back to the defaults. */
   setMarkerStyles(styles: MarkerStyles | null): Promise<void>;
   setOptionPriceDisplay(mode: 'quote' | 'contract'): Promise<void>;
+  setIndexChart(mode: 'etf' | 'index'): Promise<void>;
   setIndicators(indicators: Indicator[]): Promise<void>;
   /** Minute candles from the days before `beforeDay`, enough for `count` candles of `minutes`. */
   historyMinuteBars(underlying: string, beforeDay: string, minutes: number, count: number, fromSchwab: boolean): Promise<Bar[]>;
