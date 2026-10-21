@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Bar } from '../core/alpaca';
 import { filledBy, positionAt, replayStartIndex } from '../core/replay';
 import { chartTime } from '../core/time';
+import { shownFills } from '../core/trades';
 import { dollarRiskReward } from '../core/optionLevels';
 import { averageUnderlying, bias, formatR, levelsFromExits, riskReward } from '../core/rr';
 import { indexProxy } from '../core/indexProxy';
@@ -310,13 +311,15 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
 
         <div className="fill-list">
           <div className="fill-list-head">Fills</div>
-          {trade.fills.map((f) => {
+          {shownFills(trade).map((f) => {
             const point = priceByFill.get(f.id);
             const buy = f.side === 'BUY';
+            const added = f.quantity - (trade.fills.find((x) => x.id === f.id)?.quantity ?? f.quantity);
             return (
               <div className="fill-item" key={f.id}>
                 <div>
-                  <span className={buy ? 'win' : 'loss'}>{f.orderType === 'EXPIRED' ? 'Expired' : buy ? 'Bought' : 'Sold'} {f.quantity}</span>
+                  <span className={buy ? 'win' : 'loss'}
+                    title={added ? `${f.quantity - added} filled, plus ${added} closed without an opening fill` : undefined}>{f.orderType === 'EXPIRED' ? 'Expired' : buy ? 'Bought' : 'Sold'} {f.quantity}</span>
                   <span> @ {optionUsd(f.price)}</span>
                 </div>
                 <div className="muted" title={f.account ? `From ${f.account}` : undefined}>
@@ -889,8 +892,9 @@ function chartData(chart: Extract<TradeChart, { status: 'ok' }>, trade: Trade, i
 
   // Partial fills in the same second at the same price share one marker ("B 2 @ $79.00").
   const entrySide = trade.direction === 'LONG' ? 'BUY' : 'SELL';
+  const fills = shownFills(trade);
   const groups = new Map<string, { id: string; time: number; isEntry: boolean; side: string; qty: number; optionPrice: number; underlying?: number; contract?: string }>();
-  for (const f of trade.fills) {
+  for (const f of fills) {
     const point = chart.fills.find((p) => p.fillId === f.id);
     if (!point || (until !== null && !filledBy(point.time, until))) continue;
     const contract = info?.contract.get(f.id);
@@ -904,7 +908,7 @@ function chartData(chart: Extract<TradeChart, { status: 'ok' }>, trade: Trade, i
   }
   // Average entry price per contract, to tell exits in profit from exits at a loss.
   const entries = new Map<string, { side: 'BUY' | 'SELL'; cost: number; qty: number }>();
-  for (const f of trade.fills) {
+  for (const f of fills) {
     if (!(info ? info.entryIds.has(f.id) : f.side === entrySide)) continue;
     const k = info?.contract.get(f.id) ?? '';
     const e = entries.get(k) ?? { side: f.side as 'BUY' | 'SELL', cost: 0, qty: 0 };

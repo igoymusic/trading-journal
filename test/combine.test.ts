@@ -34,3 +34,15 @@ describe('combining trades', () => {
     expect(removeMerge(merges, 'a', buildTrades(extra, merges))).toEqual([]);
   });
 });
+
+describe('shown fills', () => {
+  it('adds contracts closed without an opening fill to the first entry', async () => {
+    const { shownFills } = await import('../src/core/trades');
+    const fill = (id: string, side: 'BUY' | 'SELL', quantity: number) => ({
+      id, side, quantity, price: 1, fees: 0, execTime: `2026-10-09T14:0${id}:00`, underlying: 'SPY', expiry: '2026-10-09', strike: 600, putCall: 'CALL' as const,
+    });
+    const t = { direction: 'LONG', assumedContracts: 1, fills: [fill('1', 'BUY', 1), fill('2', 'SELL', 1), fill('3', 'SELL', 1)] } as any;
+    expect(shownFills(t).map((f) => f.quantity)).toEqual([2, 1, 1]);
+    expect(t.fills[0].quantity).toBe(1);
+  });
+});
