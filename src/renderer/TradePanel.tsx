@@ -58,6 +58,7 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
   const [replay, setReplay] = useState<{ index: number; playing: boolean; speed: number } | null>(null);
   const [tab, setTab] = useState<'chart' | 'shots'>('chart');
   const [fullscreen, setFullscreen] = useFullscreen();
+  const [height, startResize] = usePanelHeight('tradePanelHeight');
   const [hint, setHint] = useState('');
   const shotCount = useScreenshotCount(trade.id);
   const { saveTrade } = useJournal();
@@ -178,6 +179,48 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
     if (found) saveLevels(found);
   }, [chart]);
 
+  // The trade's position box is one of your drawings, so it can be moved and restyled like any other.
+  // It follows the furthest stop and target; dragging its stop or target edge moves that line.
+  const boxId = `trade-box:${trade.id}`;
+  const [styleVersion, setStyleVersion] = useState(0);
+  useEffect(() => onLevelStyleChange(() => setStyleVersion((v) => v + 1)), []);
+  const boxSynced = useRef<{ stop: number; target: number } | null>(null);
+  useEffect(() => { boxSynced.current = null; }, [trade.id, view]);
+  useEffect(() => {
+    if (!draw?.loaded || chart?.status !== 'ok') return;
+    const box = draw.list.find((d) => d.id === boxId);
+    const plan = planBox(trade, chart, levels);
+    const moved = (a: number, b: number) => Math.abs(a - b) > 0.004;
+    if (box?.kind === 'position' && plan && boxSynced.current) {
+      const was = boxSynced.current;
+      if (moved(box.stop, was.stop) || moved(box.target, was.target)) {
+        boxSynced.current = { stop: box.stop, target: box.target };
+        const furthest = (kind: LevelKind, price: number) => levels[kind].findIndex((l) => l.price === price);
+        const next = { stops: [...levels.stops], targets: [...levels.targets] };
+        if (moved(box.stop, was.stop)) { const i = furthest('stops', plan.stop); if (i >= 0) next.stops[i] = { ...next.stops[i], price: round2(box.stop) }; }
+        if (moved(box.target, was.target)) { const i = furthest('targets', plan.target); if (i >= 0) next.targets[i] = { ...next.targets[i], price: round2(box.target) }; }
+        saveLevels(next);
+        return;
+      }
+    }
+    if (!plan || !levelStyle().showBox) {
+      if (box) draw.remove(boxId);
+      boxSynced.current = null;
+      return;
+    }
+    boxSynced.current = { stop: plan.stop, target: plan.target };
+    if (!box) {
+      const style = levelStyle();
+      draw.put({
+        id: boxId, day: draw.dayFor(plan.a.time), kind: 'position', ...plan, color: '#787b86',
+        targetFill: withOpacity(targetColor().slice(0, 7), style.boxOpacity), stopFill: withOpacity(stopColor().slice(0, 7), style.boxOpacity),
+        labels: draw.styleSettings.positionLabels,
+      });
+    } else if (box.kind === 'position' && (moved(box.stop, plan.stop) || moved(box.target, plan.target) || box.ratio !== plan.ratio || box.side !== plan.side)) {
+      draw.put({ ...box, stop: plan.stop, target: plan.target, ratio: plan.ratio, side: plan.side });
+    }
+  }, [draw?.loaded, draw?.list, chart, levelsKey, styleVersion]);
+
   function placeLevel(price: number) {
     if (!placing) return;
     const allocated = levels[placing].reduce((a, l) => a + l.contracts, 0);
@@ -196,6 +239,7 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
   return (
     <section
       className={`trade-panel ${fullscreen ? 'fullscreen' : ''}`}
+      style={fullscreen || chartsOff ? undefined : { height }}
       ref={sectionRef}
       tabIndex={-1}
       // Clicking anywhere in the panel lets Ctrl+V paste into it.
@@ -327,11 +371,35 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
           )}
         </div>
       </div>
+      {!fullscreen && <PanelResizer onStart={startResize} />}
     </section>
   );
 }
 
 /** Full screen for a chart panel; Esc leaves it. */
+/**
+ * The trade's long or short box: from your first entry to your last exit (or the latest candle while
+ * open), between your furthest stop and furthest target, labeled with the planned R:R from all of
+ * them. Null until there's both a stop and a target.
+ */
+function planBox(trade: Trade, chart: Extract<TradeChart, { status: 'ok' }>, levels: Levels) {
+  if (!levels.stops.length || !levels.targets.length) return null;
+  const entrySide = trade.direction === 'LONG' ? 'BUY' : 'SELL';
+  const at = (id: string) => chart.fills.find((p) => p.fillId === id);
+  const entries = trade.fills.filter((f) => f.side === entrySide);
+  const entryTime = at(entries[0]?.id ?? '')?.time;
+  const entryPrice = averageUnderlying(entries.map((f) => ({ quantity: f.quantity, underlying: at(f.id)?.underlyingPrice })));
+  if (entryTime === undefined || entryPrice === undefined) return null;
+  const dir = bias(trade);
+  const prices = (ls: PriceLevel[]) => ls.map((l) => l.price);
+  const stop = dir === 1 ? Math.min(...prices(levels.stops)) : Math.max(...prices(levels.stops));
+  const target = dir === 1 ? Math.max(...prices(levels.targets)) : Math.min(...prices(levels.targets));
+  const lastFill = chart.fills[chart.fills.length - 1]?.time ?? entryTime;
+  const end = trade.status === 'CLOSED' && lastFill > entryTime ? lastFill : chart.bars[chart.bars.length - 1]?.time ?? entryTime;
+  const ratio = riskReward(trade, { ...EMPTY_JOURNAL, stops: levels.stops, targets: levels.targets, underlyingEntry: entryPrice })?.plannedR;
+  return { side: dir === 1 ? 'long' as const : 'short' as const, a: { time: entryTime, price: round2(entryPrice) }, end, stop, target, ratio };
+}
+
 /** Flips an SPX trade's chart between SPY (the main one) and SPX. */
 export function ChartViewSwitch({ underlying, view, onChange }: { underlying: string; view: ChartView; onChange: (v: ChartView) => void }) {
   const etf = indexProxy(underlying)?.etf ?? '';
@@ -342,6 +410,31 @@ export function ChartViewSwitch({ underlying, view, onChange }: { underlying: st
       <button className={view === 'index' ? 'active' : ''} onClick={() => onChange('index')}>{index}</button>
     </div>
   );
+}
+
+/** A panel's height, saved on this computer, and a handler that starts dragging its bottom edge. */
+export function usePanelHeight(key: string, initial = 460): [number, (e: React.MouseEvent) => void] {
+  const [height, setHeight] = useState(() => { try { return Number(localStorage.getItem(key)) || initial; } catch { return initial; } });
+  const start = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const fromY = e.clientY;
+    const fromH = height;
+    let h = fromH;
+    const move = (m: MouseEvent) => { h = Math.round(Math.max(260, Math.min(window.innerHeight * 1.5, fromH + m.clientY - fromY))); setHeight(h); };
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+      try { localStorage.setItem(key, String(h)); } catch { /* not remembered; fine */ }
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  };
+  return [height, start];
+}
+
+/** The strip along a panel's bottom edge that resizes it. */
+export function PanelResizer({ onStart }: { onStart: (e: React.MouseEvent) => void }) {
+  return <div className="panel-resize" title="Drag to make the chart taller or shorter" onMouseDown={onStart} />;
 }
 
 export function useFullscreen(): [boolean, (on: boolean) => void] {
@@ -709,22 +802,13 @@ export function PriceChart({ trade, chart, interval, levels, placing, onPlace, o
           axisLabelVisible: true,
           title: `${kind === 'stops' ? 'Stop' : 'Target'} ×${l.contracts}`,
         }));
+        // A line at one of your exits starts at that exit's marker; the rest start at your entry.
+        const exit = trade.fills.filter((f) => f.side !== entrySide).map((f) => chart.fills.find((p) => p.fillId === f.id))
+          .find((p) => p?.underlyingPrice !== undefined && Math.abs(p.underlyingPrice - l.price) <= l.price * 0.0001);
         extras.push({
-          id: `level:${kind}:${i}`, day: '', kind: 'hline', price: l.price, from: entryTime,
+          id: `level:${kind}:${i}`, day: '', kind: 'hline', price: l.price, from: exit?.time ?? entryTime,
           color: withOpacity(color.slice(0, 7), style.lineOpacity), width: style.width, ...(style.dash !== 'solid' ? { dash: style.dash } : {}),
         });
-      });
-    }
-    // The position box: entry to your furthest stop and furthest target, from entry to exit.
-    const dir = bias(trade);
-    if (style.showBox && entryTime !== undefined && entryPrice !== undefined && levels.stops.length && levels.targets.length) {
-      const stop = dir === 1 ? Math.min(...levels.stops.map((l) => l.price)) : Math.max(...levels.stops.map((l) => l.price));
-      const target = dir === 1 ? Math.max(...levels.targets.map((l) => l.price)) : Math.min(...levels.targets.map((l) => l.price));
-      const lastFill = chart.fills[chart.fills.length - 1]?.time ?? entryTime;
-      const end = trade.status === 'CLOSED' && lastFill > entryTime ? lastFill : chart.bars[chart.bars.length - 1]?.time ?? entryTime;
-      extras.unshift({
-        id: 'level:position', day: '', kind: 'position', side: dir === 1 ? 'long' : 'short', a: { time: entryTime, price: entryPrice }, end, stop, target, ratio: riskReward(trade, { ...EMPTY_JOURNAL, stops: levels.stops, targets: levels.targets, underlyingEntry: entryPrice })?.plannedR,
-        color: '#00000000', targetFill: withOpacity(targetColor().slice(0, 7), style.boxOpacity), stopFill: withOpacity(stopColor().slice(0, 7), style.boxOpacity),
       });
     }
     if (drawings) {

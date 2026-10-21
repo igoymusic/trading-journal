@@ -478,9 +478,20 @@ class Renderer implements IPrimitivePaneRenderer {
         const reward = Math.abs(d.target - d.a.price);
         const cx = left + w / 2;
         const pct = (p: number) => `${((Math.abs(p - d.a.price) / d.a.price) * 100).toFixed(2)}%`;
-        pill(`Target ${fmt(d.target)} (${fmt(reward)}, ${pct(d.target)})`, cx, yt + (yt < ye ? -12 : 12), targetFill.slice(0, 7));
-        pill(`Stop ${fmt(d.stop)} (${fmt(risk)}, ${pct(d.stop)})`, cx, ys + (ys > ye ? 12 : -12), stopFill.slice(0, 7));
-        pill(`${d.side === 'long' ? 'Long' : 'Short'} ${fmt(d.a.price)} · R:R ${d.ratio !== undefined ? d.ratio.toFixed(2) : risk ? (reward / risk).toFixed(2) : '–'}`, cx, ye, '#5d606b');
+        const show = { price: true, distance: true, percent: true, ratio: true, ...d.labels };
+        // "Target 770.76 (1.61, 0.21%)", leaving out whatever's switched off.
+        const levelText = (name: string, price: number, move: number) => {
+          const extra = [show.distance ? fmt(move) : '', show.percent ? pct(price) : ''].filter(Boolean).join(', ');
+          const main = show.price ? `${name} ${fmt(price)}` : extra ? name : '';
+          return main ? `${main}${extra ? ` (${extra})` : ''}` : '';
+        };
+        const targetText = levelText('Target', d.target, reward);
+        const stopText = levelText('Stop', d.stop, risk);
+        if (targetText) pill(targetText, cx, yt + (yt < ye ? -12 : 12), targetFill.slice(0, 7));
+        if (stopText) pill(stopText, cx, ys + (ys > ye ? 12 : -12), stopFill.slice(0, 7));
+        const ratio = `R:R ${d.ratio !== undefined ? d.ratio.toFixed(2) : risk ? (reward / risk).toFixed(2) : '–'}`;
+        const middle = [show.price ? `${d.side === 'long' ? 'Long' : 'Short'} ${fmt(d.a.price)}` : '', show.ratio ? ratio : ''].filter(Boolean).join(' · ');
+        if (middle) pill(middle, cx, ye, '#5d606b');
         if (selected) this.handles(ctx, d);
         break;
       }

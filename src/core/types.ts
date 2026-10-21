@@ -64,7 +64,7 @@ export interface Trade {
   assumedContracts?: number;
 }
 
-/** What you record about a trade: the setup it was, mistakes made, a 1-5 rating and free notes. */
+/** What you record about a trade: the setup it was, mistakes made, a 0.5-5 rating (half stars) and free notes. */
 export interface TradeJournal {
   notes: string;
   setupId: string | null;

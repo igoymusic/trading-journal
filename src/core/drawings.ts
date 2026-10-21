@@ -24,6 +24,9 @@ interface DrawingBase {
   extendRight?: boolean;
 }
 
+/** Which parts of a position's labels show. Missing means shown. */
+export interface PositionLabels { price?: boolean; distance?: boolean; percent?: boolean; ratio?: boolean }
+
 export interface FibLevel { value: number; color: string; visible: boolean }
 
 /** TradingView's default retracement levels. */
@@ -45,7 +48,7 @@ export type Drawing = DrawingBase & (
   | { kind: 'text'; a: ChartPoint; text: string }
   | { kind: 'fib'; a: ChartPoint; b: ChartPoint; levels: FibLevel[]; reverse?: boolean }
   /** A long or short position: entry at `a`, out to `end`, with stop and target prices. */
-  | { kind: 'position'; side: 'long' | 'short'; a: ChartPoint; end: number; stop: number; target: number; stopFill?: string; targetFill?: string; /** R:R to show instead of the box's own (the trade's, from all its stops and targets). */ ratio?: number }
+  | { kind: 'position'; side: 'long' | 'short'; a: ChartPoint; end: number; stop: number; target: number; stopFill?: string; targetFill?: string; /** R:R to show instead of the box's own (the trade's, from all its stops and targets). */ ratio?: number; labels?: PositionLabels }
   /** Two parallel lines: a-b, and the same line moved by `offset` in price. */
   | { kind: 'channel'; a: ChartPoint; b: ChartPoint; offset: number }
   /** Connected points; `brush` is freehand (smoothed, moved as a whole). */

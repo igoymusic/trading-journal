@@ -173,7 +173,7 @@ export function buildReports(trades: Trade[], setups: Setup[], mistakes: Mistake
     }),
     rulesBroken: groupBy(trades, setups.flatMap((s) => (s.rules ?? []).map((r) => ({ key: r.id, label: `${r.text} (${s.name})` }))),
       (t) => playbookScore(t, setups)?.broken.map((r) => r.id) ?? []),
-    rating: groupBy(trades, [5, 4, 3, 2, 1].map((n) => ({ key: String(n), label: '★'.repeat(n) })).concat({ key: 'none', label: 'Not rated' }),
+    rating: groupBy(trades, [5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1, 0.5].map((n) => ({ key: String(n), label: '★'.repeat(Math.floor(n)) + (n % 1 ? '½' : '') })).concat({ key: 'none', label: 'Not rated' }),
       (t) => [t.journal?.rating ? String(t.journal.rating) : 'none']),
   };
 }
