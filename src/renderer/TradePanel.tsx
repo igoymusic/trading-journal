@@ -22,6 +22,7 @@ import { DrawingsPrimitive, withOpacity, type Xy } from './drawingsPrimitive';
 import { levelStyle, onLevelStyleChange, stopColor, targetColor } from './levelStyle';
 import { holdTime, pnlClass, shortDate, signedUsd, optionUsd, usd } from './format';
 import { useJournal } from './journal';
+import { InfoTip } from './InfoTip';
 import { useChartIndicators } from './useChartIndicators';
 import { applyTo, record, setApplier } from './chartHistory';
 
@@ -998,7 +999,9 @@ function RiskPanel({ trade, priceSymbol, levels, placing, onPlacing, onChange, c
   const losing = trade.status === 'CLOSED' && trade.netPnl < 0;
   return (
     <div className="risk">
-      <div className="fill-list-head">Risk and reward</div>
+      <div className="fill-list-head">Risk and reward
+        <InfoTip>Lines start at your actual exits: winners as targets, losers as stops. Drag a line on the chart to move it. A line at one of your exits uses that exit's fill price. Others marked ≈ are estimated from your entry fill; the rest are what the option traded at when the underlying got there.</InfoTip>
+      </div>
       <div className="risk-buttons">
         {(['stops', 'targets'] as const).map((kind) => (
           <button key={kind} className={`${placing === kind ? 'active' : ''} ${kind}`} onClick={() => onPlacing(placing === kind ? null : kind)}>
@@ -1056,9 +1059,6 @@ function RiskPanel({ trade, priceSymbol, levels, placing, onPlacing, onChange, c
         <div className="muted small">Add a stop to measure this trade in R.</div>
       )}
       {rr && losing && !levels.targets.length && <div className="muted small">Losing trade: add the target you were aiming for to see its planned R:R.</div>}
-      {levels.stops.length + levels.targets.length > 0 && (
-        <div className="muted small">Lines start at your actual exits: winners as targets, losers as stops. Drag a line on the chart to move it. A line at one of your exits uses that exit's fill price. Others marked ≈ are estimated from your entry fill; the rest are what the option traded at when the underlying got there.</div>
-      )}
     </div>
   );
 }
