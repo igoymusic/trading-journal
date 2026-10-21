@@ -25,7 +25,7 @@ button:hover { filter: brightness(1.15); }
 
 .notice { margin: 12px 20px 0; padding: 8px 12px; border-radius: 4px; background: var(--panel-2); border-left: 3px solid var(--blue); cursor: pointer; }
 
-.summary { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; padding: 16px 20px; }
+.summary { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 12px; padding: 16px 20px; }
 .tile { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; }
 .tile-label { color: var(--muted); font-size: 12px; }
 .tile-value { font-size: 22px; font-weight: 600; margin-top: 2px; font-variant-numeric: tabular-nums; }

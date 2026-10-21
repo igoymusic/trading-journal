@@ -76,7 +76,7 @@ describe('reports', () => {
 
   it('breaks results out by setup, with win rate, profit factor and average R', () => {
     expect(r.setup).toEqual([
-      { key: 'orb', label: 'ORB', trades: 2, wins: 1, winRate: 0.5, netPnl: 30, avgPnl: 15, profitFactor: 2.5, avgR: 2, rTrades: 1 },
+      { key: 'orb', label: 'ORB', trades: 2, wins: 1, winRate: 0.5, netPnl: 30, avgPnl: 15, profitFactor: 2.5, avgR: 2, totalR: 2, rTrades: 1 },
       expect.objectContaining({ key: 'none', trades: 2, netPnl: 20 }),
     ]);
   });

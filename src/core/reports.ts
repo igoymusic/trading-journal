@@ -85,6 +85,8 @@ export interface ReportRow {
   profitFactor: number | null;
   /** Average R over the trades that have a stop set, and how many that is. */
   avgR: number | null;
+  /** Realized R added up over those trades. */
+  totalR: number | null;
   rTrades: number;
 }
 
@@ -105,6 +107,7 @@ function row(key: string, label: string, trades: Trade[]): ReportRow {
     avgPnl: trades.length ? round2(net / trades.length) : 0,
     profitFactor: grossLoss ? Math.round((grossWin / grossLoss) * 100) / 100 : null,
     avgR: rs.length ? Math.round((rs.reduce((a, r) => a + r, 0) / rs.length) * 100) / 100 : null,
+    totalR: rs.length ? Math.round(rs.reduce((a, r) => a + r, 0) * 100) / 100 : null,
     rTrades: rs.length,
   };
 }

@@ -113,6 +113,7 @@ const COLS: { id: string; label: string; title?: string; value: (r: ReportRow) =
   { id: 'netPnl', label: 'Net P&L', value: (r) => r.netPnl },
   { id: 'avgPnl', label: 'Avg', value: (r) => r.avgPnl },
   { id: 'pf', label: 'PF', title: 'Total won divided by total lost. Above 1 means it made money.', value: (r) => r.profitFactor },
+  { id: 'totalR', label: 'Total R', title: 'Realized R added up over the trades that have a stop line set', value: (r) => r.totalR },
   { id: 'avgR', label: 'Avg R', title: 'Average R over the trades that have a stop line set', value: (r) => r.avgR },
 ];
 
@@ -165,6 +166,7 @@ function ReportCard({ sectionKey, title, hint, rows: unsorted, collapsed, draggi
             <th className="bar-col" />
             {header('avgPnl')}
             {header('pf')}
+            {header('totalR')}
             {header('avgR')}
           </tr>
         </thead>
@@ -182,6 +184,9 @@ function ReportCard({ sectionKey, title, hint, rows: unsorted, collapsed, draggi
               </td>
               <td className={`num ${pnlClass(r.avgPnl)}`}>{signedUsd(r.avgPnl)}</td>
               <td className="num">{r.profitFactor === null ? '—' : r.profitFactor.toFixed(2)}</td>
+              <td className={`num ${r.totalR === null ? '' : pnlClass(r.totalR)}`} title={r.rTrades ? `${r.rTrades} of ${r.trades} trades have a stop` : 'No trades here have a stop line'}>
+                {r.totalR === null ? '—' : formatR(r.totalR)}
+              </td>
               <td className="num" title={r.rTrades ? `${r.rTrades} of ${r.trades} trades have a stop` : 'No trades here have a stop line'}>
                 {r.avgR === null ? '—' : formatR(r.avgR)}
               </td>
