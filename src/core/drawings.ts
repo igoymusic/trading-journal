@@ -25,7 +25,7 @@ interface DrawingBase {
 }
 
 /** Which parts of a position's labels show. Missing means shown. */
-export interface PositionLabels { price?: boolean; distance?: boolean; percent?: boolean; ratio?: boolean }
+export interface PositionLabels { names?: boolean; price?: boolean; distance?: boolean; percent?: boolean; ratio?: boolean }
 
 export interface FibLevel { value: number; color: string; visible: boolean }
 

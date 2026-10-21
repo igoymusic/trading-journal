@@ -256,7 +256,7 @@ const TOOLS: { tool: Tool; icon: string; title: string }[] = [
   { tool: 'text', icon: 'T', title: 'Note' },
 ];
 
-const POSITION_LABELS: [keyof PositionLabels, string][] = [['price', 'Prices'], ['distance', 'Distance'], ['percent', 'Percent'], ['ratio', 'R:R']];
+const POSITION_LABELS: [keyof PositionLabels, string][] = [['names', 'Stop and Target words'], ['price', 'Price'], ['distance', 'Distance'], ['percent', 'Percent'], ['ratio', 'R:R']];
 
 const HAS_FILL = new Set(['rect', 'range', 'fib', 'ellipse', 'channel', 'path']);
 

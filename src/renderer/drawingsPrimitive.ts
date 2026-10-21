@@ -478,12 +478,12 @@ class Renderer implements IPrimitivePaneRenderer {
         const reward = Math.abs(d.target - d.a.price);
         const cx = left + w / 2;
         const pct = (p: number) => `${((Math.abs(p - d.a.price) / d.a.price) * 100).toFixed(2)}%`;
-        const show = { price: true, distance: true, percent: true, ratio: true, ...d.labels };
-        // "Target 770.76 (1.61, 0.21%)", leaving out whatever's switched off.
+        const show = { names: true, price: true, distance: true, percent: true, ratio: true, ...d.labels };
+        // "Target 770.76 ($1.61, 0.21%)", leaving out whatever's switched off.
         const levelText = (name: string, price: number, move: number) => {
-          const extra = [show.distance ? fmt(move) : '', show.percent ? pct(price) : ''].filter(Boolean).join(', ');
-          const main = show.price ? `${name} ${fmt(price)}` : extra ? name : '';
-          return main ? `${main}${extra ? ` (${extra})` : ''}` : '';
+          const extra = [show.distance ? `$${fmt(move)}` : '', show.percent ? pct(price) : ''].filter(Boolean).join(', ');
+          const main = [show.names ? name : '', show.price ? fmt(price) : ''].filter(Boolean).join(' ');
+          return main ? `${main}${extra ? ` (${extra})` : ''}` : extra;
         };
         const targetText = levelText('Target', d.target, reward);
         const stopText = levelText('Stop', d.stop, risk);
