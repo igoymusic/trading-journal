@@ -365,7 +365,10 @@ function SummaryBar({ s }: { s: Summary }) {
   const tiles: { label: string; value: string; tone?: string; sub?: string }[] = [
     { label: 'Net P&L', value: signedUsd(s.netPnl), tone: pnlClass(s.netPnl), sub: `${usd(s.fees)} fees` },
     { label: 'Win rate', value: `${(s.winRate * 100).toFixed(1)}%`, sub: `${s.wins} W / ${s.losses} L` },
-    { label: 'Profit factor', value: s.profitFactor.toFixed(2), tone: s.profitFactor >= 1 ? 'win' : 'loss' },
+    // Total won ÷ total lost. With wins and no losses it's unlimited, not zero.
+    s.losses === 0 && s.wins > 0
+      ? { label: 'Profit factor', value: '∞', tone: 'win' }
+      : { label: 'Profit factor', value: s.profitFactor.toFixed(2), tone: s.profitFactor >= 1 ? 'win' : 'loss' },
     { label: 'Avg win', value: signedUsd(s.avgWin), tone: 'win' },
     { label: 'Avg loss', value: signedUsd(s.avgLoss), tone: 'loss' },
     { label: 'Trades', value: String(s.trades) },
