@@ -280,6 +280,7 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
               </div>
             );
           })}
+          <CombineBox trade={trade} />
           {chart?.status === 'ok' && (
             <RiskPanel
               trade={trade}
@@ -906,6 +907,43 @@ function RiskPanel({ trade, levels, placing, onPlacing, onChange, canMeasure, rr
       {rr && losing && !levels.targets.length && <div className="muted small">Losing trade: add the target you were aiming for to see its planned R:R.</div>}
       {levels.stops.length + levels.targets.length > 0 && (
         <div className="muted small">Lines start at your actual exits: winners as targets, losers as stops. Drag a line on the chart to move it. Option prices marked ≈ are estimates; the rest are what the option traded at when the underlying got there.</div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Combine this trade with others on the same contract, e.g. when a closing fill has no opening
+ * fill and shows up as its own open trade. A combined trade can be split back apart.
+ */
+function CombineBox({ trade }: { trade: Trade }) {
+  const { trades, combineTrades, splitTrade } = useJournal();
+  const [pick, setPick] = useState('');
+  const same = (t: Trade) => t.underlying === trade.underlying && t.expiry === trade.expiry && t.strike === trade.strike && t.putCall === trade.putCall;
+  const others = trades.filter((t) => t.id !== trade.id && same(t)).sort((a, b) => a.openTime.localeCompare(b.openTime));
+  const label = (t: Trade) => `${shortDate(t.openTime.slice(0, 10))} ${t.openTime.slice(11, 16)} · ${t.direction === 'LONG' ? 'Long' : 'Short'} ${t.maxContracts}`
+    + ` · ${t.status === 'OPEN' ? 'open' : signedUsd(t.netPnl)}${t.merged ? ` · ${t.merged.length} combined` : ''}`;
+  return (
+    <div className="combine-box">
+      {trade.merged && (
+        <div className="combine-row">
+          <span className="muted">Combined from {trade.merged.length} trades.</span>
+          <button onClick={() => splitTrade(trade.id)} title="Show them as separate trades again">Split apart</button>
+        </div>
+      )}
+      {!!trade.assumedContracts && (
+        <div className="muted combine-note">
+          {trade.assumedContracts} contract{trade.assumedContracts === 1 ? ' was' : 's were'} closed without an opening fill, so {trade.assumedContracts === 1 ? 'it counts' : 'they count'} as {trade.direction === 'LONG' ? 'bought' : 'sold'} at the average entry.
+        </div>
+      )}
+      {others.length > 0 && (
+        <div className="combine-row">
+          <select value={pick} onChange={(e) => setPick(e.target.value)} aria-label="Trade to combine with">
+            <option value="">Combine with another {trade.underlying} {trade.strike}{trade.putCall === 'CALL' ? 'C' : 'P'} trade…</option>
+            {others.map((t) => <option key={t.id} value={t.id}>{label(t)}</option>)}
+          </select>
+          <button disabled={!pick} onClick={() => { combineTrades([trade.id, pick]); setPick(''); }} title="Count these as one trade">Combine</button>
+        </div>
       )}
     </div>
   );

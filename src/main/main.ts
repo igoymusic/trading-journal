@@ -4,7 +4,7 @@ import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electro
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseTosStatement } from '../core/tosCsv';
-import { buildTrades, summarizeTrades } from '../core/trades';
+import { addMerge, buildTrades, removeMerge, summarizeTrades, type TradeMerges } from '../core/trades';
 import type { MistakeTag, PriceLevel, Setup, TradeJournal } from '../core/types';
 import type { ImportResult, JournalData, LabelOffset, TradeChart } from '../shared/api';
 import type { MarkerStyles } from '../core/markerStyles';
@@ -39,9 +39,18 @@ function importFile(file: string): ImportResult {
   return { file: path.basename(file), found: fills.length, added, duplicates: fills.length - added, skipped: skipped.length, unmatchedFees };
 }
 
+/** Trades you combined by hand, saved in the journal database. */
+function tradeMerges(): TradeMerges {
+  try { return JSON.parse(db.getMeta('trade-merges') ?? '[]'); } catch { return []; }
+}
+
+function allTrades() {
+  return buildTrades(db.allFills(), tradeMerges());
+}
+
 function journalData(): JournalData {
   const journals = db.tradeJournals();
-  const trades = buildTrades(db.allFills()).map((t) => ({ ...t, journal: journals.get(t.id) }));
+  const trades = allTrades().map((t) => ({ ...t, journal: journals.get(t.id) }));
   return { trades, summary: summarizeTrades(trades), setups: db.setups(), mistakes: db.mistakeTags(), positives: db.positiveTags(), dayNotes: db.dayNotes() };
 }
 
@@ -128,6 +137,14 @@ app.whenReady().then(async () => {
   ipcMain.handle('journal:saveSetups', (_event, setups: Setup[]) => db.saveSetups(setups));
   ipcMain.handle('journal:saveMistakes', (_event, mistakes: MistakeTag[]) => db.saveMistakeTags(mistakes));
   ipcMain.handle('journal:savePositives', (_event, positives: MistakeTag[]) => db.savePositiveTags(positives));
+  ipcMain.handle('trades:combine', (_event, ids: string[]) => {
+    db.setMeta('trade-merges', JSON.stringify(addMerge(tradeMerges(), ids, allTrades())));
+    return journalData();
+  });
+  ipcMain.handle('trades:split', (_event, id: string) => {
+    db.setMeta('trade-merges', JSON.stringify(removeMerge(tradeMerges(), id, allTrades())));
+    return journalData();
+  });
   ipcMain.handle('journal:saveDayNote', (_event, date: string, notes: string) => db.saveDayNote(date, notes));
 
   ipcMain.handle('drawings:get', (_event, symbol: string, days: string[]) => db.drawings(symbol, days));
@@ -153,7 +170,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('shots:remove', (_event, id: string) => shots.remove(id));
 
   ipcMain.handle('market:dayChart', async (_event, date: string, underlying: string): Promise<TradeChart> => {
-    const day = dayChartTrade(buildTrades(db.allFills()), date, underlying);
+    const day = dayChartTrade(allTrades(), date, underlying);
     if (!day) return { status: 'error', message: 'No trades on this day.' };
     try {
       return await buildTradeChart(day.trade, db, settings, undefined, chartSource());
@@ -162,7 +179,7 @@ app.whenReady().then(async () => {
     }
   });
   ipcMain.handle('market:tradeChart', async (_event, tradeId: string): Promise<TradeChart> => {
-    const trade = buildTrades(db.allFills()).find((t) => t.id === tradeId);
+    const trade = allTrades().find((t) => t.id === tradeId);
     if (!trade) return { status: 'error', message: 'Trade not found.' };
     try {
       return await buildTradeChart(trade, db, settings, undefined, chartSource());
@@ -172,7 +189,7 @@ app.whenReady().then(async () => {
   });
 
   ipcMain.handle('market:levelPrices', async (_event, tradeId: string, stops: PriceLevel[], targets: PriceLevel[]) => {
-    const trade = buildTrades(db.allFills()).find((t) => t.id === tradeId);
+    const trade = allTrades().find((t) => t.id === tradeId);
     if (!trade) return null;
     try {
       return await levelOptionPrices(trade, stops, targets, db, settings);

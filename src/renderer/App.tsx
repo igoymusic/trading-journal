@@ -60,7 +60,8 @@ export function App() {
   const [filter, setFilter] = useState<TradeFilter>(EMPTY_FILTER);
   const filtered = useMemo(() => applyFilter(data?.trades ?? [], filter), [data, filter]);
   const filterTab = tabs.active === 'trades' || tabs.active === 'reports';
-  const selected = data?.trades.find((t) => t.id === selectedId) ?? null;
+  // A trade you just combined lives on inside the combined one.
+  const selected = data?.trades.find((t) => t.id === selectedId) ?? data?.trades.find((t) => selectedId && t.merged?.includes(selectedId)) ?? null;
   const activeDay = tabs.active.startsWith('day:') ? tabs.active.slice(4) : null;
   const activeMonth = tabs.active.startsWith('month:')
     ? { year: Number(tabs.active.slice(6, 10)), month: Number(tabs.active.slice(11, 13)) }
@@ -73,6 +74,9 @@ export function App() {
     setups: data?.setups ?? [],
     mistakes: data?.mistakes ?? [],
     positives: data?.positives ?? [],
+    trades: data?.trades ?? [],
+    combineTrades(ids) { window.journal.combineTrades(ids).then(setData); },
+    splitTrade(id) { window.journal.splitTrade(id).then(setData); },
     saveTrade(tradeId, journal) {
       setData((d) => d && { ...d, trades: d.trades.map((t) => (t.id === tradeId ? { ...t, journal } : t)) });
       window.journal.saveTradeJournal(tradeId, journal);
@@ -104,7 +108,7 @@ export function App() {
       });
       window.journal.savePositives(positives);
     },
-  }), [data?.setups, data?.mistakes, data?.positives]);
+  }), [data?.setups, data?.mistakes, data?.positives, data?.trades]);
 
   function saveDayNote(date: string, notes: string) {
     setData((d) => d && { ...d, dayNotes: { ...d.dayNotes, [date]: notes } });
