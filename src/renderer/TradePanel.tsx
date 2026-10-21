@@ -8,8 +8,9 @@ import { filledBy, positionAt, replayStartIndex } from '../core/replay';
 import { chartTime } from '../core/time';
 import { dollarRiskReward } from '../core/optionLevels';
 import { averageUnderlying, formatR, levelsFromExits, riskReward } from '../core/rr';
+import { indexProxy } from '../core/indexProxy';
 import { EMPTY_JOURNAL, type PriceLevel, type Trade } from '../core/types';
-import type { LevelPrices, TradeChart } from '../shared/api';
+import type { ChartView, LevelPrices, TradeChart } from '../shared/api';
 import { type FillMarker, FillMarkersPrimitive } from './fillMarkers';
 import { exitKind } from '../core/markerStyles';
 import { onMarkerStylesChange } from './markerStyles';
@@ -49,6 +50,7 @@ function aggregate(bars: Bar[], minutes: Interval): Bar[] {
 
 export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; onClose?: () => void; onOpenSettings: () => void }) {
   const [chart, setChart] = useState<TradeChart | null>(null);
+  const [view, setView] = useState<ChartView>('etf');
   const [interval, setInterval] = useState<Interval>(1);
   const [placing, setPlacing] = useState<LevelKind | null>(null);
   // Replay: which minute bar is showing, whether it's playing, and how many candles a second.
@@ -60,16 +62,20 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
   const { saveTrade } = useJournal();
   const sectionRef = useRef<HTMLElement>(null);
   const journal = trade.journal ?? EMPTY_JOURNAL;
-  const levels: Levels = { stops: journal.stops ?? [], targets: journal.targets ?? [] };
+  const savedLevels: Levels = { stops: journal.stops ?? [], targets: journal.targets ?? [] };
 
+  // Each trade opens on the main chart (SPY for SPX trades).
+  useEffect(() => setView('etf'), [trade.id]);
   useEffect(() => {
     setChart(null);
     setReplay(null);
-    window.journal.getTradeChart(trade.id).then(setChart);
-  }, [trade.id]);
+    window.journal.getTradeChart(trade.id, view).then(setChart, (err: Error) => setChart({ status: 'error', message: err.message }));
+  }, [trade.id, view]);
 
   const bars = chart?.status === 'ok' ? chart.bars : [];
-  const draw = useDrawings(trade.underlying, bars[0]?.time, bars[bars.length - 1]?.time);
+  // What the chart's prices are in: SPY for an SPX trade charted on SPY.
+  const priceSymbol = chart?.status === 'ok' ? chart.symbol : trade.underlying;
+  const draw = useDrawings(priceSymbol, bars[0]?.time, bars[bars.length - 1]?.time);
   useEffect(() => {
     if (!hint) return;
     const t = window.setTimeout(() => setHint(''), 5000);
@@ -132,6 +138,14 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
   const underlyingExit = trade.status === 'CLOSED' ? averageUnderlying(withPrices.filter((f) => f.side !== entrySide)) : undefined;
   const rr = riskReward(trade, journal);
 
+  // Lines are saved in the prices of the chart they were set on. On the other chart (SPX instead of
+  // SPY, about 10 times higher) they're moved by the same factor as the entry price.
+  const ratio = underlyingEntry && journal.underlyingEntry ? underlyingEntry / journal.underlyingEntry : 1;
+  const levelScale = ratio > 2 || ratio < 0.5 ? ratio : 1;
+  const scaleLevels = (ls: PriceLevel[]) => (levelScale === 1 ? ls : ls.map((l) => ({ ...l, price: round2(l.price * levelScale) })));
+  const levels: Levels = { stops: scaleLevels(savedLevels.stops), targets: scaleLevels(savedLevels.targets) };
+  const rrShown = rr && { ...rr, risk: rr.risk * levelScale };
+
   // What the option would have been worth at each line (real price or estimate), for dollar risk.
   const [levelPrices, setLevelPrices] = useState<LevelPrices | null>(null);
   const levelsKey = JSON.stringify(levels);
@@ -139,7 +153,7 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
     if (chart?.status !== 'ok' || !levels.stops.length && !levels.targets.length) { setLevelPrices(null); return; }
     let current = true;
     const timer = setTimeout(() => {
-      window.journal.getLevelPrices(trade.id, levels.stops, levels.targets).then((p) => { if (current) setLevelPrices(p); });
+      window.journal.getLevelPrices(trade.id, levels.stops, levels.targets, view).then((p) => { if (current) setLevelPrices(p); });
     }, 250);
     return () => { current = false; clearTimeout(timer); };
   }, [chart, levelsKey]);
@@ -210,6 +224,7 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
               {replay ? 'End replay' : '▶ Replay'}
             </button>
           )}
+          {tab === 'chart' && indexProxy(trade.underlying) && <ChartViewSwitch underlying={trade.underlying} view={view} onChange={setView} />}
           {tab === 'chart' && !chartsOff && [1, 5, 15].map((m) => (
             <button key={m} className={interval === m ? 'active' : ''} onClick={() => setInterval(m as Interval)}>{m}m</button>
           ))}
@@ -274,7 +289,7 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
                 </div>
                 {(!chart || chart.status === 'ok') && (
                   <div className="muted">
-                    {trade.underlying} {point?.underlyingPrice !== undefined ? <b className="underlying-price">{usd(point.underlyingPrice)}</b> : chart || f.timeExact === false ? 'n/a' : '…'}
+                    {priceSymbol} {point?.underlyingPrice !== undefined ? <b className="underlying-price">{usd(point.underlyingPrice)}</b> : chart || f.timeExact === false ? 'n/a' : '…'}
                   </div>
                 )}
               </div>
@@ -283,12 +298,13 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
           {chart?.status === 'ok' && (
             <RiskPanel
               trade={trade}
+              priceSymbol={priceSymbol}
               levels={levels}
               placing={placing}
               onPlacing={setPlacing}
               onChange={changeLevel}
               canMeasure={underlyingEntry !== undefined}
-              rr={rr}
+              rr={rrShown}
               prices={levelPrices}
             />
           )}
@@ -314,6 +330,18 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
 }
 
 /** Full screen for a chart panel; Esc leaves it. */
+/** Flips an SPX trade's chart between SPY (the main one) and SPX. */
+export function ChartViewSwitch({ underlying, view, onChange }: { underlying: string; view: ChartView; onChange: (v: ChartView) => void }) {
+  const etf = indexProxy(underlying)?.etf ?? '';
+  const index = underlying.toUpperCase() === 'XSP' ? 'XSP' : 'SPX';
+  return (
+    <div className="view-tabs" title={`Show this on ${etf}'s chart or on ${index}`}>
+      <button className={view === 'etf' ? 'active' : ''} onClick={() => onChange('etf')}>{etf}</button>
+      <button className={view === 'index' ? 'active' : ''} onClick={() => onChange('index')}>{index}</button>
+    </div>
+  );
+}
+
 export function useFullscreen(): [boolean, (on: boolean) => void] {
   const [on, setOn] = useState(false);
   useEffect(() => {
@@ -360,7 +388,7 @@ export function PriceChart({ trade, chart, interval, levels, placing, onPlace, o
   editingRef.current = editing;
   const replayAtRef = useRef(replayAt);
   replayAtRef.current = replayAt;
-  const legend = useChartIndicators(api, seriesRef, built, chart, trade.underlying, interval, replayAt);
+  const legend = useChartIndicators(api, seriesRef, built, chart, chart.symbol, interval, replayAt);
 
   useEffect(() => {
     const el = container.current!;
@@ -817,7 +845,7 @@ function ReplayBar({ trade, chart, index, playing, speed, onPlay, onStep, onRest
       </select>
       <input type="range" min={0} max={chart.bars.length - 1} value={index} onChange={(e) => onSeek(Number(e.target.value))} />
       <span className="replay-clock">{clock}</span>
-      <span className="muted">{trade.underlying} <b className="underlying-price">{usd(bar.close)}</b></span>
+      <span className="muted">{chart.symbol} <b className="underlying-price">{usd(bar.close)}</b></span>
       <span className="replay-pos">
         {!pos.started ? <span className="muted">Not in yet</span>
           : pos.held > 0 ? <>Holding <b>{pos.held}</b></>
@@ -831,8 +859,9 @@ function ReplayBar({ trade, chart, index, playing, speed, onPlay, onStep, onRest
 }
 
 /** Side panel section for placing stops and targets and reading the R they give. */
-function RiskPanel({ trade, levels, placing, onPlacing, onChange, canMeasure, rr, prices }: {
+function RiskPanel({ trade, priceSymbol, levels, placing, onPlacing, onChange, canMeasure, rr, prices }: {
   trade: Trade;
+  priceSymbol: string;
   levels: Levels;
   placing: LevelKind | null;
   onPlacing: (kind: LevelKind | null) => void;
@@ -885,7 +914,7 @@ function RiskPanel({ trade, levels, placing, onPlacing, onChange, canMeasure, rr
       )))}
       {rr ? (
         <div className="rr-summary">
-          <div><span className="muted">Risk</span> {usd(rr.risk)} <span className="muted">on {trade.underlying}</span></div>
+          <div><span className="muted">Risk</span> {usd(rr.risk)} <span className="muted">on {priceSymbol}</span></div>
           {rr.realizedR !== undefined && <div><span className="muted">Result</span> <b className={pnlClass(rr.realizedR)}>{formatR(rr.realizedR)}</b></div>}
           {rr.plannedR !== undefined && <div><span className="muted">Planned R:R</span> <b>1 : {rr.plannedR.toFixed(1)}</b></div>}
           {dollars?.risk !== undefined && (

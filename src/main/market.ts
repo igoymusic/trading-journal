@@ -2,13 +2,14 @@
 // spans, and the underlying's exact price at every fill. Results are cached in the database.
 
 import { AlpacaClient, type Bar, occSymbol } from '../core/alpaca';
-import { type IndexProxy, indexProxy, parseFredCsv, ratioDay } from '../core/indexProxy';
+import { type IndexProxy, indexProxy, parseFredCsv, parseYahooChart, ratioDay } from '../core/indexProxy';
 import type { DayBar } from '../core/indicators';
 import { type LevelPrice, priceLevels } from '../core/optionLevels';
 import { zonedToUtcMillis } from '../core/time';
 import type { PriceLevel, Trade } from '../core/types';
-import type { LevelPrices, TradeChart } from '../shared/api';
+import type { ChartView, LevelPrices, TradeChart } from '../shared/api';
 import type { JournalDb } from './db';
+import { fetchWithTimeout } from './fetchTimeout';
 import type { SchwabSync } from './schwab';
 import type { Settings } from './settings';
 
@@ -38,7 +39,18 @@ const SCHWAB_INDEX: Record<string, string> = {
   SPX: '$SPX', SPXW: '$SPX', XSP: '$XSP', NDX: '$NDX', NDXP: '$NDX', RUT: '$RUT', RUTW: '$RUT', VIX: '$VIX', DJX: '$DJX',
 };
 
-export async function buildTradeChart(trade: Trade, db: JournalDb, settings: Settings, fetchFn?: typeof fetch, schwab?: SchwabSync): Promise<TradeChart> {
+/** The ETF an index option's chart shows as-is (SPY for SPX) unless the index itself is asked for. */
+function chartEtf(underlying: string, view: ChartView): string | undefined {
+  return view === 'etf' ? indexProxy(underlying)?.etf : undefined;
+}
+
+/**
+ * The trade on its underlying's minute candles. SPX trades show on SPY's own chart unless `view`
+ * is 'index'; then it's SPX from Schwab when signed in, or SPY scaled to SPX.
+ */
+export async function buildTradeChart(trade: Trade, db: JournalDb, settings: Settings, fetchFn?: typeof fetch, schwab?: SchwabSync, view: ChartView = 'etf'): Promise<TradeChart> {
+  const etf = chartEtf(trade.underlying, view);
+  if (etf) return etfChart(trade, etf, db, settings, fetchFn);
   // Index options chart the real index when Schwab is signed in and has its minutes.
   const schwabSymbol = SCHWAB_INDEX[trade.underlying];
   if (schwabSymbol && schwab?.status().signedIn) {
@@ -59,7 +71,9 @@ export async function buildTradeChart(trade: Trade, db: JournalDb, settings: Set
       const r = await indexRatio(proxy, day, client, db, fetchFn ?? fetch).catch(() => undefined);
       if (r) ratios.set(day, r);
     }
-    if (!ratios.size) return { status: 'error', message: `Couldn't get ${trade.underlying}'s daily closes to estimate its prices from ${proxy.etf}.` };
+    if (!ratios.size) {
+      return { status: 'error', message: `Couldn't get ${trade.underlying}'s daily closes (from FRED or Yahoo Finance) to estimate its prices from ${proxy.etf}. Check your internet connection and try again in a couple of minutes, or sign in to Schwab in Settings to chart the real index.` };
+    }
   }
   const nyDay = (ms: number) => new Date(ms).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
   const ratioAt = (ms: number) => (proxy ? ratios.get(nyDay(ms)) ?? [...ratios.values()][0] : 1);
@@ -115,6 +129,15 @@ export async function buildTradeChart(trade: Trade, db: JournalDb, settings: Set
   };
 }
 
+/** An index option's trade drawn on its ETF's own chart, with the ETF's price at each fill. */
+async function etfChart(trade: Trade, etf: string, db: JournalDb, settings: Settings, fetchFn?: typeof fetch): Promise<TradeChart> {
+  // Fill prices on the scaled chart are saved under the fill's id, so these get their own key.
+  const fills = trade.fills.map((f) => ({ ...f, id: `${f.id}@${etf}` }));
+  const chart = await buildTradeChart({ ...trade, underlying: etf, fills }, db, settings, fetchFn);
+  if (chart.status !== 'ok') return chart;
+  return { ...chart, fills: chart.fills.map((p) => ({ ...p, fillId: p.fillId.slice(0, -etf.length - 1) })) };
+}
+
 /** The trade on the index's own one-minute prices from Schwab; null if Schwab doesn't have every day. */
 async function schwabIndexChart(trade: Trade, symbol: string, db: JournalDb, settings: Settings, schwab: SchwabSync): Promise<TradeChart | null> {
   const bars: Bar[] = [];
@@ -142,26 +165,55 @@ async function schwabIndexChart(trade: Trade, symbol: string, db: JournalDb, set
 }
 
 /** The index's daily closes from FRED (free, no account), cached; refetched when a newer day is needed. */
-async function indexCloses(series: string, day: string, db: JournalDb, fetchFn: typeof fetch): Promise<Map<string, number>> {
-  const key = `fred:${series}`;
+/** How long to wait for each source of daily index closes. */
+export const FRED_TIMEOUT_MS = 15_000;
+
+/**
+ * The app sets this to Electron's own network stack (the same one as Chrome). FRED and Yahoo
+ * can stall or refuse requests that don't look like they come from a browser.
+ */
+let webFetch: typeof fetch | undefined;
+export function useWebFetch(fn: typeof fetch) {
+  webFetch = fn;
+}
+
+const BROWSER_HEADERS = { 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36' };
+
+/** The index's official daily closes from FRED, or from Yahoo Finance if FRED doesn't answer. */
+async function downloadCloses(proxy: IndexProxy, fetchFn: typeof fetch): Promise<Map<string, number>> {
+  const get = fetchWithTimeout(webFetch ?? fetchFn, FRED_TIMEOUT_MS);
+  const fred = process.env.TJ_FRED_URL || 'https://fred.stlouisfed.org/graph/fredgraph.csv';
+  const fromFred = await get(`${fred}?id=${encodeURIComponent(proxy.fredSeries)}`, { headers: { ...BROWSER_HEADERS, accept: 'text/csv,*/*' } })
+    .then(async (res) => (res.ok ? parseFredCsv(await res.text()) : null))
+    .catch(() => null);
+  if (fromFred?.size) return fromFred;
+  const yahoo = process.env.TJ_YAHOO_URL || 'https://query1.finance.yahoo.com/v8/finance/chart';
+  const fromYahoo = await get(`${yahoo}/${encodeURIComponent(proxy.yahooSymbol)}?range=2y&interval=1d`, { headers: { ...BROWSER_HEADERS, accept: 'application/json' } })
+    .then(async (res) => (res.ok ? parseYahooChart(await res.json()) : null))
+    .catch(() => null);
+  return fromYahoo ?? new Map();
+}
+
+async function indexCloses(proxy: IndexProxy, day: string, db: JournalDb, fetchFn: typeof fetch): Promise<Map<string, number>> {
+  const key = `fred:${proxy.fredSeries}`;
   const cached = db.getMeta(key);
   let closes = cached ? new Map<string, number>(JSON.parse(cached).closes) : new Map<string, number>();
   const fetchedAt = cached ? JSON.parse(cached).fetchedAt as number : 0;
   const newest = [...closes.keys()].sort().pop() ?? '';
-  if (newest < day && Date.now() - fetchedAt > 60 * 60_000) {
-    const base = process.env.TJ_FRED_URL || 'https://fred.stlouisfed.org/graph/fredgraph.csv';
-    const res = await fetchFn(`${base}?id=${encodeURIComponent(series)}`);
-    if (res.ok) {
-      closes = parseFredCsv(await res.text());
-      db.setMeta(key, JSON.stringify({ fetchedAt: Date.now(), closes: [...closes] }));
-    }
+  // Ask again at most hourly, or every couple of minutes while there's nothing saved at all.
+  const wait = closes.size ? 60 * 60_000 : 2 * 60_000;
+  if (newest < day && Date.now() - fetchedAt > wait) {
+    const fresh = await downloadCloses(proxy, fetchFn);
+    // Keep older saved closes too: Yahoo's list only goes back two years.
+    if (fresh.size) closes = new Map([...closes, ...fresh]);
+    db.setMeta(key, JSON.stringify({ fetchedAt: Date.now(), closes: [...closes] }));
   }
   return closes;
 }
 
 /** Index ÷ ETF at the close of the latest published day on or before `day`. */
 async function indexRatio(proxy: IndexProxy, day: string, client: AlpacaClient, db: JournalDb, fetchFn: typeof fetch): Promise<number | undefined> {
-  const closes = await indexCloses(proxy.fredSeries, day, db, fetchFn);
+  const closes = await indexCloses(proxy, day, db, fetchFn);
   const ref = ratioDay(day, closes);
   if (!ref) return undefined;
   const cacheKey = `ratio:${proxy.fredSeries}:${proxy.etf}:${ref}`;
@@ -175,6 +227,14 @@ async function indexRatio(proxy: IndexProxy, day: string, client: AlpacaClient, 
   const ratio = closes.get(ref)! / last.close;
   db.setMeta(cacheKey, String(ratio));
   return ratio * proxy.scale;
+}
+
+/**
+ * Index ÷ ETF for pricing an index option off its ETF's chart. Without the index's daily closes,
+ * SPX has run close to 10.03 times SPY, which is near enough for the estimate.
+ */
+async function etfToIndex(proxy: IndexProxy, day: string, client: AlpacaClient, db: JournalDb, fetchFn: typeof fetch): Promise<number> {
+  return (await indexRatio(proxy, day, client, db, fetchFn).catch(() => undefined)) ?? 10.03 * proxy.scale;
 }
 
 /** Alpaca's option history starts here. */
@@ -207,8 +267,8 @@ async function optionBars(trade: Trade, client: AlpacaClient, db: JournalDb): Pr
 }
 
 /** Option prices at each stop and target line. Null when the chart or entry price isn't available. */
-export async function levelOptionPrices(trade: Trade, stops: PriceLevel[], targets: PriceLevel[], db: JournalDb, settings: Settings, fetchFn?: typeof fetch): Promise<LevelPrices | null> {
-  const chart = await buildTradeChart(trade, db, settings, fetchFn);
+export async function levelOptionPrices(trade: Trade, stops: PriceLevel[], targets: PriceLevel[], db: JournalDb, settings: Settings, fetchFn?: typeof fetch, view: ChartView = 'etf'): Promise<LevelPrices | null> {
+  const chart = await buildTradeChart(trade, db, settings, fetchFn, undefined, view);
   if (chart.status !== 'ok') return null;
   const entrySide = trade.direction === 'LONG' ? 'BUY' : 'SELL';
   const entryFill = trade.fills.find((f) => f.side === entrySide);
@@ -216,15 +276,21 @@ export async function levelOptionPrices(trade: Trade, stops: PriceLevel[], targe
   if (!entryFill || point?.underlyingPrice === undefined) return null;
 
   const client = new AlpacaClient(settings.alpacaCredentials()!, fetchFn as any, process.env.TJ_ALPACA_BASE_URL || undefined);
+  // On a SPY chart of an SPX trade, the lines and prices are SPY's: the option's value comes from
+  // SPX, so everything is scaled up by SPX ÷ SPY for the pricing.
+  const proxy = chartEtf(trade.underlying, view) ? indexProxy(trade.underlying) : undefined;
+  const r = proxy ? await etfToIndex(proxy, trade.openTime.slice(0, 10), client, db, fetchFn ?? fetch) : 1;
+  const up = (b: Bar): Bar => ({ ...b, open: b.open * r, high: b.high * r, low: b.low * r, close: b.close * r });
+  const upLevels = (ls: PriceLevel[]) => ls.map((l) => ({ ...l, price: l.price * r }));
   const common = {
     trade,
-    bars: chart.bars,
-    entry: { time: point.time, underlying: point.underlyingPrice, optionPrice: entryFill.price },
+    bars: r === 1 ? chart.bars : chart.bars.map(up),
+    entry: { time: point.time, underlying: point.underlyingPrice * r, optionPrice: entryFill.price },
     exitTime: trade.closeTime ? zonedToUtcMillis(trade.closeTime, settings.timeZone) : Date.now(),
     expiryTime: zonedToUtcMillis(`${trade.expiry}T16:00:00`, 'America/New_York'),
     optionBars: await optionBars(trade, client, db),
   };
-  return { stops: priceLevels({ ...common, levels: stops }), targets: priceLevels({ ...common, levels: targets }) };
+  return { stops: priceLevels({ ...common, levels: upLevels(stops) }), targets: priceLevels({ ...common, levels: upLevels(targets) }) };
 }
 
 /** Weekdays before `day` (New York date), newest first. */
@@ -300,7 +366,7 @@ export async function historyDailyBars(
     bars = (await schwab?.indexDailyBars(schwabSymbol, Date.parse(`${startDay}T00:00:00Z`), Date.parse(`${beforeDay}T00:00:00Z`))) ?? [];
   } else if (proxy) {
     // The index's official closes (no highs or lows, so those match the close).
-    const closes = await indexCloses(proxy.fredSeries, beforeDay, db, fetchFn ?? fetch);
+    const closes = await indexCloses(proxy, beforeDay, db, fetchFn ?? fetch);
     bars = [...closes].filter(([d]) => d >= startDay).sort(([a], [b]) => a.localeCompare(b))
       .map(([day, c]) => { const v = c * proxy.scale; return { day, open: v, high: v, low: v, close: v, volume: 0 }; });
   } else {

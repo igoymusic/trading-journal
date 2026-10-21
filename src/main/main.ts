@@ -1,12 +1,12 @@
 // Electron main process: owns the window, the database and file access.
 
-import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, net, safeStorage, shell } from 'electron';
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseTosStatement } from '../core/tosCsv';
 import { buildTrades, summarizeTrades } from '../core/trades';
 import type { MistakeTag, PriceLevel, Setup, TradeJournal } from '../core/types';
-import type { ImportResult, JournalData, LabelOffset, TradeChart } from '../shared/api';
+import type { ChartView, ImportResult, JournalData, LabelOffset, TradeChart } from '../shared/api';
 import type { MarkerStyles } from '../core/markerStyles';
 import type { Indicator } from '../core/indicators';
 import { AlpacaClient } from '../core/alpaca';
@@ -17,7 +17,8 @@ import { SchwabSync } from './schwab';
 import type { SchwabSlot } from './settings';
 import { JournalDb } from './db';
 import { moveDataFromOldName } from './migrate';
-import { buildTradeChart, etfMinuteBars, historyDailyBars, historyMinuteBars, levelOptionPrices } from './market';
+import { fetchWithTimeout } from './fetchTimeout';
+import { useWebFetch, buildTradeChart, etfMinuteBars, historyDailyBars, historyMinuteBars, levelOptionPrices } from './market';
 import { Settings } from './settings';
 import { Screenshots } from './screenshots';
 import { Backups } from './backup';
@@ -88,9 +89,14 @@ function chartSource() {
   return schwabData?.status().signedIn ? schwabData : schwab;
 }
 
+// Every request the app makes gives up after 30 seconds rather than hanging a screen forever.
+globalThis.fetch = fetchWithTimeout(globalThis.fetch, 30_000);
+
 moveDataFromOldName(app.getPath('appData'), app.getPath('userData'));
 
 app.whenReady().then(async () => {
+  // Daily index closes go through Chrome's network stack, which data sites treat as a browser.
+  useWebFetch(((input: string, init?: RequestInit) => net.fetch(input, init as any)) as unknown as typeof fetch);
   // Headless test runs on Linux have no keyring to encrypt saved secrets with.
   if (process.platform === 'linux' && process.env.TJ_SCREENSHOT) safeStorage.setUsePlainTextEncryption(true);
   db = new JournalDb(path.join(app.getPath('userData'), 'journal.sqlite'));
@@ -144,30 +150,30 @@ app.whenReady().then(async () => {
   ipcMain.handle('shots:caption', (_event, id: string, caption: string) => db.setImageCaption(id, caption));
   ipcMain.handle('shots:remove', (_event, id: string) => shots.remove(id));
 
-  ipcMain.handle('market:dayChart', async (_event, date: string, underlying: string): Promise<TradeChart> => {
+  ipcMain.handle('market:dayChart', async (_event, date: string, underlying: string, view?: ChartView): Promise<TradeChart> => {
     const day = dayChartTrade(buildTrades(db.allFills()), date, underlying);
     if (!day) return { status: 'error', message: 'No trades on this day.' };
     try {
-      return await buildTradeChart(day.trade, db, settings, undefined, chartSource());
+      return await buildTradeChart(day.trade, db, settings, undefined, chartSource(), view);
     } catch (err) {
       return { status: 'error', message: (err as Error).message };
     }
   });
-  ipcMain.handle('market:tradeChart', async (_event, tradeId: string): Promise<TradeChart> => {
+  ipcMain.handle('market:tradeChart', async (_event, tradeId: string, view?: ChartView): Promise<TradeChart> => {
     const trade = buildTrades(db.allFills()).find((t) => t.id === tradeId);
     if (!trade) return { status: 'error', message: 'Trade not found.' };
     try {
-      return await buildTradeChart(trade, db, settings, undefined, chartSource());
+      return await buildTradeChart(trade, db, settings, undefined, chartSource(), view);
     } catch (err) {
       return { status: 'error', message: (err as Error).message };
     }
   });
 
-  ipcMain.handle('market:levelPrices', async (_event, tradeId: string, stops: PriceLevel[], targets: PriceLevel[]) => {
+  ipcMain.handle('market:levelPrices', async (_event, tradeId: string, stops: PriceLevel[], targets: PriceLevel[], view?: ChartView) => {
     const trade = buildTrades(db.allFills()).find((t) => t.id === tradeId);
     if (!trade) return null;
     try {
-      return await levelOptionPrices(trade, stops, targets, db, settings);
+      return await levelOptionPrices(trade, stops, targets, db, settings, undefined, view);
     } catch {
       return null;
     }
