@@ -11,7 +11,7 @@ export interface LevelStyle {
   lineOpacity: number;
   width: number;
   dash: 'solid' | 'dashed' | 'dotted';
-  /** Draw a long or short position box once there's a stop and a target. */
+  /** Draw a long or short position box (once) when a trade gets a stop and a target. */
   showBox: boolean;
   /** Fill opacity the box starts with. */
   boxOpacity: number;
@@ -67,8 +67,8 @@ export function LevelStyleEditor() {
           </button>
         ))}
       </div>
-      <label className="check"><input type="checkbox" checked={style.showBox} onChange={(e) => set({ showBox: e.target.checked })} /> Position box</label>
-      {style.showBox && <p className="muted small">Click the box to move it or change its colors and labels.</p>}
+      <label className="check"><input type="checkbox" checked={style.showBox} onChange={(e) => set({ showBox: e.target.checked })} /> Draw a position box</label>
+      {style.showBox && <p className="muted small">Drawn once a trade has a stop and a target. After that it's a normal drawing: click it to move it or change its colors and labels.</p>}
       {(style.stopColor || style.targetColor) && (
         <button className="link" onClick={() => set({ stopColor: '', targetColor: '' })}>Use the colors from Settings</button>
       )}
