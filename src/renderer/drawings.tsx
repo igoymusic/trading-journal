@@ -8,14 +8,19 @@ import {
   type ChartPoint, type Drawing, type PastedDrawing, FIB_LEVELS, daysBetween, drawingStart, drawingSymbol, nyDay, toolName,
 } from '../core/drawings';
 import { opacityOf, withOpacity } from './drawingsPrimitive';
+import { LevelStyleEditor } from './levelStyle';
 
 export type Tool = 'select' | 'hline' | 'vline' | 'trend' | 'arrow' | 'brush' | 'rect' | 'range' | 'fib' | 'long' | 'short' | 'text';
 
 /** Formatting for new drawings (and the selected one). */
-export interface DrawStyle { width: number; dash: 'solid' | 'dotted' | 'dashed'; opacity: number; fillOpacity: number }
+export interface DrawStyle {
+  width: number; dash: 'solid' | 'dotted' | 'dashed'; opacity: number; fillOpacity: number;
+  /** Long and short positions: the target (profit) and stop (loss) zone colors, "#rrggbb". */
+  profitColor: string; lossColor: string;
+}
 
 const COLORS = ['#2962ff', '#f5c542', '#ff9800', '#e040fb', '#00bcd4', '#089981', '#f23645', '#ffffff'];
-const DEFAULT_STYLE: DrawStyle = { width: 1.5, dash: 'solid', opacity: 1, fillOpacity: 0.15 };
+const DEFAULT_STYLE: DrawStyle = { width: 1.5, dash: 'solid', opacity: 1, fillOpacity: 0.15, profitColor: '#089981', lossColor: '#f23645' };
 const CHANGED = 'drawings-changed';
 
 export interface DrawingState {
@@ -72,7 +77,9 @@ export function useDrawings(underlying: string, firstMs: number | undefined, las
     width: styleSettings.width,
     ...(styleSettings.dash !== 'solid' ? { dash: styleSettings.dash } : {}),
     fill: withOpacity(color, styleSettings.fillOpacity),
-  };
+    targetFill: withOpacity(styleSettings.profitColor, styleSettings.fillOpacity),
+    stopFill: withOpacity(styleSettings.lossColor, styleSettings.fillOpacity),
+  } as Partial<Drawing>;
   return {
     symbol, list, tool, setTool, color, selected, setSelected, style, styleSettings,
     setColor: (c) => {
@@ -91,7 +98,11 @@ export function useDrawings(underlying: string, firstMs: number | undefined, las
       if (patch.width !== undefined) updated.width = patch.width;
       if (patch.dash !== undefined) updated.dash = patch.dash;
       if (patch.opacity !== undefined) updated.color = withOpacity(base, patch.opacity);
-      if (patch.fillOpacity !== undefined) updated.fill = withOpacity((sel.fill ?? base).slice(0, 7), patch.fillOpacity);
+      if (updated.kind === 'position') {
+        const fillOpacity = patch.fillOpacity ?? opacityOf(updated.targetFill ?? '#08998133');
+        updated.targetFill = withOpacity(patch.profitColor ?? (updated.targetFill ?? '#089981').slice(0, 7), fillOpacity);
+        updated.stopFill = withOpacity(patch.lossColor ?? (updated.stopFill ?? '#f23645').slice(0, 7), fillOpacity);
+      } else if (patch.fillOpacity !== undefined) updated.fill = withOpacity((sel.fill ?? base).slice(0, 7), patch.fillOpacity);
       put(updated);
     },
     put,
@@ -118,7 +129,8 @@ type Base = { id: string; day: string; color: string };
 /** The shape a two-point tool makes while you drag from `a` to `b`. */
 export function shapeFor(tool: Exclude<Tool, 'select'>, base: Base, a: ChartPoint, b: ChartPoint, style: Partial<Drawing>): Drawing {
   const b0 = { id: base.id, day: base.day, color: base.color };
-  const s = { ...style, ...b0 } as Base & Partial<Drawing>;
+  const { targetFill, stopFill, ...rest } = style as Partial<Extract<Drawing, { kind: 'position' }>>;
+  const s = { ...rest, ...b0 } as Base & Partial<Drawing>;
   switch (tool) {
     case 'rect': return { ...s, kind: 'rect', a, b } as Drawing;
     case 'arrow': return { ...s, fill: undefined, kind: 'arrow', a, b } as Drawing;
@@ -128,7 +140,7 @@ export function shapeFor(tool: Exclude<Tool, 'select'>, base: Base, a: ChartPoin
     case 'long': case 'short': {
       // Drag from the entry to the target; the stop starts the same distance the other way.
       const target = b.price;
-      return { ...s, fill: undefined, kind: 'position', side: tool, a, end: b.time, target, stop: 2 * a.price - target } as Drawing;
+      return { ...s, fill: undefined, kind: 'position', side: tool, a, end: b.time, target, stop: 2 * a.price - target, targetFill, stopFill } as Drawing;
     }
     case 'vline': return { ...s, kind: 'vline', time: a.time } as Drawing;
     case 'hline': return { ...s, kind: 'hline', price: a.price } as Drawing;
@@ -222,13 +234,20 @@ export function DrawToolbar({ draw, onPaste }: { draw: DrawingState; onPaste: ()
   const [picking, setPicking] = useState(false);
   const [markers, setMarkers] = useState(false);
   const [studies, setStudies] = useState(false);
+  const [levelsPop, setLevelsPop] = useState(false);
   const sel = draw.list.find((d) => d.id === draw.selected);
   // Show the selected drawing's formatting, or what new drawings will get.
+  const position = sel ? (sel.kind === 'position' ? sel : null) : null;
   const shown: DrawStyle = sel
-    ? { width: sel.width ?? 1.5, dash: sel.dash ?? 'solid', opacity: opacityOf(sel.color), fillOpacity: sel.fill ? opacityOf(sel.fill) : draw.styleSettings.fillOpacity }
+    ? {
+      ...draw.styleSettings, width: sel.width ?? 1.5, dash: sel.dash ?? 'solid', opacity: opacityOf(sel.color),
+      fillOpacity: position ? opacityOf(position.targetFill ?? '#08998133') : sel.fill ? opacityOf(sel.fill) : draw.styleSettings.fillOpacity,
+      ...(position ? { profitColor: (position.targetFill ?? '#089981').slice(0, 7), lossColor: (position.stopFill ?? '#f23645').slice(0, 7) } : {}),
+    }
     : draw.styleSettings;
   const color = sel ? sel.color.slice(0, 7) : draw.color;
-  const fillable = sel ? HAS_FILL.has(sel.kind) : ['rect', 'range', 'fib'].includes(draw.tool);
+  const isPosition = sel ? !!position : draw.tool === 'long' || draw.tool === 'short';
+  const fillable = isPosition || (sel ? HAS_FILL.has(sel.kind) : ['rect', 'range', 'fib'].includes(draw.tool));
   return (
     <div className="draw-tools" onMouseDown={(e) => e.stopPropagation()}>
       {TOOLS.map((t) => (
@@ -243,6 +262,12 @@ export function DrawToolbar({ draw, onPaste }: { draw: DrawingState; onPaste: ()
               <input type="color" value={color} title="Any color" onChange={(e) => draw.setColor(e.target.value)} />
             </div>
             <label>Line opacity <input type="range" min={0.1} max={1} step={0.05} value={shown.opacity} onChange={(e) => draw.setStyle({ opacity: Number(e.target.value) })} /></label>
+            {isPosition && (
+              <div className="draw-style-row position-colors">
+                <label>Target <input type="color" value={shown.profitColor} onChange={(e) => draw.setStyle({ profitColor: e.target.value })} /></label>
+                <label>Stop <input type="color" value={shown.lossColor} onChange={(e) => draw.setStyle({ lossColor: e.target.value })} /></label>
+              </div>
+            )}
             {fillable && (
               <label>Fill opacity <input type="range" min={0} max={0.8} step={0.05} value={shown.fillOpacity} onChange={(e) => draw.setStyle({ fillOpacity: Number(e.target.value) })} /></label>
             )}
@@ -270,11 +295,15 @@ export function DrawToolbar({ draw, onPaste }: { draw: DrawingState; onPaste: ()
       {sel && <button title="Delete (Del)" onClick={() => draw.remove(sel.id)}>🗑</button>}
       <span className="draw-spacer" />
       <div className="draw-color-wrap">
-        <button className={studies ? 'active' : ''} title="Indicators: moving averages, Bollinger Bands, VWAP" onClick={() => { setStudies((s) => !s); setMarkers(false); }}>ƒ</button>
+        <button className={levelsPop ? 'active' : ''} title="Stop and target lines and the position box: colors and opacity" onClick={() => { setLevelsPop((v) => !v); setStudies(false); setMarkers(false); }}>⇅</button>
+        {levelsPop && <div className="draw-style levels-pop"><LevelStyleEditor /></div>}
+      </div>
+      <div className="draw-color-wrap">
+        <button className={studies ? 'active' : ''} title="Indicators: moving averages, Bollinger Bands, VWAP" onClick={() => { setStudies((s) => !s); setMarkers(false); setLevelsPop(false); }}>ƒ</button>
         {studies && <div className="draw-style indicators-pop"><IndicatorsEditor /></div>}
       </div>
       <div className="draw-color-wrap">
-        <button className={markers ? 'active' : ''} title="Entry and exit markers: colors, sizes and lines" onClick={() => { setMarkers((m) => !m); setStudies(false); }}>➤</button>
+        <button className={markers ? 'active' : ''} title="Entry and exit markers: colors, sizes and lines" onClick={() => { setMarkers((m) => !m); setStudies(false); setLevelsPop(false); }}>➤</button>
         {markers && <div className="draw-style markers-pop"><MarkerStyleEditor /></div>}
       </div>
       <button title="Paste drawings copied in TradingView, or a screenshot (Ctrl+V)" onClick={onPaste}>📋</button>
