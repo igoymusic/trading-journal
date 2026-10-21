@@ -7,7 +7,7 @@ import type { Bar } from '../core/alpaca';
 import { filledBy, positionAt, replayStartIndex } from '../core/replay';
 import { chartTime } from '../core/time';
 import { dollarRiskReward } from '../core/optionLevels';
-import { averageUnderlying, formatR, levelsFromExits, riskReward } from '../core/rr';
+import { averageUnderlying, bias, formatR, levelsFromExits, riskReward } from '../core/rr';
 import { indexProxy } from '../core/indexProxy';
 import { EMPTY_JOURNAL, type PriceLevel, type Trade } from '../core/types';
 import type { ChartView, LevelPrices, TradeChart } from '../shared/api';
@@ -17,7 +17,8 @@ import { onMarkerStylesChange } from './markerStyles';
 import { type Drawing, type ChartPoint, drawingStart, moveHandle, shiftDrawing } from '../core/drawings';
 import { DrawToolbar, type DrawingState, finishShape, pasteIntoChart, shapeFor, useDrawings } from './drawings';
 import { ScreenshotGallery, useScreenshotCount } from './Screenshots';
-import { DrawingsPrimitive, type Xy } from './drawingsPrimitive';
+import { DrawingsPrimitive, withOpacity, type Xy } from './drawingsPrimitive';
+import { levelStyle, onLevelStyleChange, stopColor, targetColor } from './levelStyle';
 import { holdTime, pnlClass, shortDate, signedUsd, optionUsd, usd } from './format';
 import { useJournal } from './journal';
 import { useChartIndicators } from './useChartIndicators';
@@ -680,25 +681,57 @@ export function PriceChart({ trade, chart, interval, levels, placing, onPlace, o
     };
   }, [chart, interval, trade.id]);
 
-  // Stop and target lines, redrawn whenever they change.
+  // Stop and target lines from your entry to the right, and a position box once there's a stop and
+  // a target. Redrawn whenever they or their style change.
+  const [styleVersion, setStyleVersion] = useState(0);
+  useEffect(() => onLevelStyleChange(() => setStyleVersion((v) => v + 1)), []);
   useEffect(() => {
     const series = seriesRef.current;
+    const drawings = drawingsRef.current;
     if (!series) return;
     for (const line of lines.current.values()) series.removePriceLine(line);
     lines.current.clear();
+    const style = levelStyle();
+    const entrySide = trade.direction === 'LONG' ? 'BUY' : 'SELL';
+    const firstEntry = trade.fills.find((f) => f.side === entrySide);
+    const entryTime = chart.fills.find((p) => p.fillId === firstEntry?.id)?.time ?? chart.fills[0]?.time;
+    const entryPrice = averageUnderlying(trade.fills.filter((f) => f.side === entrySide)
+      .map((f) => ({ quantity: f.quantity, underlying: chart.fills.find((p) => p.fillId === f.id)?.underlyingPrice })));
+    const extras: Drawing[] = [];
     for (const kind of ['stops', 'targets'] as const) {
+      const color = kind === 'stops' ? stopColor() : targetColor();
       levels[kind].forEach((l, i) => {
+        // Only the price-scale tag comes from the chart; the line itself is drawn from the entry on.
         lines.current.set(`${kind}:${i}`, series.createPriceLine({
           price: l.price,
-          color: kind === 'stops' ? colors().stop : colors().target,
-          lineWidth: 2,
-          lineStyle: LineStyle.Dashed,
+          color: withOpacity(color.slice(0, 7), style.lineOpacity),
+          lineVisible: false,
           axisLabelVisible: true,
           title: `${kind === 'stops' ? 'Stop' : 'Target'} ×${l.contracts}`,
         }));
+        extras.push({
+          id: `level:${kind}:${i}`, day: '', kind: 'hline', price: l.price, from: entryTime,
+          color: withOpacity(color.slice(0, 7), style.lineOpacity), width: style.width, ...(style.dash !== 'solid' ? { dash: style.dash } : {}),
+        });
       });
     }
-  }, [JSON.stringify(levels), built]);
+    // The position box: entry to your furthest stop and furthest target, from entry to exit.
+    const dir = bias(trade);
+    if (style.showBox && entryTime !== undefined && entryPrice !== undefined && levels.stops.length && levels.targets.length) {
+      const stop = dir === 1 ? Math.min(...levels.stops.map((l) => l.price)) : Math.max(...levels.stops.map((l) => l.price));
+      const target = dir === 1 ? Math.max(...levels.targets.map((l) => l.price)) : Math.min(...levels.targets.map((l) => l.price));
+      const lastFill = chart.fills[chart.fills.length - 1]?.time ?? entryTime;
+      const end = trade.status === 'CLOSED' && lastFill > entryTime ? lastFill : chart.bars[chart.bars.length - 1]?.time ?? entryTime;
+      extras.unshift({
+        id: 'level:position', day: '', kind: 'position', side: dir === 1 ? 'long' : 'short', a: { time: entryTime, price: entryPrice }, end, stop, target, ratio: riskReward(trade, { ...EMPTY_JOURNAL, stops: levels.stops, targets: levels.targets, underlyingEntry: entryPrice })?.plannedR,
+        color: '#00000000', targetFill: withOpacity(targetColor().slice(0, 7), style.boxOpacity), stopFill: withOpacity(stopColor().slice(0, 7), style.boxOpacity),
+      });
+    }
+    if (drawings) {
+      drawings.extras = extras;
+      drawings.update();
+    }
+  }, [JSON.stringify(levels), built, styleVersion]);
 
   // Replay: redraw up to the current minute, keeping your zoom, and follow it off the right edge.
   const shownAt = useRef<number | null>(null);
@@ -859,6 +892,12 @@ function ReplayBar({ trade, chart, index, playing, speed, onPlay, onStep, onRest
   );
 }
 
+const LEVEL_SOURCE = {
+  fill: 'Your fill price when you got out here',
+  market: 'The option\'s real price when the underlying reached this line',
+  estimate: 'Estimated with Black-Scholes from your entry fill\'s price, as if reached at your exit',
+};
+
 /** Side panel section for placing stops and targets and reading the R they give. */
 function RiskPanel({ trade, priceSymbol, levels, placing, onPlacing, onChange, canMeasure, rr, prices }: {
   trade: Trade;
@@ -886,7 +925,11 @@ function RiskPanel({ trade, priceSymbol, levels, placing, onPlacing, onChange, c
           </button>
         ))}
       </div>
-      {(['stops', 'targets'] as const).flatMap((kind) => levels[kind].map((l, i) => (
+      {(['stops', 'targets'] as const)
+        .flatMap((kind) => levels[kind].map((l, i) => ({ kind, l, i })))
+        // Highest price first, the same order as the lines on the chart.
+        .sort((p, q) => q.l.price - p.l.price)
+        .map(({ kind, l, i }) => (
         <div className={`level-row ${kind}`} key={`${kind}${i}`}>
           <span className="level-name">{kind === 'stops' ? 'Stop' : 'Target'}</span>
           <span className="level-price">
@@ -894,11 +937,9 @@ function RiskPanel({ trade, priceSymbol, levels, placing, onPlacing, onChange, c
             {matched?.[kind][i] && (
               <span
                 className="level-option"
-                title={matched[kind][i]!.source === 'market'
-                  ? 'The option\'s real price when the underlying reached this line'
-                  : 'Estimated with Black-Scholes from your entry\'s implied volatility, as if reached at your exit'}
+                title={LEVEL_SOURCE[matched[kind][i]!.source]}
               >
-                {matched[kind][i]!.source === 'market' ? '' : '≈'}{optionUsd(matched[kind][i]!.optionPrice)}
+                {matched[kind][i]!.source === 'estimate' ? '≈' : ''}{optionUsd(matched[kind][i]!.optionPrice)}
               </span>
             )}
           </span>
@@ -912,7 +953,7 @@ function RiskPanel({ trade, priceSymbol, levels, placing, onPlacing, onChange, c
           <span className="muted">ct</span>
           <button className="danger-link" aria-label="Remove" onClick={() => onChange(kind, i, null)}>×</button>
         </div>
-      )))}
+      ))}
       {rr ? (
         <div className="rr-summary">
           <div><span className="muted">Risk</span> {usd(rr.risk)} <span className="muted">on {priceSymbol}</span></div>
@@ -935,7 +976,7 @@ function RiskPanel({ trade, priceSymbol, levels, placing, onPlacing, onChange, c
       )}
       {rr && losing && !levels.targets.length && <div className="muted small">Losing trade: add the target you were aiming for to see its planned R:R.</div>}
       {levels.stops.length + levels.targets.length > 0 && (
-        <div className="muted small">Lines start at your actual exits: winners as targets, losers as stops. Drag a line on the chart to move it. Option prices marked ≈ are estimates; the rest are what the option traded at when the underlying got there.</div>
+        <div className="muted small">Lines start at your actual exits: winners as targets, losers as stops. Drag a line on the chart to move it. A line at one of your exits uses that exit's fill price. Others marked ≈ are estimated from your entry fill; the rest are what the option traded at when the underlying got there.</div>
       )}
     </div>
   );
