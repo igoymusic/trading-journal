@@ -105,6 +105,8 @@ function summarize(fills: Fill[], requested: Trade['status'] | 'AUTO'): Trade {
       entryQty += assumed;
       entryCost += assumed * perContract;
       cash += (direction === 'LONG' ? -1 : 1) * assumed * perContract;
+      // As if they'd all been opened together.
+      maxContracts = Math.max(maxContracts, entryQty);
     }
   }
 

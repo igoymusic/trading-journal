@@ -18,7 +18,8 @@ export interface Column {
   renderFlat?(t: Trade): ReactNode;
 }
 
-const contractsTraded = (t: Trade) => t.fills.reduce((a, f) => a + (f.side === (t.direction === 'LONG' ? 'BUY' : 'SELL') ? f.quantity : 0), 0);
+/** Contracts opened, counting any closed without an opening fill (see summarize). */
+const contractsTraded = (t: Trade) => t.fills.reduce((a, f) => a + (f.side === (t.direction === 'LONG' ? 'BUY' : 'SELL') ? f.quantity : 0), t.assumedContracts ?? 0);
 
 /** Days from the entry date to expiration (0 = traded on expiration day). */
 function dteAtEntry(t: Trade) {

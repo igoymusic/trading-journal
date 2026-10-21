@@ -20,7 +20,7 @@ describe('combining trades', () => {
     const merges = addMerge([], ['c', 'a'], buildTrades(fills));
     expect(merges).toEqual([['a', 'c']]);
     const [t] = buildTrades(fills, merges);
-    expect(t).toMatchObject({ id: 'a', status: 'CLOSED', direction: 'LONG', merged: ['a', 'c'], assumedContracts: 1, avgEntry: 600, avgExit: 875 });
+    expect(t).toMatchObject({ id: 'a', status: 'CLOSED', direction: 'LONG', merged: ['a', 'c'], assumedContracts: 1, maxContracts: 2, avgEntry: 600, avgExit: 875 });
     // Sold for $710 + $1,040, bought 2 at $600.
     expect(t.netPnl).toBe(550);
   });
