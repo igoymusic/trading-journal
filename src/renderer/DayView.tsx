@@ -26,7 +26,7 @@ export function DayView({ trades, date, chartVersion, dayNote, onSaveDayNote, ex
     <section className="day">
       <h2 className="view-title">{longDate(date)}</h2>
       <DayNote date={date} initial={dayNote} onSave={onSaveDayNote} />
-      {dayTrades.length > 1 && (
+      {dayTrades.length > 0 && (
         <ErrorBoundary key={`${date}:${chartVersion}`} label="the day's chart">
           <DayChart trades={dayTrades} date={date} version={chartVersion} />
         </ErrorBoundary>
