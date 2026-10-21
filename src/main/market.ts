@@ -2,7 +2,7 @@
 // spans, and the underlying's exact price at every fill. Results are cached in the database.
 
 import { AlpacaClient, type Bar, occSymbol } from '../core/alpaca';
-import { type IndexProxy, indexProxy, parseFredCsv, ratioDay } from '../core/indexProxy';
+import { type IndexProxy, indexProxy, parseFredCsv, parseYahooChart, ratioDay } from '../core/indexProxy';
 import type { DayBar } from '../core/indicators';
 import { type LevelPrice, priceLevels } from '../core/optionLevels';
 import { zonedToUtcMillis } from '../core/time';
@@ -60,7 +60,9 @@ export async function buildTradeChart(trade: Trade, db: JournalDb, settings: Set
       const r = await indexRatio(proxy, day, client, db, fetchFn ?? fetch).catch(() => undefined);
       if (r) ratios.set(day, r);
     }
-    if (!ratios.size) return { status: 'error', message: `Couldn't get ${trade.underlying}'s daily closes to estimate its prices from ${proxy.etf}.` };
+    if (!ratios.size) {
+      return { status: 'error', message: `Couldn't get ${trade.underlying}'s daily closes (from FRED or Yahoo Finance) to estimate its prices from ${proxy.etf}. Check your internet connection and try again in a couple of minutes, or sign in to Schwab in Settings to chart the real index.` };
+    }
   }
   const nyDay = (ms: number) => new Date(ms).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
   const ratioAt = (ms: number) => (proxy ? ratios.get(nyDay(ms)) ?? [...ratios.values()][0] : 1);
@@ -143,24 +145,47 @@ async function schwabIndexChart(trade: Trade, symbol: string, db: JournalDb, set
 }
 
 /** The index's daily closes from FRED (free, no account), cached; refetched when a newer day is needed. */
-/** How long to wait for FRED's daily index closes. */
+/** How long to wait for each source of daily index closes. */
 export const FRED_TIMEOUT_MS = 15_000;
 
-async function indexCloses(series: string, day: string, db: JournalDb, fetchFn: typeof fetch): Promise<Map<string, number>> {
-  const key = `fred:${series}`;
+/**
+ * The app sets this to Electron's own network stack (the same one as Chrome). FRED and Yahoo
+ * can stall or refuse requests that don't look like they come from a browser.
+ */
+let webFetch: typeof fetch | undefined;
+export function useWebFetch(fn: typeof fetch) {
+  webFetch = fn;
+}
+
+const BROWSER_HEADERS = { 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36' };
+
+/** The index's official daily closes from FRED, or from Yahoo Finance if FRED doesn't answer. */
+async function downloadCloses(proxy: IndexProxy, fetchFn: typeof fetch): Promise<Map<string, number>> {
+  const get = fetchWithTimeout(webFetch ?? fetchFn, FRED_TIMEOUT_MS);
+  const fred = process.env.TJ_FRED_URL || 'https://fred.stlouisfed.org/graph/fredgraph.csv';
+  const fromFred = await get(`${fred}?id=${encodeURIComponent(proxy.fredSeries)}`, { headers: { ...BROWSER_HEADERS, accept: 'text/csv,*/*' } })
+    .then(async (res) => (res.ok ? parseFredCsv(await res.text()) : null))
+    .catch(() => null);
+  if (fromFred?.size) return fromFred;
+  const yahoo = process.env.TJ_YAHOO_URL || 'https://query1.finance.yahoo.com/v8/finance/chart';
+  const fromYahoo = await get(`${yahoo}/${encodeURIComponent(proxy.yahooSymbol)}?range=2y&interval=1d`, { headers: { ...BROWSER_HEADERS, accept: 'application/json' } })
+    .then(async (res) => (res.ok ? parseYahooChart(await res.json()) : null))
+    .catch(() => null);
+  return fromYahoo ?? new Map();
+}
+
+async function indexCloses(proxy: IndexProxy, day: string, db: JournalDb, fetchFn: typeof fetch): Promise<Map<string, number>> {
+  const key = `fred:${proxy.fredSeries}`;
   const cached = db.getMeta(key);
   let closes = cached ? new Map<string, number>(JSON.parse(cached).closes) : new Map<string, number>();
   const fetchedAt = cached ? JSON.parse(cached).fetchedAt as number : 0;
   const newest = [...closes.keys()].sort().pop() ?? '';
-  if (newest < day && Date.now() - fetchedAt > 60 * 60_000) {
-    const base = process.env.TJ_FRED_URL || 'https://fred.stlouisfed.org/graph/fredgraph.csv';
-    // FRED sometimes stalls instead of answering. Give up quickly and keep using the closes
-    // already saved, and don't ask again for an hour so every chart doesn't wait on it.
-    const res = await fetchWithTimeout(fetchFn, FRED_TIMEOUT_MS)(`${base}?id=${encodeURIComponent(series)}`, {
-      headers: { 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Moon Journal', accept: 'text/csv,*/*' },
-    }).catch(() => null);
-    const fresh = res?.ok ? parseFredCsv(await res.text().catch(() => '')) : null;
-    if (fresh?.size) closes = fresh;
+  // Ask again at most hourly, or every couple of minutes while there's nothing saved at all.
+  const wait = closes.size ? 60 * 60_000 : 2 * 60_000;
+  if (newest < day && Date.now() - fetchedAt > wait) {
+    const fresh = await downloadCloses(proxy, fetchFn);
+    // Keep older saved closes too: Yahoo's list only goes back two years.
+    if (fresh.size) closes = new Map([...closes, ...fresh]);
     db.setMeta(key, JSON.stringify({ fetchedAt: Date.now(), closes: [...closes] }));
   }
   return closes;
@@ -168,7 +193,7 @@ async function indexCloses(series: string, day: string, db: JournalDb, fetchFn: 
 
 /** Index ÷ ETF at the close of the latest published day on or before `day`. */
 async function indexRatio(proxy: IndexProxy, day: string, client: AlpacaClient, db: JournalDb, fetchFn: typeof fetch): Promise<number | undefined> {
-  const closes = await indexCloses(proxy.fredSeries, day, db, fetchFn);
+  const closes = await indexCloses(proxy, day, db, fetchFn);
   const ref = ratioDay(day, closes);
   if (!ref) return undefined;
   const cacheKey = `ratio:${proxy.fredSeries}:${proxy.etf}:${ref}`;
@@ -307,7 +332,7 @@ export async function historyDailyBars(
     bars = (await schwab?.indexDailyBars(schwabSymbol, Date.parse(`${startDay}T00:00:00Z`), Date.parse(`${beforeDay}T00:00:00Z`))) ?? [];
   } else if (proxy) {
     // The index's official closes (no highs or lows, so those match the close).
-    const closes = await indexCloses(proxy.fredSeries, beforeDay, db, fetchFn ?? fetch);
+    const closes = await indexCloses(proxy, beforeDay, db, fetchFn ?? fetch);
     bars = [...closes].filter(([d]) => d >= startDay).sort(([a], [b]) => a.localeCompare(b))
       .map(([day, c]) => { const v = c * proxy.scale; return { day, open: v, high: v, low: v, close: v, volume: 0 }; });
   } else {
