@@ -1,4 +1,5 @@
 import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { formatR, riskReward } from '../core/rr';
 import type { Trade } from '../core/types';
 import { COLUMNS, DEFAULT_COLUMNS, moveColumn, resolveColumns } from './columns';
 import { longDate, pnlClass, signedUsd } from './format';
@@ -72,10 +73,13 @@ export function TradeTable({ trades, selectedId, onSelect, expanded, renderDetai
   function dayBar(day: string, dayTrades: Trade[]) {
     const dayPnl = Math.round(dayTrades.reduce((a, t) => a + t.netPnl, 0) * 100) / 100;
     const wins = dayTrades.filter((t) => t.netPnl > 0).length;
+    const rs = dayTrades.map((t) => riskReward(t, t.journal)?.realizedR).filter((r): r is number => r !== undefined);
+    const dayR = rs.reduce((a, r) => a + r, 0);
     return (
       <tr className="day-row" key={`bar:${day}`}>
         <td colSpan={Math.max(1, pnlAt + lead)}>
           {longDate(day)} <span className="muted">· {plural(dayTrades.length, 'trade')} · {plural(wins, 'win')}</span>
+          {rs.length > 0 && <span className={pnlClass(dayR)} title={`Realized R over ${plural(rs.length, 'trade')} with a stop`}> · {formatR(dayR)}</span>}
         </td>
         <td className={`num ${pnlClass(dayPnl)}`}>{signedUsd(dayPnl)}</td>
         {pnlAt < columns.length - 1 && <td colSpan={columns.length - 1 - pnlAt} />}
