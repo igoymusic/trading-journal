@@ -23,7 +23,7 @@ describe('SPX trades on the SPY chart', () => {
         : { trades: [{ t: new Date(Date.parse(u.searchParams.get('end')!) - 300).toISOString(), p: 671.2 }] };
       return { ok: true, status: 200, json: async () => body, text: async () => JSON.stringify(body) };
     }) as any;
-    const settings = { timeZone: 'America/New_York', indexChart: 'etf', alpacaCredentials: () => ({ keyId: 'k', secretKey: 's' }) } as any;
+    const settings = { timeZone: 'America/New_York', alpacaCredentials: () => ({ keyId: 'k', secretKey: 's' }) } as any;
     const chart = await buildTradeChart(buildTrades(fills)[0], db, settings, fetchFn);
     expect(chart.status).toBe('ok');
     if (chart.status !== 'ok') return;

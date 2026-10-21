@@ -30,8 +30,6 @@ interface StoredSettings {
   indicators?: Indicator[];
   /** Option prices as quoted ($0.15) or per contract ($15.00, the default). */
   optionPriceDisplay?: 'quote' | 'contract';
-  /** SPX and other index options: chart the index ('index') or its ETF as-is (unset, the default). */
-  indexChart?: 'index';
   /** How entry and exit markers look, when changed from the defaults. */
   markerStyles?: MarkerStyles;
   /** When broker sync last ran (ISO time). */
@@ -157,16 +155,6 @@ export class Settings {
 
   set optionPriceDisplay(mode: 'quote' | 'contract') {
     this.data.optionPriceDisplay = mode === 'quote' ? 'quote' : undefined;
-    this.save();
-  }
-
-  /** Whether SPX trades chart on SPY ('etf') or on SPX itself ('index'). */
-  get indexChart(): 'etf' | 'index' {
-    return this.data.indexChart === 'index' ? 'index' : 'etf';
-  }
-
-  set indexChart(mode: 'etf' | 'index') {
-    this.data.indexChart = mode === 'index' ? 'index' : undefined;
     this.save();
   }
 

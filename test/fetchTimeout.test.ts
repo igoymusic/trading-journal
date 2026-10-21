@@ -37,7 +37,7 @@ describe('requests that never answer', () => {
     }) as any;
     const settings = { timeZone: 'America/New_York', alpacaCredentials: () => ({ keyId: 'k', secretKey: 's' }) } as any;
 
-    const pending = buildTradeChart(buildTrades(fills)[0], db, settings, fetchFn);
+    const pending = buildTradeChart(buildTrades(fills)[0], db, settings, fetchFn, undefined, 'index');
     await vi.advanceTimersByTimeAsync(FRED_TIMEOUT_MS);
     const chart = await pending;
     expect(chart.status).toBe('ok');
@@ -47,7 +47,7 @@ describe('requests that never answer', () => {
     expect(chart.fills[0].underlyingPrice).toBe(6710);
 
     // The next chart within the hour doesn't wait on FRED again.
-    await buildTradeChart(buildTrades(fills)[0], db, settings, fetchFn);
+    await buildTradeChart(buildTrades(fills)[0], db, settings, fetchFn, undefined, 'index');
     expect(fredCalls).toBe(1);
   });
 });
@@ -82,7 +82,7 @@ describe('daily index closes', () => {
       return { ok: true, status: 200, json: async () => body, text: async () => JSON.stringify(body) };
     }) as any;
     const settings = { timeZone: 'America/New_York', alpacaCredentials: () => ({ keyId: 'k', secretKey: 's' }) } as any;
-    const chart = await buildTradeChart(buildTrades(fills)[0], db, settings, fetchFn);
+    const chart = await buildTradeChart(buildTrades(fills)[0], db, settings, fetchFn, undefined, 'index');
     expect(chart.status).toBe('ok');
     if (chart.status === 'ok') expect(chart.fills[0].underlyingPrice).toBe(6710);
   });

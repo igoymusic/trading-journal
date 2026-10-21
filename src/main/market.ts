@@ -7,7 +7,7 @@ import type { DayBar } from '../core/indicators';
 import { type LevelPrice, priceLevels } from '../core/optionLevels';
 import { zonedToUtcMillis } from '../core/time';
 import type { PriceLevel, Trade } from '../core/types';
-import type { LevelPrices, TradeChart } from '../shared/api';
+import type { ChartView, LevelPrices, TradeChart } from '../shared/api';
 import type { JournalDb } from './db';
 import { fetchWithTimeout } from './fetchTimeout';
 import type { SchwabSync } from './schwab';
@@ -39,14 +39,17 @@ const SCHWAB_INDEX: Record<string, string> = {
   SPX: '$SPX', SPXW: '$SPX', XSP: '$XSP', NDX: '$NDX', NDXP: '$NDX', RUT: '$RUT', RUTW: '$RUT', VIX: '$VIX', DJX: '$DJX',
 };
 
-/** The ETF an index option's chart shows as-is (SPY for SPX), when the setting says to. */
-export function chartEtf(underlying: string, settings: Settings): string | undefined {
-  return settings.indexChart === 'etf' ? indexProxy(underlying)?.etf : undefined;
+/** The ETF an index option's chart shows as-is (SPY for SPX) unless the index itself is asked for. */
+function chartEtf(underlying: string, view: ChartView): string | undefined {
+  return view === 'etf' ? indexProxy(underlying)?.etf : undefined;
 }
 
-export async function buildTradeChart(trade: Trade, db: JournalDb, settings: Settings, fetchFn?: typeof fetch, schwab?: SchwabSync): Promise<TradeChart> {
-  // SPX trades on a plain SPY chart: SPY's own prices, nothing scaled.
-  const etf = chartEtf(trade.underlying, settings);
+/**
+ * The trade on its underlying's minute candles. SPX trades show on SPY's own chart unless `view`
+ * is 'index'; then it's SPX from Schwab when signed in, or SPY scaled to SPX.
+ */
+export async function buildTradeChart(trade: Trade, db: JournalDb, settings: Settings, fetchFn?: typeof fetch, schwab?: SchwabSync, view: ChartView = 'etf'): Promise<TradeChart> {
+  const etf = chartEtf(trade.underlying, view);
   if (etf) return etfChart(trade, etf, db, settings, fetchFn);
   // Index options chart the real index when Schwab is signed in and has its minutes.
   const schwabSymbol = SCHWAB_INDEX[trade.underlying];
@@ -264,8 +267,8 @@ async function optionBars(trade: Trade, client: AlpacaClient, db: JournalDb): Pr
 }
 
 /** Option prices at each stop and target line. Null when the chart or entry price isn't available. */
-export async function levelOptionPrices(trade: Trade, stops: PriceLevel[], targets: PriceLevel[], db: JournalDb, settings: Settings, fetchFn?: typeof fetch): Promise<LevelPrices | null> {
-  const chart = await buildTradeChart(trade, db, settings, fetchFn);
+export async function levelOptionPrices(trade: Trade, stops: PriceLevel[], targets: PriceLevel[], db: JournalDb, settings: Settings, fetchFn?: typeof fetch, view: ChartView = 'etf'): Promise<LevelPrices | null> {
+  const chart = await buildTradeChart(trade, db, settings, fetchFn, undefined, view);
   if (chart.status !== 'ok') return null;
   const entrySide = trade.direction === 'LONG' ? 'BUY' : 'SELL';
   const entryFill = trade.fills.find((f) => f.side === entrySide);
@@ -275,7 +278,7 @@ export async function levelOptionPrices(trade: Trade, stops: PriceLevel[], targe
   const client = new AlpacaClient(settings.alpacaCredentials()!, fetchFn as any, process.env.TJ_ALPACA_BASE_URL || undefined);
   // On a SPY chart of an SPX trade, the lines and prices are SPY's: the option's value comes from
   // SPX, so everything is scaled up by SPX ÷ SPY for the pricing.
-  const proxy = chartEtf(trade.underlying, settings) ? indexProxy(trade.underlying) : undefined;
+  const proxy = chartEtf(trade.underlying, view) ? indexProxy(trade.underlying) : undefined;
   const r = proxy ? await etfToIndex(proxy, trade.openTime.slice(0, 10), client, db, fetchFn ?? fetch) : 1;
   const up = (b: Bar): Bar => ({ ...b, open: b.open * r, high: b.high * r, low: b.low * r, close: b.close * r });
   const upLevels = (ls: PriceLevel[]) => ls.map((l) => ({ ...l, price: l.price * r }));
