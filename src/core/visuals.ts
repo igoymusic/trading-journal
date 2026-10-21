@@ -7,7 +7,8 @@ import type { Trade } from './types';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const clamp = (n: number) => Math.max(0, Math.min(100, n));
-const closedOnly = (trades: Trade[]) => trades.filter((t) => t.status === 'CLOSED');
+// Trades with their Include box unticked are left out (the field arrives with the Include column).
+const closedOnly = (trades: Trade[]) => trades.filter((t) => t.status === 'CLOSED' && !(t.journal as { excluded?: boolean } | undefined)?.excluded);
 
 export interface ScoreAxis {
   key: string;
