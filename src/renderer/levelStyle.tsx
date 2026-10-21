@@ -13,6 +13,7 @@ export interface LevelStyle {
   dash: 'solid' | 'dashed' | 'dotted';
   /** Draw a long or short position box once there's a stop and a target. */
   showBox: boolean;
+  /** Fill opacity the box starts with. */
   boxOpacity: number;
 }
 
@@ -67,9 +68,7 @@ export function LevelStyleEditor() {
         ))}
       </div>
       <label className="check"><input type="checkbox" checked={style.showBox} onChange={(e) => set({ showBox: e.target.checked })} /> Position box</label>
-      {style.showBox && (
-        <label>Box opacity <input type="range" min={0.05} max={0.6} step={0.05} value={style.boxOpacity} onChange={(e) => set({ boxOpacity: Number(e.target.value) })} /></label>
-      )}
+      {style.showBox && <p className="muted small">Click the box to move it or change its colors and labels.</p>}
       {(style.stopColor || style.targetColor) && (
         <button className="link" onClick={() => set({ stopColor: '', targetColor: '' })}>Use the colors from Settings</button>
       )}
