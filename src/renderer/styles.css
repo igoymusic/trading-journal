@@ -111,12 +111,22 @@ button.link { background: none; border: none; color: var(--blue); padding: 6px; 
 
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; }
 .card-head { display: flex; justify-content: space-between; align-items: flex-start; padding: 12px 14px 0; }
-.home { display: grid; grid-template-columns: 270px minmax(0, 1fr) 270px; gap: 12px; padding: 16px 20px 20px; align-items: start; }
-.home .month { padding: 12px 14px; }
-.home-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-.home-rail { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.home { display: grid; grid-template-columns: 270px minmax(0, 1fr) 270px; gap: 12px; padding: 12px 20px; height: 100%; min-height: 660px; }
+.home .month { padding: 10px 14px 12px; }
+.home-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; }
+/* Home fits the window: the calendar stretches to fill it, and a side column scrolls on its own only if a small screen can't fit it. */
+.home-rail { display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
+.home-rail > * { flex-shrink: 0; }
+.home-calendar { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.home-calendar .month { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.home-calendar .month-head { margin-bottom: 6px; }
+.home-calendar .cal-grid { flex: 1; min-height: 0; grid-template-rows: auto; grid-auto-rows: minmax(0, 1fr); }
+.home-calendar .cal-day, .home-calendar .cal-week { min-height: 0; overflow: hidden; }
+.donut-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.donut-pair > div { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.donut-pair .tile-label { align-self: flex-start; }
 .home-rail .goals { padding: 12px 14px; }
-.stat { padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.stat { padding: 10px 14px; display: flex; flex-direction: column; gap: 7px; }
 .tile-value.big { font-size: 26px; margin-top: -4px; }
 .stat-rows { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; font-size: 12px; }
 .stat-rows span { color: var(--muted); }
@@ -510,3 +520,6 @@ th.sorted { color: var(--text); }
 .group-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .group-bar b { text-align: right; font-variant-numeric: tabular-nums; }
 .group-bar .winrate { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+.home-calendar .cal-day, .home-calendar .cal-week { padding: 5px 8px; }
+.home-calendar .cal-pnl { margin-top: 2px; }
+.home-calendar .cal-sub { line-height: 1.3; }

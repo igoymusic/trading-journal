@@ -58,31 +58,35 @@ export function Home({ trades, goals, month, onMonthChange, onOpenDay, onOpenSet
         </div>
 
         <div className="card stat">
-          <div className="tile-label">Win rate</div>
-          <Donut
-            size={104}
-            center={`${Math.round(s.winRate * 100)}%`}
-            slices={[
-              { label: 'Wins', value: s.wins, color: c.win, detail: `${s.wins} trades` },
-              { label: 'Losses', value: s.losses, color: c.loss, detail: `${s.losses} trades` },
-              ...(breakEven ? [{ label: 'Even', value: breakEven, color: '#5d606b', detail: `${breakEven} trades` }] : []),
-            ]}
-          />
-          <div className="stat-rows">
-            <span>Won / lost</span><b>{s.wins} / {s.losses}{breakEven ? ` / ${breakEven} even` : ''}</b>
+          <div className="donut-pair">
+            <div>
+              <div className="tile-label">Win rate</div>
+              <Donut
+                size={96}
+                legend={false}
+                center={`${Math.round(s.winRate * 100)}%`}
+                slices={[
+                  { label: 'Wins', value: s.wins, color: c.win, detail: `${s.wins} trades` },
+                  { label: 'Losses', value: s.losses, color: c.loss, detail: `${s.losses} trades` },
+                  ...(breakEven ? [{ label: 'Even', value: breakEven, color: '#5d606b', detail: `${breakEven} trades` }] : []),
+                ]}
+              />
+              <div className="tile-sub">{s.wins} won · {s.losses} lost</div>
+            </div>
+            <div>
+              <div className="tile-label" title="Total won divided by total lost. Above 1 means you made money.">Profit factor</div>
+              <Donut
+                size={96}
+                legend={false}
+                center={s.profitFactor ? s.profitFactor.toFixed(2) : '—'}
+                slices={[
+                  { label: 'Won', value: grossWin, color: c.win, detail: signedUsd(grossWin) },
+                  { label: 'Lost', value: grossLoss, color: c.loss, detail: signedUsd(-grossLoss) },
+                ]}
+              />
+              <div className="tile-sub">won ÷ lost</div>
+            </div>
           </div>
-        </div>
-
-        <div className="card stat">
-          <div className="tile-label" title="Total won divided by total lost. Above 1 means you made money.">Profit factor</div>
-          <Donut
-            size={104}
-            center={s.profitFactor ? s.profitFactor.toFixed(2) : '—'}
-            slices={[
-              { label: 'Won', value: grossWin, color: c.win, detail: signedUsd(grossWin) },
-              { label: 'Lost', value: grossLoss, color: c.loss, detail: signedUsd(-grossLoss) },
-            ]}
-          />
           <div className="stat-rows">
             <span>Total won</span><b className="win">{signedUsd(grossWin)}</b>
             <span>Total lost</span><b className="loss">{signedUsd(-grossLoss)}</b>
@@ -108,7 +112,7 @@ export function Home({ trades, goals, month, onMonthChange, onOpenDay, onOpenSet
 
       <div className="home-main">
         <PnlChart trades={trades} />
-        <div className="card">
+        <div className="card home-calendar">
           <MonthView goals={goals} trades={trades} year={month.year} month={month.month} onMonthChange={onMonthChange} onOpenDay={onOpenDay} />
         </div>
       </div>
@@ -117,7 +121,7 @@ export function Home({ trades, goals, month, onMonthChange, onOpenDay, onOpenSet
         {score && (
           <div className="card stat">
             <div className="tile-label" title="Hover a point to see what it measures">Trading score · {scopeLabel}</div>
-            <RadarChart score={score} />
+            <RadarChart score={score} radius={48} />
           </div>
         )}
 

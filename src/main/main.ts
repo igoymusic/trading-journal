@@ -48,11 +48,15 @@ async function createWindow() {
   const win = new BrowserWindow({
     width: 1400,
     height: 900,
+    show: false,
     backgroundColor: '#131722',
     title: 'Moon Journal',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true },
   });
   win.setMenuBarVisibility(false);
+  // Open filling the screen so all of Home shows without scrolling.
+  win.maximize();
+  win.show();
   // Help links (like Alpaca's sign-up page) open in the normal web browser, and only those sites.
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https:\/\/([a-z0-9-]+\.)*(alpaca\.markets|snaptrade\.com)\//.test(url)) shell.openExternal(url);
