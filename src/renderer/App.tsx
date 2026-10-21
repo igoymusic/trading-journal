@@ -4,7 +4,7 @@ import type { Goals } from '../core/goals';
 import { applyFilter, DEFAULT_FILTER, type TradeFilter } from '../core/reports';
 import { type Summary, summarizeTrades } from '../core/trades';
 import { formatR, riskReward } from '../core/rr';
-import type { Trade } from '../core/types';
+import { isCounted, type Trade } from '../core/types';
 import type { ImportResult, JournalData, SyncResult } from '../shared/api';
 import { DayView } from './DayView';
 import { FilterBar } from './FilterBar';
@@ -362,7 +362,7 @@ function EmptyState({ onImport, onOpenSettings }: { onImport: () => void; onOpen
 
 /** Realized R from the trades that have a stop: their total, and the average per trade. */
 function realizedRTile(trades: Trade[]) {
-  const rs = trades.map((t) => riskReward(t, t.journal)?.realizedR).filter((r): r is number => r !== undefined);
+  const rs = trades.filter(isCounted).map((t) => riskReward(t, t.journal)?.realizedR).filter((r): r is number => r !== undefined);
   if (!rs.length) return { label: 'Realized R', value: '—', sub: 'Add a stop to a trade to measure R' };
   const total = rs.reduce((a, r) => a + r, 0);
   return { label: 'Realized R', value: formatR(total), tone: pnlClass(total), sub: `avg ${formatR(total / rs.length)} over ${rs.length} trade${rs.length === 1 ? '' : 's'}` };

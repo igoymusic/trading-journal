@@ -1,6 +1,6 @@
 import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { formatR, riskReward } from '../core/rr';
-import type { Trade } from '../core/types';
+import { isCounted, type Trade } from '../core/types';
 import { COLUMNS, DEFAULT_COLUMNS, moveColumn, resolveColumns } from './columns';
 import { longDate, pnlClass, signedUsd } from './format';
 import { useJournal } from './journal';
@@ -29,7 +29,18 @@ export function TradeTable({ trades, selectedId, onSelect, expanded, renderDetai
   const { setups } = useJournal();
 
   useEffect(() => {
-    window.journal.getSettings().then((s) => setColumnIds(resolveColumns(s.tradeColumns).map((c) => c.id)));
+    window.journal.getSettings().then((s) => {
+      let ids = resolveColumns(s.tradeColumns).map((c) => c.id);
+      // The Include column came later: show it once on tables set up before then (it can be hidden again).
+      try {
+        if (s.tradeColumns && !ids.includes('include') && !localStorage.getItem('includeColumnShown')) {
+          ids = ['include', ...ids];
+          window.journal.setTradeColumns(ids);
+        }
+        localStorage.setItem('includeColumnShown', '1');
+      } catch { /* fine */ }
+      setColumnIds(ids);
+    });
   }, []);
 
   function saveColumns(ids: string[] | null) {
@@ -70,7 +81,9 @@ export function TradeTable({ trades, selectedId, onSelect, expanded, renderDetai
     onDragEnd: () => setDragging(null),
   });
 
-  function dayBar(day: string, dayTrades: Trade[]) {
+  function dayBar(day: string, listed: Trade[]) {
+    // Trades with Include unticked are listed but left out of the day's numbers.
+    const dayTrades = listed.filter(isCounted);
     const dayPnl = Math.round(dayTrades.reduce((a, t) => a + t.netPnl, 0) * 100) / 100;
     const wins = dayTrades.filter((t) => t.netPnl > 0).length;
     const rs = dayTrades.map((t) => riskReward(t, t.journal)?.realizedR).filter((r): r is number => r !== undefined);
@@ -92,7 +105,7 @@ export function TradeTable({ trades, selectedId, onSelect, expanded, renderDetai
     const open = !!expanded?.has(t.id);
     return (
       <Fragment key={t.id}>
-        <tr className={`trade-row ${t.id === selectedId || open ? 'selected' : ''}`} onClick={() => onSelect(t.id)}>
+        <tr className={`trade-row ${t.id === selectedId || open ? 'selected' : ''} ${isCounted(t) ? '' : 'not-counted'}`} onClick={() => onSelect(t.id)}>
           {lead > 0 && <td className="chev-col muted">{open ? '▾' : '▸'}</td>}
           {columns.map((c) => <td key={c.id} className={c.numeric ? 'num' : ''}>{flat && c.renderFlat ? c.renderFlat(t) : c.render(t)}</td>)}
         </tr>

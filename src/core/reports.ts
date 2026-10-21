@@ -3,7 +3,7 @@
 
 import { tradeDay } from './calendar';
 import { riskReward } from './rr';
-import { type MistakeTag, playbookScore, type Setup, type Trade } from './types';
+import { isCounted, type MistakeTag, playbookScore, type Setup, type Trade } from './types';
 
 /** Empty lists and missing values mean "any". */
 export type DateRange = 'today' | 'wtd' | 'mtd' | 'ytd' | 'lastYear' | 'custom';
@@ -173,7 +173,8 @@ export interface Reports {
   rulesBroken: ReportRow[];
 }
 
-export function buildReports(trades: Trade[], setups: Setup[], mistakes: MistakeTag[], positives: MistakeTag[] = []): Reports {
+export function buildReports(all: Trade[], setups: Setup[], mistakes: MistakeTag[], positives: MistakeTag[] = []): Reports {
+  const trades = all.filter(isCounted);
   const symbols = [...new Set(trades.map((t) => t.underlying))].sort();
   // Half-hour slots by entry time; everything before 9:30 or after 4:00 gets its own slot.
   const slots = [{ key: 'pre', label: 'Before 9:30am' }];

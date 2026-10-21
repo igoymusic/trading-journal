@@ -2,7 +2,7 @@
 // monthly target), and how each day and month measured up.
 
 import { type DayStats, statsByDay, tradeDay } from './calendar';
-import type { Trade } from './types';
+import { isCounted, type Trade } from './types';
 
 /** Any goal left out isn't tracked. Dollar amounts are positive (a $200 max loss is 200). */
 export interface Goals {
@@ -54,7 +54,8 @@ export function describeGoal(g: CustomGoal): string {
 }
 
 /** The value of a metric over some trades, or undefined when it can't be measured (e.g. no closed trades). */
-export function metricValue(trades: Trade[], metric: GoalMetric): number | undefined {
+export function metricValue(all: Trade[], metric: GoalMetric): number | undefined {
+  const trades = all.filter(isCounted);
   const closed = trades.filter((t) => t.status === 'CLOSED');
   const wins = closed.filter((t) => t.netPnl > 0);
   const losses = closed.filter((t) => t.netPnl < 0);

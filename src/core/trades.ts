@@ -1,6 +1,6 @@
 // Groups fills into round-trip trades: one trade per contract, from flat to flat.
 
-import { CONTRACT_MULTIPLIER, type Fill, type Trade } from './types';
+import { CONTRACT_MULTIPLIER, type Fill, isCounted, type Trade } from './types';
 
 function contractKey(f: Fill) {
   return `${f.underlying}|${f.expiry}|${f.strike}|${f.putCall}`;
@@ -153,7 +153,7 @@ export interface Summary {
 }
 
 export function summarizeTrades(trades: Trade[]): Summary {
-  const closed = trades.filter((t) => t.status === 'CLOSED');
+  const closed = trades.filter((t) => t.status === 'CLOSED' && isCounted(t));
   const wins = closed.filter((t) => t.netPnl > 0);
   const losses = closed.filter((t) => t.netPnl < 0);
   const sum = (ts: Trade[], f: (t: Trade) => number) => ts.reduce((a, t) => a + f(t), 0);
