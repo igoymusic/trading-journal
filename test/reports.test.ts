@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyFilter, buildReports, daysToExpiry, EMPTY_FILTER, isFiltering } from '../src/core/reports';
+import { applyFilter, buildReports, dateBounds, daysToExpiry, EMPTY_FILTER, isFiltering } from '../src/core/reports';
 import type { Trade, TradeJournal } from '../src/core/types';
 
 function trade(id: string, over: Partial<Trade> & { j?: Partial<TradeJournal> } = {}): Trade {
@@ -90,5 +90,21 @@ describe('reports', () => {
     expect(r.weekday.map((m) => [m.label, m.trades])).toEqual([['Monday', 1], ['Tuesday', 3]]);
     expect(r.putCall.map((m) => m.label)).toEqual(['Calls', 'Puts']);
     expect(r.rating.map((m) => m.label)).toEqual(['★★★★★', 'Not rated']);
+  });
+});
+
+describe('date ranges', () => {
+  // Wednesday, October 21, 2026.
+  const now = new Date(2026, 9, 21, 15, 0);
+  it('work out from today', () => {
+    expect(dateBounds({ range: 'today' }, now)).toEqual({ from: '2026-10-21', to: '2026-10-21' });
+    expect(dateBounds({ range: 'wtd' }, now)).toEqual({ from: '2026-10-19', to: '2026-10-21' });
+    expect(dateBounds({ range: 'mtd' }, now)).toEqual({ from: '2026-10-01', to: '2026-10-21' });
+    expect(dateBounds({ range: 'ytd' }, now)).toEqual({ from: '2026-01-01', to: '2026-10-21' });
+    expect(dateBounds({ range: 'lastYear' }, now)).toEqual({ from: '2025-01-01', to: '2025-12-31' });
+    expect(dateBounds({ range: 'custom', from: '2026-03-02', to: '2026-03-06' }, now)).toEqual({ from: '2026-03-02', to: '2026-03-06' });
+  });
+  it('start the week on Monday, even on a Sunday', () => {
+    expect(dateBounds({ range: 'wtd' }, new Date(2026, 9, 25, 12)).from).toBe('2026-10-19');
   });
 });

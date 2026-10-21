@@ -6,7 +6,11 @@ import { riskReward } from './rr';
 import { type MistakeTag, playbookScore, type Setup, type Trade } from './types';
 
 /** Empty lists and missing values mean "any". */
+export type DateRange = 'today' | 'wtd' | 'mtd' | 'ytd' | 'lastYear' | 'custom';
+
 export interface TradeFilter {
+  /** A preset period, worked out from today's date each time; 'custom' uses `from` and `to`. None means all time. */
+  range?: DateRange;
   /** "YYYY-MM-DD", inclusive, by the day the trade closed. */
   from?: string;
   to?: string;
@@ -26,8 +30,11 @@ export interface TradeFilter {
 
 export const EMPTY_FILTER: TradeFilter = { symbols: [], setups: [], mistakes: [], positives: [], dte: [] };
 
+/** What All trades and Reports start on each time the app opens: this month so far. */
+export const DEFAULT_FILTER: TradeFilter = { ...EMPTY_FILTER, range: 'mtd' };
+
 export function isFiltering(f: TradeFilter): boolean {
-  return !!(f.from || f.to || f.symbols.length || f.putCall || f.direction || f.setups.length || f.mistakes.length || f.positives?.length || f.result || f.dte.length);
+  return !!(f.range || f.from || f.to || f.symbols.length || f.putCall || f.direction || f.setups.length || f.mistakes.length || f.positives?.length || f.result || f.dte.length);
 }
 
 /**
@@ -48,12 +55,33 @@ export const DTE_BUCKETS: { key: string; label: string; min: number; max: number
 
 const dteBucket = (t: Trade) => DTE_BUCKETS.find((b) => daysToExpiry(t) >= b.min && daysToExpiry(t) <= b.max)!;
 
+const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+/** The first and last day a filter's period covers, on this computer's calendar. */
+export function dateBounds(f: Pick<TradeFilter, 'range' | 'from' | 'to'>, now = new Date()): { from?: string; to?: string } {
+  const today = iso(now);
+  switch (f.range) {
+    case 'today': return { from: today, to: today };
+    case 'wtd': {
+      // Weeks start on Monday.
+      const monday = new Date(now);
+      monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+      return { from: iso(monday), to: today };
+    }
+    case 'mtd': return { from: today.slice(0, 8) + '01', to: today };
+    case 'ytd': return { from: `${now.getFullYear()}-01-01`, to: today };
+    case 'lastYear': return { from: `${now.getFullYear() - 1}-01-01`, to: `${now.getFullYear() - 1}-12-31` };
+    default: return { from: f.from, to: f.to };
+  }
+}
+
 export function applyFilter(trades: Trade[], f: TradeFilter): Trade[] {
+  const { from, to } = dateBounds(f);
   return trades.filter((t) => {
     const day = tradeDay(t);
     const j = t.journal;
-    if (f.from && day < f.from) return false;
-    if (f.to && day > f.to) return false;
+    if (from && day < from) return false;
+    if (to && day > to) return false;
     if (f.symbols.length && !f.symbols.includes(t.underlying)) return false;
     if (f.putCall && t.putCall !== f.putCall) return false;
     if (f.direction && t.direction !== f.direction) return false;

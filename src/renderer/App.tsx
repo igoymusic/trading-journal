@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useReducer, useState } from 'react';
 import { statsByDay, tradeDay } from '../core/calendar';
 import type { Goals } from '../core/goals';
-import { applyFilter, EMPTY_FILTER, type TradeFilter } from '../core/reports';
+import { applyFilter, DEFAULT_FILTER, type TradeFilter } from '../core/reports';
 import { type Summary, summarizeTrades } from '../core/trades';
 import { formatR, riskReward } from '../core/rr';
 import type { Trade } from '../core/types';
@@ -59,7 +59,8 @@ export function App() {
   // Which trades have their chart open on each day, so a Day tab remembers it while you switch tabs.
   const [openCharts, setOpenCharts] = useState<Record<string, string[]>>({});
   // Filters shared by the All trades and Reports tabs.
-  const [filter, setFilter] = useState<TradeFilter>(EMPTY_FILTER);
+  // Kept while the app is open; back to month to date next time.
+  const [filter, setFilter] = useState<TradeFilter>(DEFAULT_FILTER);
   const filtered = useMemo(() => applyFilter(data?.trades ?? [], filter), [data, filter]);
   const filterTab = tabs.active === 'trades' || tabs.active === 'reports';
   // A trade you just combined lives on inside the combined one.
