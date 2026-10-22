@@ -114,8 +114,8 @@ export function SettingsDialog({ onClose, onSynced, onColorsChanged }: { onClose
             <>
               <h3>Tags</h3>
               <p className="muted">Labels you put on trades for what went well and what went wrong. Reports show what each one is worth.</p>
-              <TagsEditor kind="positive" />
-              <TagsEditor kind="mistake" />
+              <div className="settings-card"><TagsEditor kind="positive" /></div>
+              <div className="settings-card"><TagsEditor kind="mistake" /></div>
             </>
           ),
         },
@@ -124,9 +124,37 @@ export function SettingsDialog({ onClose, onSynced, onColorsChanged }: { onClose
     {
       name: 'Display',
       sections: [
-        { name: 'Colors', body: settings && <ColorsEditor initial={settings.colors} onChange={onColorsChanged} /> },
-        { name: 'Entry and exit markers', body: <><h3>Entry and exit markers</h3><MarkerStyleEditor /></> },
-        { name: 'Option prices', body: settings && <OptionPriceToggle initial={settings.optionPriceDisplay} onChange={onColorsChanged} /> },
+        {
+          name: 'Numbers and calendar',
+          body: settings && (
+            <>
+              <h3>Numbers and calendar</h3>
+              <div className="settings-card">
+                <ColorsEditor group="Numbers and calendar" initial={settings.colors} onChange={onColorsChanged} />
+              </div>
+            </>
+          ),
+        },
+        {
+          name: 'Charts',
+          body: settings && (
+            <>
+              <h3>Charts</h3>
+              <div className="settings-card">
+                <h4>Colors</h4>
+                <ColorsEditor group="Charts" initial={settings.colors} onChange={onColorsChanged} />
+              </div>
+              <div className="settings-card">
+                <h4>Entry and exit markers</h4>
+                <MarkerStyleEditor />
+              </div>
+              <div className="settings-card">
+                <h4>Option prices</h4>
+                <OptionPriceToggle initial={settings.optionPriceDisplay} onChange={onColorsChanged} />
+              </div>
+            </>
+          ),
+        },
       ],
     },
     {
@@ -495,7 +523,6 @@ function OptionPriceToggle({ initial, onChange }: { initial: OptionPriceDisplay;
   };
   return (
     <>
-      <h3>Option prices</h3>
       <div className="toggle">
         <button className={mode === 'quote' ? 'active' : ''} onClick={() => pick('quote')}>Option price ($0.15)</button>
         <button className={mode === 'contract' ? 'active' : ''} onClick={() => pick('contract')}>Price paid ($15.00)</button>
@@ -505,8 +532,8 @@ function OptionPriceToggle({ initial, onChange }: { initial: OptionPriceDisplay;
   );
 }
 
-/** Your colors for profits, losses, buttons and charts; each change shows right away. */
-function ColorsEditor({ initial, onChange }: { initial?: Partial<ColorScheme>; onChange: () => void }) {
+/** One group of your colors (numbers and calendar, or charts); each change shows right away. */
+function ColorsEditor({ group, initial, onChange }: { group: string; initial?: Partial<ColorScheme>; onChange: () => void }) {
   const [custom, setCustom] = useState<Partial<ColorScheme>>(initial ?? {});
   const value = { ...DEFAULT_COLORS, ...custom };
   function save(next: Partial<ColorScheme>) {
@@ -520,25 +547,24 @@ function ColorsEditor({ initial, onChange }: { initial?: Partial<ColorScheme>; o
     if (color.toLowerCase() === DEFAULT_COLORS[key].toLowerCase()) delete next[key];
     save(next);
   };
-  const groups = [...new Set(COLOR_LABELS.map((c) => c.group))];
+  const labels = COLOR_LABELS.filter((c) => c.group === group);
+  const changed = labels.some((c) => custom[c.key]);
+  const reset = () => {
+    const next = { ...custom };
+    for (const c of labels) delete next[c.key];
+    save(next);
+  };
   return (
     <>
-      <h3>Colors</h3>
-      <p className="muted">Pick your own colors. Changes show right away.</p>
-      {groups.map((g) => (
-        <div key={g} className="color-group">
-          <div className="muted small">{g}</div>
-          <div className="color-grid">
-            {COLOR_LABELS.filter((c) => c.group === g).map((c) => (
-              <label key={c.key} className="color-pick">
-                <input type="color" value={value[c.key]} onChange={(e) => set(c.key, e.target.value)} />
-                {c.label}
-              </label>
-            ))}
-          </div>
-        </div>
-      ))}
-      <button disabled={!Object.keys(custom).length} onClick={() => save({})}>Reset to default colors</button>
+      <div className="color-grid">
+        {labels.map((c) => (
+          <label key={c.key} className="color-pick">
+            <input type="color" value={value[c.key]} onChange={(e) => set(c.key, e.target.value)} />
+            {c.label}
+          </label>
+        ))}
+      </div>
+      <button disabled={!changed} onClick={reset}>Reset these colors</button>
     </>
   );
 }
