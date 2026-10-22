@@ -550,3 +550,16 @@ th.sorted { color: var(--text); }
 /* Resizable trade table columns. */
 .trades th .col-resize { position: absolute; top: 0; right: -3px; width: 7px; height: 100%; cursor: col-resize; z-index: 3; }
 .trades th .col-resize:hover, .trades th .col-resize.active { background: var(--blue); opacity: 0.6; }
+/* Settings: category tabs across the top, sections down the left. */
+.modal.settings-modal { width: min(900px, 94vw); height: min(680px, 88vh); max-height: none; display: flex; flex-direction: column; overflow: hidden; padding: 16px 0 0; }
+.settings-modal .modal-head { padding: 0 22px; }
+.settings-tabs { display: flex; gap: 2px; padding: 12px 22px 0; border-bottom: 1px solid var(--border); }
+.settings-tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 8px 14px; color: var(--muted); }
+.settings-tabs button:hover { color: var(--text); }
+.settings-tabs button.active { color: var(--text); border-bottom-color: var(--blue); }
+.settings-body { flex: 1; display: flex; min-height: 0; }
+.settings-nav { width: 190px; flex: none; display: flex; flex-direction: column; gap: 2px; padding: 12px 8px; border-right: 1px solid var(--border); overflow: auto; }
+.settings-nav button { text-align: left; border: none; background: none; padding: 7px 10px; border-radius: 4px; color: var(--muted); }
+.settings-nav button:hover { color: var(--text); background: var(--panel-2); }
+.settings-nav button.active { color: var(--text); background: var(--panel-2); }
+.settings-page { flex: 1; overflow: auto; padding: 0 22px 22px; }
