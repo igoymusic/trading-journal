@@ -20,6 +20,7 @@ import { applyMarkerStyles } from './markerStyles';
 import { applyIndicators } from './indicatorsStore';
 import { setOptionPriceDisplay } from './format';
 import { SettingsDialog } from './SettingsDialog';
+import logo from './logo.png';
 import { ErrorBoundary } from './ErrorBoundary';
 import { TradePanel } from './TradePanel';
 import { type ActiveTab, initialTabs, monthKey, tabsReducer } from './tabs';
@@ -182,7 +183,7 @@ export function App() {
     <div className="app">
       <header className="topbar">
         <div className="topbar-title">
-          <h1>Moon Journal</h1>
+          <h1><img className="logo" src={logo} alt="" />Moon Journal</h1>
           {accounts.length > 1 && <AccountPicker accounts={accounts} hidden={hiddenAccounts} onChange={changeHiddenAccounts} />}
         </div>
         <div className="topbar-actions">
