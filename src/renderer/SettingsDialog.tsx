@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { type CustomGoal, describeGoal, GOAL_METRICS, type Goals } from '../core/goals';
 import type { PlaybookRule } from '../core/types';
 import type { BackupStatus, ColorScheme, SettingsView, SyncResult } from '../shared/api';
@@ -25,6 +25,10 @@ export function SettingsDialog({ onClose, onSynced, onColorsChanged }: { onClose
   const [status, setStatus] = useState<{ ok: boolean; message: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [removed, setRemoved] = useState<string | null>(null);
+  // The tab and section open last time.
+  const [place, setPlace] = useState<{ tab: string; section: string }>(() => {
+    try { return JSON.parse(localStorage.getItem('settingsPlace') ?? '') as { tab: string; section: string }; } catch { return { tab: '', section: '' }; }
+  });
 
   const load = () => window.journal.getSettings().then(setSettings);
   useEffect(() => { load(); }, []);
@@ -62,66 +66,127 @@ export function SettingsDialog({ onClose, onSynced, onColorsChanged }: { onClose
     load();
   }
 
+  const resync = () => onSynced({ added: 0, accounts: 0, errors: [] });
+  // Category tabs across the top, each with its sections down the left (like thinkorswim's settings).
+  const tabs: { name: string; sections: { name: string; body: ReactNode }[] }[] = [
+    {
+      name: 'Connections',
+      sections: [
+        { name: 'Brokers', body: <BrokersSettings onSynced={onSynced} /> },
+        { name: 'Schwab trading', body: <SchwabSettings slot="trading" onSynced={onSynced} /> },
+        { name: 'Schwab market data', body: <SchwabSettings slot="marketData" onSynced={onSynced} /> },
+        {
+          name: 'Market data (Alpaca)',
+          body: (
+            <>
+              <h3>Market data (Alpaca)</h3>
+              <p className="muted">
+                Used to draw the underlying's chart and find its exact price at each of your fills.
+                A free Alpaca account works. Keys are stored encrypted on this computer only.
+              </p>
+              {!settings?.hasAlpacaKey && <AlpacaSteps />}
+              {settings?.hasAlpacaKey ? (
+                <div className="row">
+                  <span className="win">● Connected</span>
+                  <button onClick={removeKeys}>Remove keys</button>
+                </div>
+              ) : (
+                <>
+                  <label>API Key ID<input value={keyId} onChange={(e) => setKeyId(e.target.value)} spellCheck={false} /></label>
+                  <label>Secret Key<input type="password" value={secretKey} onChange={(e) => setSecretKey(e.target.value)} spellCheck={false} /></label>
+                  <button className="primary" disabled={busy || !keyId || !secretKey} onClick={saveKeys}>{busy ? 'Checking…' : 'Connect'}</button>
+                </>
+              )}
+              {status && <p className={status.ok ? 'win' : 'loss'}>{status.message}</p>}
+            </>
+          ),
+        },
+      ],
+    },
+    {
+      name: 'Journal',
+      sections: [
+        { name: 'Goals', body: settings && <GoalsEditor initial={settings.goals} /> },
+        { name: 'Setups', body: <SetupsEditor /> },
+        {
+          name: 'Tags',
+          body: (
+            <>
+              <h3>Tags</h3>
+              <p className="muted">Labels you put on trades for what went well and what went wrong. Reports show what each one is worth.</p>
+              <TagsEditor kind="positive" />
+              <TagsEditor kind="mistake" />
+            </>
+          ),
+        },
+      ],
+    },
+    {
+      name: 'Display',
+      sections: [
+        { name: 'Colors', body: settings && <ColorsEditor initial={settings.colors} onChange={onColorsChanged} /> },
+        { name: 'Entry and exit markers', body: <><h3>Entry and exit markers</h3><MarkerStyleEditor /></> },
+        { name: 'Option prices', body: settings && <OptionPriceToggle initial={settings.optionPriceDisplay} onChange={onColorsChanged} /> },
+      ],
+    },
+    {
+      name: 'Data',
+      sections: [
+        { name: 'Trades by account', body: <AccountTrades onChanged={resync} /> },
+        {
+          name: 'Imported files',
+          body: (
+            <>
+              <h3>Imported files</h3>
+              <p className="muted">
+                Remove every trade imported from thinkorswim CSV files. If a broker is connected, its full history is synced
+                again right after. Your setups, tags and goals stay.
+              </p>
+              <button disabled={busy} onClick={removeImported}>Remove imported CSV trades</button>
+              {removed && <p className="win">{removed}</p>}
+            </>
+          ),
+        },
+        {
+          name: 'Time zone',
+          body: (
+            <>
+              <h3>Time zone of your broker exports</h3>
+              <p className="muted">thinkorswim exports times in your computer's time zone without saying which one.</p>
+              <select value={settings?.timeZone ?? 'America/New_York'} onChange={(e) => changeZone(e.target.value)}>
+                {TIME_ZONES.map(([tz, name]) => <option key={tz} value={tz}>{name} ({tz})</option>)}
+              </select>
+            </>
+          ),
+        },
+        { name: 'Backups', body: <BackupsSection /> },
+      ],
+    },
+  ];
+  const tab = tabs.find((t) => t.name === place.tab) ?? tabs[0];
+  const section = tab.sections.find((s) => s.name === place.section) ?? tab.sections[0];
+  function go(tabName: string, sectionName?: string) {
+    const next = { tab: tabName, section: sectionName ?? tabs.find((t) => t.name === tabName)!.sections[0].name };
+    setPlace(next);
+    try { localStorage.setItem('settingsPlace', JSON.stringify(next)); } catch { /* not remembered; fine */ }
+  }
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div className="modal settings-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h2>Settings</h2>
           <button onClick={onClose} aria-label="Close">✕</button>
         </div>
-
-        <BrokersSettings onSynced={onSynced} />
-        <SchwabSettings slot="trading" onSynced={onSynced} />
-        <SchwabSettings slot="marketData" onSynced={onSynced} />
-
-        <h3>Market data (Alpaca)</h3>
-        <p className="muted">
-          Used to draw the underlying's chart and find its exact price at each of your fills.
-          A free Alpaca account works. Keys are stored encrypted on this computer only.
-        </p>
-        {!settings?.hasAlpacaKey && <AlpacaSteps />}
-        {settings?.hasAlpacaKey ? (
-          <div className="row">
-            <span className="win">● Connected</span>
-            <button onClick={removeKeys}>Remove keys</button>
-          </div>
-        ) : (
-          <>
-            <label>API Key ID<input value={keyId} onChange={(e) => setKeyId(e.target.value)} spellCheck={false} /></label>
-            <label>Secret Key<input type="password" value={secretKey} onChange={(e) => setSecretKey(e.target.value)} spellCheck={false} /></label>
-            <button className="primary" disabled={busy || !keyId || !secretKey} onClick={saveKeys}>{busy ? 'Checking…' : 'Connect'}</button>
-          </>
-        )}
-        {status && <p className={status.ok ? 'win' : 'loss'}>{status.message}</p>}
-
-        {settings && <GoalsEditor initial={settings.goals} />}
-
-        <SetupsEditor />
-        <h3>Tags</h3>
-        <p className="muted">Labels you put on trades for what went well and what went wrong. Reports show what each one is worth.</p>
-        <TagsEditor kind="positive" />
-        <TagsEditor kind="mistake" />
-
-        <AccountTrades onChanged={() => onSynced({ added: 0, accounts: 0, errors: [] })} />
-
-        <BackupsSection />
-
-        <h3>Imported files</h3>
-        <p className="muted">
-          Remove every trade imported from thinkorswim CSV files. If a broker is connected, its full history is synced
-          again right after. Your setups, tags and goals stay.
-        </p>
-        <button disabled={busy} onClick={removeImported}>Remove imported CSV trades</button>
-        {removed && <p className="win">{removed}</p>}
-
-        {settings && <OptionPriceToggle initial={settings.optionPriceDisplay} onChange={onColorsChanged} />}
-        {settings && <ColorsEditor initial={settings.colors} onChange={onColorsChanged} />}
-
-        <h3>Time zone of your broker exports</h3>
-        <p className="muted">thinkorswim exports times in your computer's time zone without saying which one.</p>
-        <select value={settings?.timeZone ?? 'America/New_York'} onChange={(e) => changeZone(e.target.value)}>
-          {TIME_ZONES.map(([tz, name]) => <option key={tz} value={tz}>{name} ({tz})</option>)}
-        </select>
+        <div className="settings-tabs">
+          {tabs.map((t) => <button key={t.name} className={t === tab ? 'active' : ''} onClick={() => go(t.name)}>{t.name}</button>)}
+        </div>
+        <div className="settings-body">
+          <nav className="settings-nav">
+            {tab.sections.map((s) => <button key={s.name} className={s === section ? 'active' : ''} onClick={() => go(tab.name, s.name)}>{s.name}</button>)}
+          </nav>
+          <div className="settings-page" key={`${tab.name}/${section.name}`}>{section.body}</div>
+        </div>
       </div>
     </div>
   );
@@ -474,8 +539,6 @@ function ColorsEditor({ initial, onChange }: { initial?: Partial<ColorScheme>; o
         </div>
       ))}
       <button disabled={!Object.keys(custom).length} onClick={() => save({})}>Reset to default colors</button>
-      <h3>Entry and exit markers</h3>
-      <MarkerStyleEditor />
     </>
   );
 }
