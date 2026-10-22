@@ -31,19 +31,19 @@ export function MarkerStyleEditor() {
               <span className={`marker-sample ${kind === 'entry' ? '' : 'flip'}`} style={{ borderLeftColor: s.color, borderWidth: `${s.size / 2 + 1}px 0 ${s.size / 2 + 1}px ${s.size}px` }} />
             </div>
             <label>Arrow size <input type="range" min={MARKER_SIZE.min} max={MARKER_SIZE.max} step={1} value={s.size} onChange={(e) => set(kind, { size: Number(e.target.value) })} /></label>
-            <div className="draw-style-row">
-              {[1, 2, 3, 4].map((w) => (
-                <button key={w} className={s.lineWidth === w ? 'active' : ''} title={`${w}px line`} onClick={() => set(kind, { lineWidth: w })}>
-                  <span className="line-sample" style={{ borderTopWidth: w, borderTopStyle: s.dash }} />
-                </button>
-              ))}
-            </div>
-            <div className="draw-style-row">
-              {(['solid', 'dashed', 'dotted'] as const).map((d) => (
-                <button key={d} className={s.dash === d ? 'active' : ''} title={`${d} line`} onClick={() => set(kind, { dash: d })}>
-                  <span className="line-sample" style={{ borderTopStyle: d, borderTopWidth: Math.max(2, s.lineWidth) }} />
-                </button>
-              ))}
+            <div className="marker-line-row">
+              <label>Line thickness
+                <select value={s.lineWidth} onChange={(e) => set(kind, { lineWidth: Number(e.target.value) })}>
+                  {[1, 2, 3, 4].map((w) => <option key={w} value={w}>{w} px</option>)}
+                </select>
+              </label>
+              <label>Line style
+                <select value={s.dash} onChange={(e) => set(kind, { dash: e.target.value as MarkerStyle['dash'] })}>
+                  <option value="solid">Solid</option>
+                  <option value="dashed">Dashed</option>
+                  <option value="dotted">Dotted</option>
+                </select>
+              </label>
             </div>
           </div>
         );
