@@ -6,6 +6,8 @@ export interface ReportsLayout {
   collapsed: string[];
   /** Table sections switched to their chart view. */
   charts?: string[];
+  /** Sections switched off from the Sections menu. */
+  hidden?: string[];
 }
 
 /**
@@ -29,6 +31,7 @@ export function normalizeLayout(saved: ReportsLayout | undefined, keys: string[]
     columns: cols,
     collapsed: (saved?.collapsed ?? []).filter((k) => keys.includes(k)),
     charts: (saved?.charts ?? []).filter((k) => keys.includes(k)),
+    hidden: (saved?.hidden ?? []).filter((k) => keys.includes(k)),
   };
 }
 
@@ -48,4 +51,9 @@ export function toggleCollapsed(layout: ReportsLayout, key: string): ReportsLayo
 export function toggleChart(layout: ReportsLayout, key: string): ReportsLayout {
   const charts = layout.charts ?? [];
   return { ...layout, charts: charts.includes(key) ? charts.filter((k) => k !== key) : [...charts, key] };
+}
+
+export function toggleHidden(layout: ReportsLayout, key: string): ReportsLayout {
+  const hidden = layout.hidden ?? [];
+  return { ...layout, hidden: hidden.includes(key) ? hidden.filter((k) => k !== key) : [...hidden, key] };
 }

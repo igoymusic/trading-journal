@@ -563,3 +563,8 @@ th.sorted { color: var(--text); }
 .settings-nav button:hover { color: var(--text); background: var(--panel-2); }
 .settings-nav button.active { color: var(--text); background: var(--panel-2); }
 .settings-page { flex: 1; overflow: auto; padding: 0 22px 22px; }
+
+/* Reports: the Sections menu for hiding and showing sections. */
+.reports-tools { display: flex; justify-content: flex-end; padding: 0 20px 8px; }
+.sections-menu { width: 260px; max-height: 520px; }
+.sections-menu .picker-row { display: flex; align-items: center; gap: 8px; cursor: pointer; }

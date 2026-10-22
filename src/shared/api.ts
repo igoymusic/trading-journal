@@ -118,7 +118,7 @@ export interface SettingsView {
   /** Visible trade table columns in order; undefined means the defaults. */
   tradeColumns?: string[];
   goals: Goals;
-  reportsLayout?: { columns: string[][]; collapsed: string[]; charts?: string[] };
+  reportsLayout?: { columns: string[][]; collapsed: string[]; charts?: string[]; hidden?: string[] };
   /** Accounts left out of the journal's numbers. */
   hiddenAccounts: string[];
   /** Only the colors you changed. */
