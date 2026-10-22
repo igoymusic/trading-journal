@@ -99,6 +99,8 @@ export interface ColorScheme {
   win: string;
   loss: string;
   accent: string;
+  /** Lines and shapes on the Home and Reports charts (score radar, running P&L). */
+  chart: string;
   candleUp: string;
   candleDown: string;
   entry: string;
@@ -113,7 +115,7 @@ export interface SettingsView {
   /** Visible trade table columns in order; undefined means the defaults. */
   tradeColumns?: string[];
   goals: Goals;
-  reportsLayout?: { columns: string[][]; collapsed: string[] };
+  reportsLayout?: { columns: string[][]; collapsed: string[]; charts?: string[]; hidden?: string[] };
   /** Accounts left out of the journal's numbers. */
   hiddenAccounts: string[];
   /** Only the colors you changed. */
@@ -194,7 +196,7 @@ export interface JournalApi {
   etfMinuteBars(symbol: string, days: string[]): Promise<Bar[]>;
   /** Completed daily candles before `beforeDay`. */
   historyDailyBars(underlying: string, beforeDay: string, count: number, fromSchwab: boolean): Promise<DayBar[]>;
-  setReportsLayout(layout: { columns: string[][]; collapsed: string[] }): Promise<void>;
+  setReportsLayout(layout: { columns: string[][]; collapsed: string[]; charts?: string[] }): Promise<void>;
   saveTradeJournal(tradeId: string, journal: TradeJournal): Promise<void>;
   saveSetups(setups: Setup[]): Promise<void>;
   saveMistakes(mistakes: MistakeTag[]): Promise<void>;

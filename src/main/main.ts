@@ -1,6 +1,6 @@
 // Electron main process: owns the window, the database and file access.
 
-import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, screen, shell } from 'electron';
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseTosStatement } from '../core/tosCsv';
@@ -44,15 +44,40 @@ function journalData(): JournalData {
   return { trades, summary: summarizeTrades(trades), setups: db.setups(), mistakes: db.mistakeTags(), positives: db.positiveTags(), dayNotes: db.dayNotes() };
 }
 
+/** Width and height that fit all of Home, or as much as the screen allows. */
+const HOME_SIZE = { width: 1440, height: 1020 };
+
+/**
+ * Where the window opens: where it was when you last closed it, if that's still on a screen;
+ * otherwise centered, just big enough for Home.
+ */
+function startBounds(): Electron.Rectangle & { maximized?: boolean } {
+  const saved = settings.windowBounds;
+  if (saved) {
+    const area = screen.getDisplayMatching(saved).workArea;
+    const visible = saved.x < area.x + area.width - 100 && saved.x + saved.width > area.x + 100 && saved.y >= area.y - 10 && saved.y < area.y + area.height - 100;
+    if (visible) return saved;
+  }
+  const area = screen.getPrimaryDisplay().workArea;
+  const width = Math.min(HOME_SIZE.width, area.width);
+  const height = Math.min(HOME_SIZE.height, area.height);
+  return { x: area.x + Math.round((area.width - width) / 2), y: area.y + Math.round((area.height - height) / 2), width, height };
+}
+
 async function createWindow() {
+  const { maximized, ...bounds } = startBounds();
   const win = new BrowserWindow({
-    width: 1400,
-    height: 900,
+    ...bounds,
+    show: false,
     backgroundColor: '#131722',
     title: 'Moon Journal',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true },
   });
   win.setMenuBarVisibility(false);
+  if (maximized) win.maximize();
+  win.show();
+  // Remember the size and place for next time.
+  win.on('close', () => { settings.windowBounds = { ...win.getNormalBounds(), maximized: win.isMaximized() }; });
   // Help links (like Alpaca's sign-up page) open in the normal web browser, and only those sites.
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https:\/\/([a-z0-9-]+\.)*(alpaca\.markets|snaptrade\.com)\//.test(url)) shell.openExternal(url);
@@ -192,7 +217,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('settings:setMarkerStyles', (_event, styles: MarkerStyles | null) => { settings.markerStyles = styles ?? undefined; });
   ipcMain.handle('settings:setColors', (_event, colors: Record<string, string> | null) => { settings.colors = colors ?? undefined; });
   ipcMain.handle('settings:setHiddenAccounts', (_event, names: string[]) => { settings.hiddenAccounts = names; });
-  ipcMain.handle('settings:setReportsLayout', (_event, layout: { columns: string[][]; collapsed: string[] }) => { settings.reportsLayout = layout; });
+  ipcMain.handle('settings:setReportsLayout', (_event, layout: { columns: string[][]; collapsed: string[]; charts?: string[]; hidden?: string[] }) => { settings.reportsLayout = layout; });
   // Removes CSV-imported fills, then re-reads the brokers' full history, since sync skipped
   // everything the CSV already had.
   ipcMain.handle('journal:removeImported', async () => {

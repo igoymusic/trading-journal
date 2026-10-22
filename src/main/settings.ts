@@ -11,11 +11,13 @@ import type { SchwabSlot } from '../shared/api';
 
 interface StoredSettings {
   timeZone: string;
+  /** Where the window was when you last closed it. */
+  windowBounds?: { x: number; y: number; width: number; height: number; maximized?: boolean };
   /** Trade table columns, in display order. */
   tradeColumns?: string[];
   goals?: Goals;
   /** Report sections' columns, order and collapsed state. */
-  reportsLayout?: { columns: string[][]; collapsed: string[] };
+  reportsLayout?: { columns: string[][]; collapsed: string[]; charts?: string[]; hidden?: string[] };
   /** Address of the SnapTrade relay; empty uses the one built into the app. */
   relayUrl?: string;
   /** This person's SnapTrade sign-in: the user id, and the secret encrypted like the Alpaca keys. */
@@ -70,6 +72,15 @@ export class Settings {
 
   private save() {
     writeFileSync(this.file, JSON.stringify(this.data, null, 2));
+  }
+
+  get windowBounds() {
+    return this.data.windowBounds;
+  }
+
+  set windowBounds(bounds: StoredSettings['windowBounds']) {
+    this.data.windowBounds = bounds;
+    this.save();
   }
 
   get timeZone() {
