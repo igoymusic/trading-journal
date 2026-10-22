@@ -117,7 +117,9 @@ button.link { background: none; border: none; color: var(--blue); padding: 6px; 
 .home-rail { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 /* The Home calendar keeps a fixed size whatever the window does. */
 .home-calendar .month-head { margin-bottom: 6px; }
-.home-calendar .cal-day, .home-calendar .cal-week { min-height: 0; height: 74px; overflow: hidden; }
+/* Day boxes are square; the week totals stretch to the same height. */
+.home-calendar .cal-day { min-height: 0; height: auto; aspect-ratio: 1 / 1; overflow: hidden; }
+.home-calendar .cal-week { min-height: 0; height: auto; overflow: hidden; }
 .donut-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .donut-pair > div { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .donut-pair .tile-label { align-self: flex-start; }
