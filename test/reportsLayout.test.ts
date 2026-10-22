@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { moveSection, normalizeLayout, toggleChart, toggleCollapsed } from '../src/renderer/reportsLayout';
+import { moveSection, normalizeLayout, toggleChart, toggleCollapsed, toggleHidden } from '../src/renderer/reportsLayout';
 
 describe('reports layout', () => {
   it('alternates sections between two columns by default', () => {
@@ -8,7 +8,14 @@ describe('reports layout', () => {
 
   it('keeps a saved layout, dropping sections that are gone and adding new ones to the shorter column', () => {
     const saved = { columns: [['c', 'a', 'gone'], ['b']], collapsed: ['a', 'gone'] };
-    expect(normalizeLayout(saved, ['a', 'b', 'c', 'd'])).toEqual({ columns: [['c', 'a'], ['b', 'd']], collapsed: ['a'], charts: [] });
+    expect(normalizeLayout(saved, ['a', 'b', 'c', 'd'])).toEqual({ columns: [['c', 'a'], ['b', 'd']], collapsed: ['a'], charts: [], hidden: [] });
+  });
+
+  it('remembers hidden sections and brings them back', () => {
+    const layout = normalizeLayout({ columns: [['a'], ['b']], collapsed: [], hidden: ['b', 'gone'] }, ['a', 'b']);
+    expect(layout.hidden).toEqual(['b']);
+    expect(toggleHidden(layout, 'b').hidden).toEqual([]);
+    expect(toggleHidden(layout, 'a').hidden).toEqual(['b', 'a']);
   });
 
   it('moves a section within a column or across to the other', () => {

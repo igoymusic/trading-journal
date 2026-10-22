@@ -217,7 +217,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('settings:setMarkerStyles', (_event, styles: MarkerStyles | null) => { settings.markerStyles = styles ?? undefined; });
   ipcMain.handle('settings:setColors', (_event, colors: Record<string, string> | null) => { settings.colors = colors ?? undefined; });
   ipcMain.handle('settings:setHiddenAccounts', (_event, names: string[]) => { settings.hiddenAccounts = names; });
-  ipcMain.handle('settings:setReportsLayout', (_event, layout: { columns: string[][]; collapsed: string[]; charts?: string[] }) => { settings.reportsLayout = layout; });
+  ipcMain.handle('settings:setReportsLayout', (_event, layout: { columns: string[][]; collapsed: string[]; charts?: string[]; hidden?: string[] }) => { settings.reportsLayout = layout; });
   // Removes CSV-imported fills, then re-reads the brokers' full history, since sync skipped
   // everything the CSV already had.
   ipcMain.handle('journal:removeImported', async () => {

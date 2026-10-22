@@ -8,7 +8,7 @@ import { CATEGORY_COLORS, DailyBars, Donut, EquityDrawdown, foldSlices, Heatmap,
 import { colors } from './colors';
 import { pnlClass, shortDate, signedUsd } from './format';
 import { useJournal } from './journal';
-import { moveSection, normalizeLayout, type ReportsLayout, toggleChart, toggleCollapsed } from './reportsLayout';
+import { moveSection, normalizeLayout, type ReportsLayout, toggleChart, toggleCollapsed, toggleHidden } from './reportsLayout';
 import { nextSort, sortArrow, sortRows, type SortState } from './sorting';
 
 const SECTIONS: { key: keyof Reports; title: string; hint?: string }[] = [
@@ -59,7 +59,9 @@ export function ReportsView({ trades }: { trades: Trade[] }) {
   }
 
   const visuals = useVisuals(trades);
-  const shown = (key: string) => (VISUAL_KEYS.includes(key) ? visuals[key] !== null : reports[key as keyof Reports].length > 0);
+  const hidden = layout.hidden ?? [];
+  const shown = (key: string) => !hidden.includes(key) && (VISUAL_KEYS.includes(key) ? visuals[key] !== null : reports[key as keyof Reports].length > 0);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   /** Where in a column the dragged section would land, from the pointer's height. */
   function dropIndex(column: number, y: number) {
@@ -73,6 +75,13 @@ export function ReportsView({ trades }: { trades: Trade[] }) {
 
   if (!trades.some((t) => t.status === 'CLOSED')) return <p className="muted reports-empty">No closed trades match these filters.</p>;
   return (
+    <>
+    <div className="reports-tools">
+      <div className="picker-anchor">
+        <button onClick={() => setMenuOpen(!menuOpen)}>Sections{hidden.length ? ` (${hidden.length} hidden)` : ''} ▾</button>
+        {menuOpen && <SectionsMenu hidden={hidden} onToggle={(k) => save(toggleHidden(layout, k))} onShowAll={() => save({ ...layout, hidden: [] })} onClose={() => setMenuOpen(false)} />}
+      </div>
+    </div>
     <section className="reports" onDragEnd={() => { setDragging(null); setDrop(null); }}>
       {layout.columns.map((col, ci) => {
         const others = col.filter((k) => k !== dragging);
@@ -125,6 +134,27 @@ export function ReportsView({ trades }: { trades: Trade[] }) {
         );
       })}
     </section>
+    </>
+  );
+}
+
+/** Tick or untick each report section to show or hide it. */
+function SectionsMenu({ hidden, onToggle, onShowAll, onClose }: { hidden: string[]; onToggle: (key: string) => void; onShowAll: () => void; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const close = (e: MouseEvent) => { if (!ref.current?.parentElement?.contains(e.target as Node)) onClose(); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [onClose]);
+  return (
+    <div className="column-picker sections-menu" ref={ref}>
+      {[...VISUALS, ...SECTIONS].map((s) => (
+        <label key={s.key} className="picker-row">
+          <input type="checkbox" checked={!hidden.includes(s.key)} onChange={() => onToggle(s.key)} /> {s.title}
+        </label>
+      ))}
+      <button className="link" disabled={!hidden.length} onClick={onShowAll}>Show all</button>
+    </div>
   );
 }
 
