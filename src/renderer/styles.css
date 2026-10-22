@@ -482,3 +482,7 @@ th.sorted { color: var(--text); }
 .modal .settings-card .marker-style + .marker-style { border-top: none; padding-top: 0; }
 .modal .settings-card .marker-styles > p, .modal .settings-card .marker-styles > button { grid-column: 1 / -1; margin: 0; justify-self: start; }
 .modal .settings-card .marker-line-row { flex-direction: column; gap: 6px; }
+
+/* The Moon Journal logo next to the app name. */
+.topbar h1 { display: flex; align-items: center; gap: 8px; }
+.topbar h1 .logo { width: 26px; height: 26px; border-radius: 6px; }
