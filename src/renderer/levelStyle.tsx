@@ -2,7 +2,7 @@
 // computer; charts redraw when it changes.
 
 import { useEffect, useState } from 'react';
-import { colors } from './colors';
+import { activeTheme, colors, themed } from './colors';
 
 export interface LevelStyle {
   /** "#rrggbb", or empty to use the stop and target colors from Settings. */
@@ -26,8 +26,9 @@ let current: LevelStyle = (() => {
 })();
 
 export const levelStyle = () => current;
-export const stopColor = () => current.stopColor || colors().stop;
-export const targetColor = () => current.targetColor || colors().target;
+// A theme's stop and target colors win over the ones picked here, which come back with Default.
+export const stopColor = () => (!themed() && current.stopColor) || colors().stop;
+export const targetColor = () => (!themed() && current.targetColor) || colors().target;
 
 function apply(next: LevelStyle) {
   current = next;
@@ -48,10 +49,12 @@ export function LevelStyleEditor() {
   return (
     <div className="level-style">
       <div className="fill-list-head">Stop and target lines</div>
-      <div className="draw-style-row position-colors">
-        <label>Stop <input type="color" value={stopColor().slice(0, 7)} onChange={(e) => set({ stopColor: e.target.value })} /></label>
-        <label>Target <input type="color" value={targetColor().slice(0, 7)} onChange={(e) => set({ targetColor: e.target.value })} /></label>
-      </div>
+      {themed() ? <p className="muted small">Colors come from the {activeTheme().name} theme.</p> : (
+        <div className="draw-style-row position-colors">
+          <label>Stop <input type="color" value={stopColor().slice(0, 7)} onChange={(e) => set({ stopColor: e.target.value })} /></label>
+          <label>Target <input type="color" value={targetColor().slice(0, 7)} onChange={(e) => set({ targetColor: e.target.value })} /></label>
+        </div>
+      )}
       <label>Line opacity <input type="range" min={0.1} max={1} step={0.05} value={style.lineOpacity} onChange={(e) => set({ lineOpacity: Number(e.target.value) })} /></label>
       <div className="draw-style-row">
         {[1, 2, 3, 4].map((w) => (
@@ -69,7 +72,7 @@ export function LevelStyleEditor() {
       </div>
       <label className="check"><input type="checkbox" checked={style.showBox} onChange={(e) => set({ showBox: e.target.checked })} /> Draw a position box</label>
       {style.showBox && <p className="muted small">Drawn once a trade has a stop and a target. After that it's a normal drawing: click it to move it or change its colors and labels.</p>}
-      {(style.stopColor || style.targetColor) && (
+      {!themed() && (style.stopColor || style.targetColor) && (
         <button className="link" onClick={() => set({ stopColor: '', targetColor: '' })}>Use the colors from Settings</button>
       )}
     </div>

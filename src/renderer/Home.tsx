@@ -5,7 +5,7 @@ import { tradeDay } from '../core/calendar';
 import type { Trade } from '../core/types';
 import { extraStats, streaks, tradeScore } from '../core/visuals';
 import { Donut, RadarChart, shortDuration, VersusBar } from './Charts';
-import { colors } from './colors';
+import { chartTones, colors } from './colors';
 import { longDate, pnlClass, signedUsd, usd } from './format';
 import { GoalsCard } from './GoalsCard';
 import { MonthView } from './MonthView';
@@ -68,7 +68,7 @@ export function Home({ trades, goals, month, onMonthChange, onOpenDay, onOpenSet
                 slices={[
                   { label: 'Wins', value: s.wins, color: c.win, detail: `${s.wins} trades` },
                   { label: 'Losses', value: s.losses, color: c.loss, detail: `${s.losses} trades` },
-                  ...(breakEven ? [{ label: 'Even', value: breakEven, color: '#5d606b', detail: `${breakEven} trades` }] : []),
+                  ...(breakEven ? [{ label: 'Even', value: breakEven, color: chartTones().other, detail: `${breakEven} trades` }] : []),
                 ]}
               />
               <div className="tile-sub">{s.wins} won · {s.losses} lost</div>

@@ -3,6 +3,7 @@
 
 import { useRef } from 'react';
 import { DEFAULT_MARKER_STYLES, MARKER_KINDS, MARKER_SIZE, type MarkerKind, type MarkerStyle } from '../core/markerStyles';
+import { activeTheme, themed } from './colors';
 import { applyMarkerStyles, markerStyles, useMarkerStyles } from './markerStyles';
 
 export function MarkerStyleEditor() {
@@ -26,9 +27,9 @@ export function MarkerStyleEditor() {
         return (
           <div key={kind} className="marker-style">
             <div className="marker-style-head">
-              <input type="color" value={s.color} title="Color" onChange={(e) => set(kind, { color: e.target.value })} />
+              {!themed() && <input type="color" value={s.color} title="Color" onChange={(e) => set(kind, { color: e.target.value })} />}
               <span>{label}</span>
-              <span className={`marker-sample ${kind === 'entry' ? '' : 'flip'}`} style={{ borderLeftColor: s.color, borderWidth: `${s.size / 2 + 1}px 0 ${s.size / 2 + 1}px ${s.size}px` }} />
+              <span className={`marker-sample ${kind === 'entry' ? '' : 'flip'}`} style={{ borderLeftColor: themed() ? activeTheme().markers[kind] : s.color, borderWidth: `${s.size / 2 + 1}px 0 ${s.size / 2 + 1}px ${s.size}px` }} />
             </div>
             <label>Arrow size <input type="range" min={MARKER_SIZE.min} max={MARKER_SIZE.max} step={1} value={s.size} onChange={(e) => set(kind, { size: Number(e.target.value) })} /></label>
             <div className="marker-line-row">
@@ -48,6 +49,7 @@ export function MarkerStyleEditor() {
           </div>
         );
       })}
+      {themed() && <p className="muted small">Colors come from the {activeTheme().name} theme. Your own colors come back when you switch to Default.</p>}
       <p className="muted small">Drag a label to move it. Double-click it to put it back.</p>
       <button disabled={!changed} onClick={() => save(DEFAULT_MARKER_STYLES)}>Reset markers</button>
     </div>

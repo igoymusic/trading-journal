@@ -24,6 +24,8 @@ interface StoredSettings {
   snaptrade?: { userId: string; secret: string };
   /** Colors changed from the defaults, e.g. { win: "#00c853" }. */
   colors?: Record<string, string>;
+  /** The look picked in Settings (a theme id); undefined is the default look. */
+  theme?: string;
   /** Accounts left out of the journal's numbers (by name). */
   hiddenAccounts?: string[];
   /** Indicators shown on every chart. */
@@ -136,6 +138,15 @@ export class Settings {
     // Only keep real "#rrggbb" colors.
     const clean = Object.fromEntries(Object.entries(c ?? {}).filter(([, v]) => /^#[0-9a-f]{6}$/i.test(v)));
     this.data.colors = Object.keys(clean).length ? clean : undefined;
+    this.save();
+  }
+
+  get theme() {
+    return this.data.theme;
+  }
+
+  set theme(id: string | undefined) {
+    this.data.theme = id && /^[a-z]{1,20}$/.test(id) && id !== 'default' ? id : undefined;
     this.save();
   }
 

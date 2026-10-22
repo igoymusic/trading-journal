@@ -4,7 +4,7 @@ import { buildReports, type ReportRow, type Reports } from '../core/reports';
 import { formatR } from '../core/rr';
 import type { Trade } from '../core/types';
 import { drawdown, holdMinutes, pnlHistogram, tradeScore, weekdayHourHeat } from '../core/visuals';
-import { CATEGORY_COLORS, DailyBars, Donut, EquityDrawdown, foldSlices, Heatmap, Histogram, RadarChart, ScatterChart } from './Charts';
+import { categoryColors, DailyBars, Donut, EquityDrawdown, foldSlices, Heatmap, Histogram, RadarChart, ScatterChart } from './Charts';
 import { colors } from './colors';
 import { pnlClass, shortDate, signedUsd } from './format';
 import { useJournal } from './journal';
@@ -245,9 +245,9 @@ function useVisuals(trades: Trade[]): Record<string, ReactNode | null> {
 function GroupChart({ rows }: { rows: ReportRow[] }) {
   // With five groups or fewer, each keeps its own color whatever you filter; past that the biggest
   // four get colors and the rest fold into a gray "Other".
-  const few = rows.length <= CATEGORY_COLORS.length;
-  const slices = foldSlices(rows.map((r, i) => ({ label: r.label, value: r.trades, color: few ? CATEGORY_COLORS[i] : '', detail: `${r.trades} trade${r.trades === 1 ? '' : 's'}` })))
-    .map((s, i) => (s.color ? s : { ...s, color: CATEGORY_COLORS[i] }));
+  const few = rows.length <= categoryColors().length;
+  const slices = foldSlices(rows.map((r, i) => ({ label: r.label, value: r.trades, color: few ? categoryColors()[i] : '', detail: `${r.trades} trade${r.trades === 1 ? '' : 's'}` })))
+    .map((s, i) => (s.color ? s : { ...s, color: categoryColors()[i] }));
   const scale = Math.max(...rows.map((r) => Math.abs(r.netPnl)), 1);
   const total = rows.reduce((a, r) => a + r.trades, 0);
   return (

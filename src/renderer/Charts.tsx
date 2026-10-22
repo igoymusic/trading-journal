@@ -4,15 +4,13 @@
 import { type ReactNode, useLayoutEffect, useRef, useState } from 'react';
 import type { HeatCell, HistogramBin, TradeScore } from '../core/visuals';
 import { HEAT_HOURS } from '../core/visuals';
-import { colors, withAlpha } from './colors';
+import { chartTones, colors, withAlpha } from './colors';
 import { signedUsd, shortDate } from './format';
 
-/** Colors for groups that aren't wins or losses (calls vs puts, setups, ...), in a fixed order. */
-export const CATEGORY_COLORS = ['#3987e5', '#d95926', '#9085e9', '#c98500', '#d55181'];
-const OTHER_COLOR = '#5d606b';
-const GRID = '#2a2e39';
-const INK = '#d1d4dc';
-const MUTED = '#787b86';
+/** Colors for groups that aren't wins or losses (calls vs puts, setups, ...), in a fixed order; they follow the theme. */
+export const categoryColors = () => chartTones().series;
+// Gridlines, labels and the gray "Other" slice, in the theme's colors.
+const tone = chartTones;
 
 /** Width of an element, kept up to date as the window resizes. */
 function useWidth<T extends HTMLElement>(): [React.RefObject<T>, number] {
@@ -47,7 +45,7 @@ function useTip(shared?: React.RefObject<HTMLDivElement>) {
   return { box, show, hide, el };
 }
 
-const pnlColor = (n: number) => (n > 0 ? colors().win : n < 0 ? colors().loss : MUTED);
+const pnlColor = (n: number) => (n > 0 ? colors().win : n < 0 ? colors().loss : tone().muted);
 
 /** "$1.2k" style, for axis labels. */
 export function shortUsd(n: number): string {
@@ -57,7 +55,7 @@ export function shortUsd(n: number): string {
 }
 
 function scoreColor(score: number) {
-  return score >= 70 ? colors().win : score >= 40 ? '#c98500' : colors().loss;
+  return score >= 70 ? colors().win : score >= 40 ? tone().warn : colors().loss;
 }
 
 /** The trading score as a radar (spider) chart: the fuller the shape, the stronger the trading. */
@@ -78,8 +76,8 @@ export function RadarChart({ score, width = 240, radius = 54 }: { score: TradeSc
   return (
     <div className="chart-box radar" ref={t.box} onMouseLeave={t.hide}>
       <svg width={width} height={height} role="img" aria-label={`Trading score ${score.overall} out of 100`}>
-        {[25, 50, 75, 100].map((v) => <polygon key={v} points={ring(v)} fill="none" stroke={GRID} strokeWidth={1} />)}
-        {score.axes.map((_, i) => { const [x, y] = at(i, 100); return <line key={i} x1={c} y1={cy} x2={x} y2={y} stroke={GRID} strokeWidth={1} />; })}
+        {[25, 50, 75, 100].map((v) => <polygon key={v} points={ring(v)} fill="none" stroke={tone().grid} strokeWidth={1} />)}
+        {score.axes.map((_, i) => { const [x, y] = at(i, 100); return <line key={i} x1={c} y1={cy} x2={x} y2={y} stroke={tone().grid} strokeWidth={1} />; })}
         <polygon points={shape} fill={withAlpha(line, 0.28)} stroke={line} strokeWidth={2} strokeLinejoin="round" />
         {score.axes.map((a, i) => {
           const [x, y] = at(i, Math.max(a.score, 3));
@@ -92,8 +90,8 @@ export function RadarChart({ score, width = 240, radius = 54 }: { score: TradeSc
             <g key={a.key} onMouseMove={tip}>
               <circle cx={x} cy={y} r={4} fill={line} stroke="var(--panel)" strokeWidth={2} />
               <circle cx={x} cy={y} r={12} fill="transparent" />
-              <text x={lx} y={ly} textAnchor={anchor} dominantBaseline="middle" fontSize={10.5} fill={MUTED}>{a.label}</text>
-              <text x={lx} y={ly + 13} textAnchor={anchor} dominantBaseline="middle" fontSize={11} fill={INK} fontWeight={600}>{a.value}</text>
+              <text x={lx} y={ly} textAnchor={anchor} dominantBaseline="middle" fontSize={10.5} fill={tone().muted}>{a.label}</text>
+              <text x={lx} y={ly + 13} textAnchor={anchor} dominantBaseline="middle" fontSize={11} fill={tone().ink} fontWeight={600}>{a.value}</text>
             </g>
           );
         })}
@@ -115,7 +113,7 @@ export function foldSlices(slices: Slice[], max = 5): Slice[] {
   const sorted = [...slices].filter((s) => s.value > 0).sort((a, b) => b.value - a.value);
   if (sorted.length <= max) return sorted;
   const rest = sorted.slice(max - 1);
-  return [...sorted.slice(0, max - 1), { label: `Other (${rest.length})`, value: rest.reduce((a, s) => a + s.value, 0), color: OTHER_COLOR }];
+  return [...sorted.slice(0, max - 1), { label: `Other (${rest.length})`, value: rest.reduce((a, s) => a + s.value, 0), color: tone().other }];
 }
 
 /** A ring split into slices, with the total (or any headline) in the middle and a legend beside it. */
@@ -150,12 +148,12 @@ export function Donut({ slices, center, sub, size = 120, legend = true }: {
   return (
     <div className="chart-box donut" ref={t.box} onMouseLeave={t.hide}>
       <svg width={size} height={size} role="img" aria-label={slices.map((s) => `${s.label} ${pct(s.value)}`).join(', ')}>
-        {total === 0 && <circle cx={c} cy={c} r={(r + inner) / 2} fill="none" stroke={GRID} strokeWidth={r - inner} />}
+        {total === 0 && <circle cx={c} cy={c} r={(r + inner) / 2} fill="none" stroke={tone().grid} strokeWidth={r - inner} />}
         {arcs.map(({ s, d }) => s.value > 0 && (
           <path key={s.label} d={d} fill={s.color} onMouseMove={(e) => t.show(e, <><b>{s.label}</b><div>{s.detail ?? s.value} · {pct(s.value)}</div></>)} />
         ))}
-        {center && <text x={c} y={sub && size >= 140 ? c - 3 : c} textAnchor="middle" dominantBaseline="middle" fontSize={size > 100 ? 18 : 14} fontWeight={600} fill={INK}>{center}</text>}
-        {sub && size >= 140 && <text x={c} y={c + 15} textAnchor="middle" dominantBaseline="middle" fontSize={11} fill={MUTED}>{sub}</text>}
+        {center && <text x={c} y={sub && size >= 140 ? c - 3 : c} textAnchor="middle" dominantBaseline="middle" fontSize={size > 100 ? 18 : 14} fontWeight={600} fill={tone().ink}>{center}</text>}
+        {sub && size >= 140 && <text x={c} y={c + 15} textAnchor="middle" dominantBaseline="middle" fontSize={11} fill={tone().muted}>{sub}</text>}
       </svg>
       {legend && (
         <ul className="legend">
@@ -190,8 +188,8 @@ export function Histogram({ bins, height = 190 }: { bins: HistogramBin[]; height
         <svg width={width} height={height} role="img" aria-label="Number of trades by P&L">
           {ticks.map((v) => (
             <g key={v}>
-              <line x1={left} x2={width} y1={y(v)} y2={y(v)} stroke={GRID} />
-              <text x={left - 6} y={y(v)} textAnchor="end" dominantBaseline="middle" fontSize={10} fill={MUTED}>{v}</text>
+              <line x1={left} x2={width} y1={y(v)} y2={y(v)} stroke={tone().grid} />
+              <text x={left - 6} y={y(v)} textAnchor="end" dominantBaseline="middle" fontSize={10} fill={tone().muted}>{v}</text>
             </g>
           ))}
           {bins.map((b, i) => {
@@ -203,7 +201,7 @@ export function Histogram({ bins, height = 190 }: { bins: HistogramBin[]; height
                 <rect x={x} y={top} width={bw} height={height - top - bottom} fill="transparent" />
                 {b.count > 0 && <path d={roundedTop(x + 1, y(b.count), Math.max(1, bw - 2), h, Math.min(3, bw / 3))} fill={pnlColor(mid)} />}
                 {(i % every === (zero >= 0 ? zero % every : 0)) && (
-                  <text x={x} y={height - 6} textAnchor="middle" fontSize={10} fill={MUTED}>{shortUsd(b.from)}</text>
+                  <text x={x} y={height - 6} textAnchor="middle" fontSize={10} fill={tone().muted}>{shortUsd(b.from)}</text>
                 )}
               </g>
             );
@@ -295,11 +293,11 @@ export function ScatterChart({ points, height = 220 }: {
         <svg width={width} height={height} role="img" aria-label="Hold time against P&L for each trade">
           {[-ymax, 0, ymax].map((v) => (
             <g key={v}>
-              <line x1={left} x2={width} y1={py(v)} y2={py(v)} stroke={v === 0 ? '#4a4e59' : GRID} />
-              <text x={left - 6} y={py(v)} textAnchor="end" dominantBaseline="middle" fontSize={10} fill={MUTED}>{shortUsd(v)}</text>
+              <line x1={left} x2={width} y1={py(v)} y2={py(v)} stroke={v === 0 ? tone().zero : tone().grid} />
+              <text x={left - 6} y={py(v)} textAnchor="end" dominantBaseline="middle" fontSize={10} fill={tone().muted}>{shortUsd(v)}</text>
             </g>
           ))}
-          {xticks.map((v) => <text key={v} x={px(v)} y={height - 6} textAnchor="middle" fontSize={10} fill={MUTED}>{shortDuration(v)}</text>)}
+          {xticks.map((v) => <text key={v} x={px(v)} y={height - 6} textAnchor="middle" fontSize={10} fill={tone().muted}>{shortDuration(v)}</text>)}
           {points.map((p, i) => (
             <circle key={i} cx={px(p.x)} cy={py(p.y)} r={4} fill={withAlpha(pnlColor(p.y), 0.75)} stroke="var(--panel)" strokeWidth={1}
               onMouseMove={(e) => t.show(e, <><b>{signedUsd(p.y)}</b><div>Held {shortDuration(p.x)}</div><div className="muted">{p.label}</div></>)} />
@@ -331,8 +329,8 @@ export function DailyBars({ days, height = 180 }: { days: { date: string; netPnl
         <svg width={width} height={height} role="img" aria-label="Net P&L each day">
           {[lo, 0, hi].filter((v, i, a) => a.indexOf(v) === i).map((v) => (
             <g key={v}>
-              <line x1={left} x2={width} y1={py(v)} y2={py(v)} stroke={v === 0 ? '#4a4e59' : GRID} />
-              <text x={left - 6} y={py(v)} textAnchor="end" dominantBaseline="middle" fontSize={10} fill={MUTED}>{shortUsd(v)}</text>
+              <line x1={left} x2={width} y1={py(v)} y2={py(v)} stroke={v === 0 ? tone().zero : tone().grid} />
+              <text x={left - 6} y={py(v)} textAnchor="end" dominantBaseline="middle" fontSize={10} fill={tone().muted}>{shortUsd(v)}</text>
             </g>
           ))}
           {days.map((d, i) => {
@@ -343,7 +341,7 @@ export function DailyBars({ days, height = 180 }: { days: { date: string; netPnl
               <g key={d.date} onMouseMove={(e) => t.show(e, <><b>{shortDate(d.date)}</b><div style={{ color: pnlColor(d.netPnl) }}>{signedUsd(d.netPnl)}</div></>)}>
                 <rect x={x} y={top} width={Math.max(bw, 1)} height={height - top - bottom} fill="transparent" />
                 <rect x={x + (bw > 4 ? 1 : 0)} y={y} width={Math.max(1, bw > 4 ? bw - 2 : bw)} height={Math.max(h, 1)} rx={bw > 6 ? 2 : 0} fill={pnlColor(d.netPnl)} />
-                {i % every === 0 && <text x={x + bw / 2} y={height - 6} textAnchor="middle" fontSize={10} fill={MUTED}>{shortDate(d.date)}</text>}
+                {i % every === 0 && <text x={x + bw / 2} y={height - 6} textAnchor="middle" fontSize={10} fill={tone().muted}>{shortDate(d.date)}</text>}
               </g>
             );
           })}
@@ -386,23 +384,23 @@ export function EquityDrawdown({ points, height = 230 }: { points: { date: strin
         <svg width={width} height={height} onMouseMove={move} role="img" aria-label="Running P&L and drawdown">
           {[eLo, 0, eHi].filter((v, i, a) => a.indexOf(v) === i).map((v) => (
             <g key={`e${v}`}>
-              <line x1={left} x2={width} y1={ey(v)} y2={ey(v)} stroke={v === 0 ? '#4a4e59' : GRID} />
-              <text x={left - 6} y={ey(v)} textAnchor="end" dominantBaseline="middle" fontSize={10} fill={MUTED}>{shortUsd(v)}</text>
+              <line x1={left} x2={width} y1={ey(v)} y2={ey(v)} stroke={v === 0 ? tone().zero : tone().grid} />
+              <text x={left - 6} y={ey(v)} textAnchor="end" dominantBaseline="middle" fontSize={10} fill={tone().muted}>{shortUsd(v)}</text>
             </g>
           ))}
           <path d={line((p) => p.equity, ey)} fill="none" stroke={colors().chart} strokeWidth={2} strokeLinejoin="round" />
-          <text x={width - 8} y={4 + eqH + gap - 9} textAnchor="end" fontSize={10} fill={MUTED}>Drawdown: how far below the last high</text>
+          <text x={width - 8} y={4 + eqH + gap - 9} textAnchor="end" fontSize={10} fill={tone().muted}>Drawdown: how far below the last high</text>
           {[dLo, 0].map((v) => (
             <g key={`d${v}`}>
-              <line x1={left} x2={width} y1={dy(v)} y2={dy(v)} stroke={GRID} />
-              <text x={left - 6} y={dy(v)} textAnchor="end" dominantBaseline="middle" fontSize={10} fill={MUTED}>{shortUsd(v)}</text>
+              <line x1={left} x2={width} y1={dy(v)} y2={dy(v)} stroke={tone().grid} />
+              <text x={left - 6} y={dy(v)} textAnchor="end" dominantBaseline="middle" fontSize={10} fill={tone().muted}>{shortUsd(v)}</text>
             </g>
           ))}
           <path d={ddArea} fill={withAlpha(colors().loss, 0.3)} stroke={colors().loss} strokeWidth={1.5} strokeLinejoin="round" />
-          {points.map((p, i) => i % every === 0 && <text key={p.date} x={px(i)} y={height - 6} textAnchor="middle" fontSize={10} fill={MUTED}>{shortDate(p.date)}</text>)}
+          {points.map((p, i) => i % every === 0 && <text key={p.date} x={px(i)} y={height - 6} textAnchor="middle" fontSize={10} fill={tone().muted}>{shortDate(p.date)}</text>)}
           {hover !== null && (
             <g>
-              <line x1={px(hover)} x2={px(hover)} y1={4} y2={dy(dLo)} stroke={MUTED} strokeDasharray="3 3" />
+              <line x1={px(hover)} x2={px(hover)} y1={4} y2={dy(dLo)} stroke={tone().muted} strokeDasharray="3 3" />
               <circle cx={px(hover)} cy={ey(points[hover].equity)} r={4} fill={colors().chart} stroke="var(--panel)" strokeWidth={2} />
               <circle cx={px(hover)} cy={dy(points[hover].drawdown)} r={4} fill={colors().loss} stroke="var(--panel)" strokeWidth={2} />
             </g>

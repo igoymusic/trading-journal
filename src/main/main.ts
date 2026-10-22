@@ -226,6 +226,7 @@ app.whenReady().then(async () => {
     reportsLayout: settings.reportsLayout,
     hiddenAccounts: settings.hiddenAccounts,
     colors: settings.colors,
+    theme: settings.theme,
     markerStyles: settings.markerStyles,
     optionPriceDisplay: settings.optionPriceDisplay,
     indicators: settings.indicators,
@@ -238,6 +239,7 @@ app.whenReady().then(async () => {
     historyDailyBars(underlying, beforeDay, Math.min(count, 2500), fromSchwab, db, settings, chartSource()).catch(() => []));
   ipcMain.handle('settings:setOptionPriceDisplay', (_event, mode: 'quote' | 'contract') => { settings.optionPriceDisplay = mode; });
   ipcMain.handle('settings:setMarkerStyles', (_event, styles: MarkerStyles | null) => { settings.markerStyles = styles ?? undefined; });
+  ipcMain.handle('settings:setTheme', (_event, id: string | null) => { settings.theme = id ?? undefined; });
   ipcMain.handle('settings:setColors', (_event, colors: Record<string, string> | null) => { settings.colors = colors ?? undefined; });
   ipcMain.handle('settings:setHiddenAccounts', (_event, names: string[]) => { settings.hiddenAccounts = names; });
   ipcMain.handle('settings:setReportsLayout', (_event, layout: { columns: string[][]; collapsed: string[]; charts?: string[]; hidden?: string[] }) => { settings.reportsLayout = layout; });

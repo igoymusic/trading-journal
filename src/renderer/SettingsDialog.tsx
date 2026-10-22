@@ -4,7 +4,8 @@ import type { PlaybookRule } from '../core/types';
 import type { BackupStatus, ColorScheme, SettingsView, SyncResult } from '../shared/api';
 import { type OptionPriceDisplay, setOptionPriceDisplay } from './format';
 import { MarkerStyleEditor } from './MarkerStyleEditor';
-import { applyColors, COLOR_LABELS, DEFAULT_COLORS } from './colors';
+import { activeTheme, applyColors, COLOR_LABELS, DEFAULT_COLORS, themed } from './colors';
+import { ThemePicker } from './ThemePicker';
 import { BrokersSettings } from './BrokersSettings';
 import { NO_ACCOUNT } from './AccountPicker';
 import { SchwabSettings } from './SchwabSettings';
@@ -124,6 +125,16 @@ export function SettingsDialog({ onClose, onSynced, onColorsChanged }: { onClose
     {
       name: 'Display',
       sections: [
+        {
+          name: 'Theme',
+          body: settings && (
+            <>
+              <h3>Theme</h3>
+              <p className="muted">Changes the whole look: colors, fonts, art, the charts in Home and Reports, the stop and target lines, and the entry and exit markers. Candles stay as they are.</p>
+              <ThemePicker initial={settings.theme} onChange={onColorsChanged} />
+            </>
+          ),
+        },
         {
           name: 'Numbers and calendar',
           body: settings && (
@@ -556,6 +567,7 @@ function ColorsEditor({ group, initial, onChange }: { group: string; initial?: P
   };
   return (
     <>
+      {themed() && <p className="muted small">These are your colors for the Default theme. The {activeTheme().name} theme uses its own{group === 'Charts' ? ', except for the candles' : ''}.</p>}
       <div className="color-grid">
         {labels.map((c) => (
           <label key={c.key} className="color-pick">

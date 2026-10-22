@@ -32,6 +32,7 @@ const api: JournalApi = {
   connectSchwab: (slot) => ipcRenderer.invoke('schwab:connect', slot),
   disconnectSchwab: (slot) => ipcRenderer.invoke('schwab:disconnect', slot),
   setColors: (colors) => ipcRenderer.invoke('settings:setColors', colors),
+  setTheme: (id) => ipcRenderer.invoke('settings:setTheme', id),
   setIndicators: (list) => ipcRenderer.invoke('settings:setIndicators', list),
   historyMinuteBars: (underlying, beforeDay, minutes, count, fromSchwab) => ipcRenderer.invoke('market:historyMinutes', underlying, beforeDay, minutes, count, fromSchwab),
   etfMinuteBars: (symbol, days) => ipcRenderer.invoke('market:etfMinutes', symbol, days),

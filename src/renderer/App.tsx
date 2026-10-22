@@ -15,7 +15,8 @@ import { MonthView } from './MonthView';
 import { ReportsView } from './ReportsView';
 import { AccountPicker, accountOf, accountsIn } from './AccountPicker';
 import { describeSync } from './BrokersSettings';
-import { applyColors } from './colors';
+import { activeTheme, applyColors, applyTheme } from './colors';
+import { ThemeArt } from './ThemeArt';
 import { applyMarkerStyles } from './markerStyles';
 import { applyIndicators } from './indicatorsStore';
 import { setOptionPriceDisplay } from './format';
@@ -36,7 +37,12 @@ export function App() {
   useEffect(() => { window.journal.getSettings().then((s) => setHiddenAccounts(s.hiddenAccounts)); }, []);
   // Your colors; charts redraw (the view remounts) when they change.
   const [colorsVersion, setColorsVersion] = useState(0);
-  useEffect(() => { window.journal.getSettings().then((s) => { applyColors(s.colors); applyMarkerStyles(s.markerStyles); setOptionPriceDisplay(s.optionPriceDisplay); applyIndicators(s.indicators); setColorsVersion((v) => v + 1); }); }, []);
+  const redraw = () => {
+    setColorsVersion((v) => v + 1);
+    // Charts draw their labels in the theme's font, so draw again once it has loaded.
+    document.fonts.load(activeTheme().markerLook.font).then(() => setColorsVersion((v) => v + 1), () => {});
+  };
+  useEffect(() => { window.journal.getSettings().then((s) => { applyColors(s.colors); applyTheme(s.theme); applyMarkerStyles(s.markerStyles); setOptionPriceDisplay(s.optionPriceDisplay); applyIndicators(s.indicators); redraw(); }); }, []);
   const accounts = useMemo(() => accountsIn(allData?.trades ?? []), [allData]);
   const data = useMemo(() => {
     if (!allData || !hiddenAccounts.length) return allData;
@@ -181,9 +187,10 @@ export function App() {
   return (
     <JournalContext.Provider value={journalApi}>
     <div className="app">
+      <ThemeArt key={colorsVersion} />
       <header className="topbar">
         <div className="topbar-title">
-          <h1><img className="logo" src={logo} alt="" />Moon Journal</h1>
+          <h1><img className="logo" src={activeTheme().art?.logo ?? logo} alt="" />Moon Journal</h1>
           {accounts.length > 1 && <AccountPicker accounts={accounts} hidden={hiddenAccounts} onChange={changeHiddenAccounts} />}
         </div>
         <div className="topbar-actions">
@@ -289,7 +296,7 @@ export function App() {
           )}
         </main>
       )}
-      {showSettings && <SettingsDialog onSynced={afterSync} onColorsChanged={() => setColorsVersion((v) => v + 1)} onClose={() => { setShowSettings(false); setSettingsVersion((v) => v + 1); }} />}
+      {showSettings && <SettingsDialog onSynced={afterSync} onColorsChanged={redraw} onClose={() => { setShowSettings(false); setSettingsVersion((v) => v + 1); }} />}
     </div>
     </JournalContext.Provider>
   );

@@ -8,7 +8,7 @@ import type {
 } from 'lightweight-charts';
 import { type ChartPoint, type Drawing, drawingHandles } from '../core/drawings';
 import { chartTime, fromChartTime } from '../core/time';
-import { readableText } from './colors';
+import { activeTheme, chartTones, colors, readableText, themed } from './colors';
 
 export const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
 const HANDLE = 4;
@@ -248,13 +248,16 @@ class Renderer implements IPrimitivePaneRenderer {
       ctx.textBaseline = base;
       ctx.fillText(text, x, y);
     };
+    // Labels on a position box take the theme's label style.
+    const look = themed() ? activeTheme().markerLook : undefined;
     const pill = (text: string, cx: number, cy: number, bg: string) => {
-      ctx.font = `11px ${FONT}`;
+      ctx.font = look?.font ?? `11px ${FONT}`;
       const w = ctx.measureText(text).width + 12;
       ctx.fillStyle = bg;
       ctx.beginPath();
-      ctx.roundRect(cx - w / 2, cy - 9, w, 18, 3);
+      ctx.roundRect(cx - w / 2, cy - 9, w, 18, look ? Math.min(look.radius, 9) : 3);
       ctx.fill();
+      if (look?.outline) { ctx.strokeStyle = look.outline; ctx.lineWidth = 1; ctx.setLineDash([]); ctx.stroke(); }
       label(text, cx, cy + 0.5, readableText(bg), 'center', 'middle');
     };
 
@@ -468,8 +471,10 @@ class Renderer implements IPrimitivePaneRenderer {
         if (x1 === null || x2 === null || ye === null || ys === null || yt === null) return;
         const left = Math.min(x1, x2);
         const w = Math.abs(x2 - x1);
-        const targetFill = d.targetFill ?? '#08998133';
-        const stopFill = d.stopFill ?? '#f2364533';
+        // A theme colors every position box its own way, keeping each box's opacity.
+        const alpha = (fill: string | undefined, fallback: string) => (fill ?? fallback).slice(7, 9) || 'ff';
+        const targetFill = themed() ? colors().target + alpha(d.targetFill, '#08998133') : d.targetFill ?? '#08998133';
+        const stopFill = themed() ? colors().stop + alpha(d.stopFill, '#f2364533') : d.stopFill ?? '#f2364533';
         ctx.fillStyle = targetFill;
         ctx.fillRect(left, Math.min(ye, yt), w, Math.abs(yt - ye));
         ctx.fillStyle = stopFill;
@@ -491,7 +496,7 @@ class Renderer implements IPrimitivePaneRenderer {
         if (stopText) pill(stopText, cx, ys + (ys > ye ? 12 : -12), stopFill.slice(0, 7));
         const ratio = `R:R ${d.ratio !== undefined ? d.ratio.toFixed(2) : risk ? (reward / risk).toFixed(2) : '–'}`;
         const middle = [show.price ? `${d.side === 'long' ? 'Long' : 'Short'} ${fmt(d.a.price)}` : '', show.ratio ? ratio : ''].filter(Boolean).join(' · ');
-        if (middle) pill(middle, cx, ye, '#5d606b');
+        if (middle) pill(middle, cx, ye, themed() ? chartTones().zero : '#5d606b');
         if (selected) this.handles(ctx, d);
         break;
       }

@@ -121,8 +121,10 @@ export interface SettingsView {
   reportsLayout?: { columns: string[][]; collapsed: string[]; charts?: string[]; hidden?: string[] };
   /** Accounts left out of the journal's numbers. */
   hiddenAccounts: string[];
-  /** Only the colors you changed. */
+  /** Only the colors you changed. These belong to the default look; themes bring their own. */
   colors?: Partial<ColorScheme>;
+  /** The theme picked in Settings; undefined is the default look. */
+  theme?: string;
   /** How entry and exit markers look. */
   markerStyles: MarkerStyles;
   /** Option prices as quoted ($0.15) or as paid per contract ($15.00). */
@@ -193,6 +195,8 @@ export interface JournalApi {
   setHiddenAccounts(names: string[]): Promise<void>;
   /** Saves your colors; null goes back to the defaults. */
   setColors(colors: Partial<ColorScheme> | null): Promise<void>;
+  /** Saves the picked theme; null goes back to the default look. */
+  setTheme(id: string | null): Promise<void>;
   /** Saves how entry and exit markers look; null goes back to the defaults. */
   setMarkerStyles(styles: MarkerStyles | null): Promise<void>;
   setOptionPriceDisplay(mode: 'quote' | 'contract'): Promise<void>;
