@@ -32,7 +32,7 @@ h1, h2, h3, h4, .panel-title, .view-title { font-family: var(--font-head); }
 
 .app { display: flex; flex-direction: column; height: 100vh; }
 .topbar { display: flex; align-items: center; justify-content: space-between; padding: 10px 20px; border-bottom: 1px solid var(--border); background: var(--panel); }
-.topbar h1 { font-size: 16px; margin: 0; font-weight: 600; }
+.topbar h1 { font-size: 21px; margin: 0; font-weight: 600; }
 
 button { font: inherit; cursor: pointer; border-radius: var(--radius); border: 1px solid var(--border); background: var(--panel-2); color: var(--text); padding: 6px 14px; }
 button.primary { background: var(--blue); border-color: var(--blue); color: var(--on-accent); }
@@ -603,8 +603,9 @@ th.sorted { color: var(--text); }
 .modal .settings-card .marker-line-row { flex-direction: column; gap: 6px; }
 
 /* The Moon Journal logo next to the app name. */
-.topbar h1 { display: flex; align-items: center; gap: 8px; }
-.topbar h1 .logo { width: 26px; height: 26px; border-radius: var(--radius-big); }
+.topbar h1 { display: flex; align-items: center; gap: 10px; }
+/* The astronaut has no background of its own, so it sits right on the bar. */
+.topbar h1 .logo { width: 46px; height: 46px; margin: -8px 0; object-fit: contain; }
 
 /* ---------- Themes (Settings > Display > Theme) ----------
    The art layer sits behind everything (gaps between panels and empty space show it); panels stay
@@ -622,7 +623,8 @@ th.sorted { color: var(--text); }
 .theme-art .art-star { background-image: var(--ornament); }
 
 /* Moon phases across the middle of the top bar, faded at both ends. */
-html:not([data-theme="default"]) .topbar { position: relative; isolation: isolate; }
+/* The top bar stacks above the page (but under Settings and other pop-ups, z-index 10+) so its menus open on top. */
+html:not([data-theme="default"]) .topbar { position: relative; isolation: isolate; z-index: 9; }
 html:not([data-theme="default"]) .topbar::before {
   content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none; opacity: 0.6;
   background: var(--art-phases) 50% 30% / 36% auto no-repeat;
@@ -637,7 +639,6 @@ html:not([data-theme="default"]) .home-calendar::before, html:not([data-theme="d
 html:not([data-theme="default"]) .home-calendar::before { right: 0; bottom: 0; width: 46%; height: 60%; background-image: var(--art-moon); opacity: 0.16; }
 html:not([data-theme="default"]) .card.goals::before { right: 0; bottom: 0; width: 120px; height: 120px; background-image: var(--art-rocket); opacity: 0.22; }
 html:not([data-theme="default"]) .settings-page::before { right: 8px; bottom: 8px; width: 220px; height: 220px; background-image: var(--art-moon); opacity: 0.14; }
-html:not([data-theme="default"]) .topbar h1 .logo { border-radius: 50%; }
 html:not([data-theme="default"]) .settings-modal .modal-head { position: relative; isolation: isolate; }
 html:not([data-theme="default"]) .settings-modal .modal-head::before {
   content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none; opacity: 0.5; background: var(--art-phases) right 45% / 45% auto no-repeat;
@@ -679,7 +680,7 @@ html[data-theme="retro"] button.primary { box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.
 
 /* Neon: glowing edges and titles. */
 html[data-theme="neon"] :is(h1, h2, h3, h4, .panel-title, .view-title) { text-transform: uppercase; letter-spacing: 0.06em; font-weight: 500; text-shadow: 0 0 8px color-mix(in srgb, var(--blue) 70%, transparent); }
-html[data-theme="neon"] .topbar h1 { font-size: 15px; }
+html[data-theme="neon"] .topbar h1 { font-size: 19px; }
 html[data-theme="neon"] :is(.tile, .card, .trade-panel, .journal-editor, .year-block, .modal, .empty:not(.heat-cell)) { box-shadow: 0 0 0 1px color-mix(in srgb, var(--blue) 25%, transparent), 0 0 18px color-mix(in srgb, #ff4fd8 12%, transparent); }
 html[data-theme="neon"] button.primary, html[data-theme="neon"] .tab.active { box-shadow: 0 0 12px color-mix(in srgb, var(--blue) 55%, transparent); }
 html[data-theme="neon"] .win { text-shadow: 0 0 6px color-mix(in srgb, var(--green) 50%, transparent); }
@@ -692,12 +693,12 @@ html[data-theme="gold"] .topbar, html[data-theme="gold"] .tab-bar { border-botto
 
 /* Art deco: double frames and wide-spaced capitals. */
 html[data-theme="deco"] :is(h1, h2, h3, h4, .panel-title, .view-title) { font-weight: 400; text-transform: uppercase; letter-spacing: 0.14em; }
-html[data-theme="deco"] .topbar h1 { font-size: 18px; }
+html[data-theme="deco"] .topbar h1 { font-size: 24px; }
 html[data-theme="deco"] :is(.tile, .card, .trade-panel, .modal, .empty:not(.heat-cell)) { outline: 1px solid color-mix(in srgb, var(--border) 60%, transparent); outline-offset: -5px; }
 
 /* Pixel: square corners, chunky borders, and the arcade font for titles (it runs wide, so smaller). */
 html[data-theme="pixel"] :is(h1, h2, h3, h4, .panel-title, .view-title) { font-weight: 400; line-height: 1.6; }
-html[data-theme="pixel"] .topbar h1 { font-size: 12px; }
+html[data-theme="pixel"] .topbar h1 { font-size: 15px; }
 html[data-theme="pixel"] :is(.view-title, .month-nav h2, .modal h2) { font-size: 12px; }
 html[data-theme="pixel"] :is(.report-head h3, .goals-head h3, .modal h3, .settings-card h4, .panel-title) { font-size: 10px; }
 html[data-theme="pixel"] :is(.tile, .card, .trade-panel, .journal-editor, .year-block, .modal, .empty:not(.heat-cell)) { border-width: 2px; box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.45); }
@@ -717,7 +718,7 @@ html[data-theme="ink"] .modal-backdrop { background: rgba(30, 28, 25, 0.35); }
 .theme-card:hover { filter: none; border-color: var(--border); }
 .theme-card.active { border-color: var(--blue); box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue) 35%, transparent); }
 .theme-card-art { height: 64px; display: flex; align-items: center; padding-left: 10px; background-size: cover; background-position: right center; }
-.theme-card-art img { width: 44px; height: 44px; border-radius: 50%; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35); }
+.theme-card-art img { width: 50px; height: 50px; object-fit: contain; filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.45)); }
 .theme-card-name { padding: 0 10px; font-size: 14px; font-weight: 600; }
 .theme-swatches { display: flex; gap: 4px; padding: 0 10px; }
 .theme-swatches i { width: 16px; height: 10px; border-radius: 2px; box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.35); }
