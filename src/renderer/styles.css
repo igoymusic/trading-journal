@@ -581,3 +581,8 @@ th.sorted { color: var(--text); }
 .marker-line-row select { width: 100%; height: 28px; padding: 2px 6px; margin-top: 2px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; font: inherit; }
 .modal .marker-style label { margin: 0; }
 .modal .marker-style input[type=range] { padding: 0; margin: 4px 0 0; border: none; background: none; }
+/* In Settings the three marker types sit side by side instead of stretching across the page. */
+.modal .settings-card .marker-styles { display: grid; grid-template-columns: repeat(3, minmax(0, 200px)); gap: 12px 18px; }
+.modal .settings-card .marker-style + .marker-style { border-top: none; padding-top: 0; }
+.modal .settings-card .marker-styles > p, .modal .settings-card .marker-styles > button { grid-column: 1 / -1; margin: 0; justify-self: start; }
+.modal .settings-card .marker-line-row { flex-direction: column; gap: 6px; }
