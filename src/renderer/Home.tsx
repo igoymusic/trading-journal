@@ -108,6 +108,7 @@ export function Home({ trades, goals, month, onMonthChange, onOpenDay, onOpenSet
             <span>Hold, losers</span><b>{shortDuration(x.avgHoldLoss)}</b>
           </div>
         </div>
+        <div className="home-mascot" />
       </aside>
 
       <div className="home-main">
@@ -144,7 +145,7 @@ export function Home({ trades, goals, month, onMonthChange, onOpenDay, onOpenSet
           </div>
         </div>
 
-        <div className="card stat">
+        <div className="card stat streaks">
           <div className="tile-label">Streaks</div>
           <div className="stat-rows">
             <span>Right now</span><b className={pnlClass(streak.currentDays)}>{streakText(streak.currentDays, 'day')}</b>

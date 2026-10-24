@@ -200,8 +200,10 @@ export function App() {
             </button>
           )}
           <button onClick={() => setShowSettings(true)}>Settings</button>
-          <button className="primary" onClick={importCsv}>Import thinkorswim CSV</button>
+          <button className="primary" onClick={importCsv} title="Bring in trades from a thinkorswim account statement (CSV)">Import trades</button>
         </div>
+        <i className="topbar-sticker rocket" />
+        <i className="topbar-sticker moon" />
       </header>
       {hasTrades && (
         <nav className="tab-bar">

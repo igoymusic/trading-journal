@@ -3,6 +3,7 @@
 
 import type { ColorScheme } from '../shared/api';
 import { type Theme, themeById } from './themes';
+import { pickStickers } from './themes/stickers';
 
 export const DEFAULT_COLORS: ColorScheme = {
   win: '#26a69a',
@@ -32,6 +33,8 @@ let current: ColorScheme = DEFAULT_COLORS;
 // Your own colors belong to the default look; themes bring their own (except the candles).
 let yours: Partial<ColorScheme> = {};
 let theme: Theme = themeById('default');
+/** The moon, rocket and astronaut pictures picked for this session (new ones on each theme switch). */
+let stickers = pickStickers('default');
 
 export const colors = () => current;
 export const activeTheme = () => theme;
@@ -47,6 +50,7 @@ export function applyColors(saved: Partial<ColorScheme> | undefined) {
 /** Switches to this theme (an id from THEMES; anything else is the default look). */
 export function applyTheme(id: string | undefined) {
   theme = themeById(id);
+  stickers = pickStickers(theme.id);
   refresh();
 }
 
@@ -67,6 +71,7 @@ function refresh() {
     '--ornament-muted': `url("data:image/svg+xml,${encodeURIComponent(theme.ornament(s.muted))}")`,
   };
   for (const [k, v] of Object.entries(theme.art ?? {})) vars[`--art-${k}`] = `url("${v}")`;
+  Object.assign(vars, stickers);
   for (const [k, v] of Object.entries(vars)) root.setProperty(k, v);
   if (!theme.art) for (const k of ['scene', 'moon', 'rocket', 'phases', 'ground', 'logo']) root.removeProperty(`--art-${k}`);
   html.dataset.theme = theme.id;

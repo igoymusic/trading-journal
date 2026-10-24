@@ -623,15 +623,6 @@ html:not([data-theme="default"]) .topbar::before {
   background: var(--art-phases) 50% 30% / 36% auto no-repeat;
   -webkit-mask-image: linear-gradient(90deg, transparent 33%, #000 44%, #000 56%, transparent 67%); mask-image: linear-gradient(90deg, transparent 33%, #000 44%, #000 56%, transparent 67%);
 }
-/* Art inside some panels, faint and behind their contents. */
-html:not([data-theme="default"]) :is(.home-calendar, .card.goals, .settings-page) { position: relative; isolation: isolate; }
-html:not([data-theme="default"]) .home-calendar::before, html:not([data-theme="default"]) .card.goals::before, html:not([data-theme="default"]) .settings-page::before {
-  content: ''; position: absolute; z-index: -1; pointer-events: none; background-repeat: no-repeat; background-size: contain; background-position: right bottom;
-  -webkit-mask-image: radial-gradient(closest-side, #000 40%, transparent 100%); mask-image: radial-gradient(closest-side, #000 40%, transparent 100%);
-}
-html:not([data-theme="default"]) .home-calendar::before { right: 0; bottom: 0; width: 46%; height: 60%; background-image: var(--art-moon); opacity: 0.16; }
-html:not([data-theme="default"]) .card.goals::before { right: 0; bottom: 0; width: 120px; height: 120px; background-image: var(--art-rocket); opacity: 0.22; }
-html:not([data-theme="default"]) .settings-page::before { right: 8px; bottom: 8px; width: 220px; height: 220px; background-image: var(--art-moon); opacity: 0.14; }
 html:not([data-theme="default"]) .settings-modal .modal-head { position: relative; isolation: isolate; }
 html:not([data-theme="default"]) .settings-modal .modal-head::before {
   content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none; opacity: 0.5; background: var(--art-phases) right 45% / 45% auto no-repeat;
@@ -649,10 +640,6 @@ html:not([data-theme="default"]) .tile::after, html:not([data-theme="default"]) 
 }
 html:not([data-theme="default"]) :is(.report-head h3, .goals-head h3, .settings-card h4, .view-title, .month-nav h2, .settings-page > h3)::before {
   content: ''; display: inline-block; width: 0.8em; height: 0.8em; margin-right: 0.45em; vertical-align: -0.05em; background: var(--ornament) center / contain no-repeat;
-}
-html:not([data-theme="default"]) .empty:not(.heat-cell), html:not([data-theme="default"]) .reports-empty {
-  background-image: linear-gradient(90deg, var(--panel) 55%, color-mix(in srgb, var(--panel) 40%, transparent)), var(--art-rocket);
-  background-repeat: no-repeat; background-position: 0 0, right center; background-size: auto, auto 100%;
 }
 html:not([data-theme="default"]) .tab.active { background: var(--bg); }
 html:not([data-theme="default"]) .cal-day.traded { background: color-mix(in srgb, var(--panel) 92%, var(--blue)); }
@@ -709,6 +696,41 @@ html[data-theme="ink"] :is(.tile, .card, .trade-panel, .journal-editor, .year-bl
 html[data-theme="ink"] button { border-color: #3a362f; }
 html[data-theme="ink"] .theme-art .art-scene { opacity: 0.2; }
 html[data-theme="ink"] .modal-backdrop { background: rgba(30, 28, 25, 0.35); }
+
+/* ---------- Pictures: Yogi's moons, rockets and astronauts, in every theme ----------
+   themes/stickers.ts picks one for each spot when the app opens and on every theme switch. Big ones
+   only go in empty space; inside panels they stay faint and behind the contents. */
+.topbar { position: relative; }
+.topbar-sticker { position: absolute; top: 50%; translate: 0 -50%; height: 44px; pointer-events: none; background: center / contain no-repeat; }
+.topbar-sticker.rocket { left: 25%; width: 76px; background-image: var(--stk-banner); opacity: 0.9; }
+.topbar-sticker.moon { left: 68%; width: 44px; background-image: var(--stk-banner-moon); opacity: 0.85; }
+html:not([data-theme="default"]) .topbar-sticker.moon { display: none; }
+@media (max-width: 1100px) { .topbar-sticker { display: none; } }
+/* An astronaut fills the empty space under the left-hand stats on Home. */
+.home > .home-rail:first-child { align-self: stretch; }
+.home-mascot { flex: 1 1 0; min-height: 0; max-height: 250px; margin-top: 4px; pointer-events: none; background: var(--stk-mascot) center bottom / contain no-repeat; filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.3)); }
+:is(.card.goals, .settings-page, .empty:not(.heat-cell), .day-empty, .gallery-empty, .reports-empty) { position: relative; isolation: isolate; }
+:is(.card.goals, .settings-page, .empty:not(.heat-cell), .day-empty, .gallery-empty, .reports-empty)::before {
+  content: ''; position: absolute; z-index: -1; pointer-events: none; right: 8px; bottom: 8px; background: right bottom / contain no-repeat;
+}
+.card.goals::before { width: 120px; height: 120px; background-image: var(--stk-goals); opacity: 0.22; }
+.settings-page::before { width: 220px; height: 220px; background-image: var(--stk-settings); opacity: 0.14; }
+/* Small ones beside a few titles: a moon by the month name, a rocket over a candle trail by Streaks. */
+.month-nav h2::after, .card.streaks .tile-label::after, .day > .view-title::after { content: ''; display: inline-block; vertical-align: middle; background: center / contain no-repeat; }
+.month-nav h2::after { width: 34px; height: 34px; margin: -8px 0 -6px 10px; background-image: var(--stk-calendar); }
+.card.streaks .tile-label::after { width: 30px; height: 30px; margin: -10px 0 -8px 8px; background-image: var(--stk-streaks); }
+/* The astronaut writing in a journal, by the day's title above its notes. */
+.day > .view-title::after { width: 46px; height: 46px; margin: -14px 0 -10px 12px; background-image: var(--stk-journal); }
+/* Faint in the empty bottom corner of the fills panel beside a trade's chart (the panel's color laid over it fades it). */
+.fill-list { background: linear-gradient(color-mix(in srgb, var(--panel) 80%, transparent), color-mix(in srgb, var(--panel) 80%, transparent)) right 14px bottom 14px / 100px 100px no-repeat, var(--stk-trade) right 14px bottom 14px / 100px 100px no-repeat; }
+/* Under the list of Settings sections. */
+.settings-nav { background: var(--stk-settings) center bottom 20px / 120px auto no-repeat; }
+/* "Nothing here yet" spots get a friendly astronaut at full strength. */
+.empty:not(.heat-cell) { max-width: 560px; padding-right: 150px; }
+.empty:not(.heat-cell)::before { top: 18px; right: 20px; bottom: auto; width: 120px; height: 120px; background-image: var(--stk-empty); background-position: center; }
+:is(.day-empty, .gallery-empty, .reports-empty) { min-height: 96px; display: flex; align-items: center; }
+.gallery-empty { justify-content: center; }
+:is(.day-empty, .gallery-empty, .reports-empty)::before { position: static; flex: none; width: 84px; height: 84px; margin-right: 16px; background-image: var(--stk-empty); background-position: center; }
 
 /* Theme cards in Settings. Each card is drawn in its own theme's colors and fonts. */
 .theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: 10px; }
