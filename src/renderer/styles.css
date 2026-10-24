@@ -38,7 +38,8 @@ button { font: inherit; cursor: pointer; border-radius: var(--radius); border: 1
 button.primary { background: var(--blue); border-color: var(--blue); color: var(--on-accent); }
 button:hover { filter: brightness(1.15); }
 
-.notice { margin: 12px 20px 0; padding: 8px 12px; border-radius: var(--radius); background: var(--panel-2); border-left: 3px solid var(--blue); cursor: pointer; }
+.notice { margin: 12px 20px 0; padding: 8px 12px; border-radius: var(--radius); background: var(--panel-2); border-left: 3px solid var(--blue); cursor: pointer; transition: opacity 1.2s ease; }
+.notice.fading { opacity: 0; }
 
 .summary { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 12px; padding: 16px 20px; }
 .tile { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-big); padding: 12px 14px; }

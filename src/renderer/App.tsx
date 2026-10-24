@@ -231,7 +231,7 @@ export function App() {
           })}
         </nav>
       )}
-      {notice && <div className="notice" onClick={() => setNotice(null)}>{notice}</div>}
+      {notice && <Notice key={notice} text={notice} onDone={() => setNotice(null)} />}
       {!data ? null : !hasTrades ? <EmptyState onImport={importCsv} onOpenSettings={() => setShowSettings(true)} /> : (
         <main className="view" key={colorsVersion}>
           {filterTab && <FilterBar trades={data.trades} filter={filter} onChange={setFilter} shown={filtered.length} />}
@@ -336,6 +336,32 @@ function PinIcon({ filled }: { filled: boolean }) {
       <path d="M9 3h6l-1 6 4 4v2H6v-2l4-4-1-6z" />
       <path d="M12 15v6" strokeLinecap="round" />
     </svg>
+  );
+}
+
+/**
+ * A message under the top bar that fades away on its own: after 6 seconds, or 20 for problems
+ * (a failed sync or import, an expired sign-in). Hovering keeps it up; clicking closes it.
+ */
+function Notice({ text, onDone }: { text: string; onDone: () => void }) {
+  const [fading, setFading] = useState(false);
+  const [hover, setHover] = useState(false);
+  const problem = /failed|run out|error/i.test(text);
+  useEffect(() => {
+    if (hover) { setFading(false); return; }
+    const t = setTimeout(() => setFading(true), problem ? 20000 : 6000);
+    return () => clearTimeout(t);
+  }, [hover, problem]);
+  return (
+    <div
+      className={`notice${fading ? ' fading' : ''}`}
+      onClick={onDone}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      onTransitionEnd={() => fading && onDone()}
+    >
+      {text}
+    </div>
   );
 }
 
