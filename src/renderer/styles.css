@@ -156,7 +156,7 @@ button.link { background: none; border: none; color: var(--blue); padding: 6px; 
 
 /* Charts */
 .chart-box { position: relative; }
-.chart-tip { position: absolute; z-index: 20; pointer-events: none; background: var(--tip); border: 1px solid var(--border); border-radius: var(--radius-big); padding: 6px 9px; font-size: 12px; line-height: 1.45; white-space: nowrap; max-width: 260px; box-shadow: 0 4px 14px rgba(0,0,0,0.4); }
+.chart-tip { position: fixed; z-index: 1000; pointer-events: none; background: var(--tip); border: 1px solid var(--border); border-radius: var(--radius-big); padding: 6px 9px; font-size: 12px; line-height: 1.45; white-space: nowrap; max-width: 260px; box-shadow: 0 4px 14px rgba(0,0,0,0.4); }
 .chart-tip .muted { white-space: normal; min-width: 200px; }
 .donut { display: flex; align-items: center; gap: 14px; }
 .donut svg { flex-shrink: 0; }

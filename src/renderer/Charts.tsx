@@ -2,6 +2,7 @@
 // hold time vs P&L, daily bars and the drawdown curve. Every mark shows its numbers on hover.
 
 import { type ReactNode, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { HeatCell, HistogramBin, TradeScore } from '../core/visuals';
 import { HEAT_HOURS } from '../core/visuals';
 import { chartTones, colors, withAlpha } from './colors';
@@ -27,22 +28,41 @@ function useWidth<T extends HTMLElement>(): [React.RefObject<T>, number] {
   return [ref, width];
 }
 
-/** A tooltip that follows the pointer inside a chart. */
+/** A tooltip that follows the pointer over a chart. */
 function useTip(shared?: React.RefObject<HTMLDivElement>) {
   const [tip, setTip] = useState<{ x: number; y: number; body: ReactNode } | null>(null);
   const own = useRef<HTMLDivElement>(null);
   const box = shared ?? own;
-  const show = (e: React.MouseEvent, body: ReactNode) => {
-    const r = box.current!.getBoundingClientRect();
-    setTip({ x: e.clientX - r.left, y: e.clientY - r.top, body });
-  };
+  const show = (e: React.MouseEvent, body: ReactNode) => setTip({ x: e.clientX, y: e.clientY, body });
   const hide = () => setTip(null);
-  const el = tip && (
-    <div className="chart-tip" style={{ left: tip.x, top: tip.y, transform: `translate(${tip.x > (box.current?.clientWidth ?? 0) / 2 ? 'calc(-100% - 12px)' : '12px'}, -50%)` }}>
-      {tip.body}
-    </div>
-  );
+  const el = tip && <ChartTip x={tip.x} y={tip.y}>{tip.body}</ChartTip>;
   return { box, show, hide, el };
+}
+
+/**
+ * Drawn on the page itself (not inside the chart's panel) and kept fully inside the window: it sits
+ * beside the pointer, flips to the other side near the right edge, and slides up or down near the top or bottom.
+ */
+function ChartTip({ x, y, children }: { x: number; y: number; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [at, setAt] = useState<{ left: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const { width, height } = el.getBoundingClientRect();
+    const gap = 12, edge = 8;
+    let left = x + gap;
+    if (left + width > window.innerWidth - edge) left = x - gap - width;
+    left = Math.max(edge, Math.min(left, window.innerWidth - edge - width));
+    const top = Math.max(edge, Math.min(y - height / 2, window.innerHeight - edge - height));
+    setAt({ left, top });
+  }, [x, y, children]);
+  return createPortal(
+    <div ref={ref} className="chart-tip" style={{ position: 'fixed', left: at?.left ?? x, top: at?.top ?? y, visibility: at ? 'visible' : 'hidden' }}>
+      {children}
+    </div>,
+    document.body,
+  );
 }
 
 const pnlColor = (n: number) => (n > 0 ? colors().win : n < 0 ? colors().loss : tone().muted);
