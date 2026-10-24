@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { tradeDay } from '../core/calendar';
 import { dayChartTrade, dayTickers } from '../core/dayChart';
 import type { Trade } from '../core/types';
-import type { TradeChart } from '../shared/api';
+import type { ChartView, TradeChart } from '../shared/api';
 import { signedUsd, pnlClass } from './format';
-import { type Interval, PriceChart, useFullscreen } from './TradePanel';
-import { DrawToolbar, pasteIntoChart, useDrawings } from './drawings';
+import { indexProxy } from '../core/indexProxy';
+import { ChartViewSwitch, type Interval, PanelResizer, PriceChart, useFullscreen, usePanelHeight } from './TradePanel';
+import { DrawToolbar, pasteIntoChart, UndoRedo, useDrawings } from './drawings';
 
 const NO_LEVELS = { stops: [], targets: [] };
 
@@ -15,6 +16,7 @@ export function DayChart({ trades, date, version }: { trades: Trade[]; date: str
   const [ticker, setTicker] = useState(tickers[0]);
   const [interval, setInterval] = useState<Interval>(1);
   const [chart, setChart] = useState<TradeChart | null>(null);
+  const [view, setView] = useState<ChartView>('etf');
   // Click the bar to fold the chart away; remembered across days and restarts.
   const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem('dayChartCollapsed') === '1'; } catch { return false; } });
   const toggle = () => setCollapsed((c) => {
@@ -25,9 +27,10 @@ export function DayChart({ trades, date, version }: { trades: Trade[]; date: str
   const day = useMemo(() => (shown ? dayChartTrade(trades, date, shown) : null), [trades, date, shown]);
 
   const bars = chart?.status === 'ok' ? chart.bars : [];
-  const draw = useDrawings(shown ?? '', bars[0]?.time, bars[bars.length - 1]?.time);
+  const draw = useDrawings(chart?.status === 'ok' ? chart.symbol : shown ?? '', bars[0]?.time, bars[bars.length - 1]?.time, `day:${date}`);
   const [hint, setHint] = useState('');
   const [fullscreen, setFullscreen] = useFullscreen();
+  const [height, startResize] = usePanelHeight('dayChartHeight');
   useEffect(() => {
     if (!hint) return;
     const t = window.setTimeout(() => setHint(''), 5000);
@@ -38,8 +41,8 @@ export function DayChart({ trades, date, version }: { trades: Trade[]; date: str
   useEffect(() => {
     if (!shown) return;
     setChart(null);
-    window.journal.getDayChart(date, shown).then(setChart);
-  }, [date, shown, version]);
+    window.journal.getDayChart(date, shown, view).then(setChart, (err: Error) => setChart({ status: 'error', message: err.message }));
+  }, [date, shown, version, view]);
 
   if (!day || chart?.status === 'needs-key') return null;
   const count = trades.filter((t) => t.underlying === shown && tradeDay(t) === date).length;
@@ -47,6 +50,7 @@ export function DayChart({ trades, date, version }: { trades: Trade[]; date: str
   return (
     <section
       className={`trade-panel day-chart ${collapsed ? 'collapsed' : ''} ${fullscreen ? 'fullscreen' : ''}`}
+      style={fullscreen || collapsed ? undefined : { height }}
       tabIndex={-1}
       onMouseDownCapture={(e) => { if (!(e.target as HTMLElement).closest('input, textarea, select, button')) (e.currentTarget as HTMLElement).focus({ preventScroll: true }); }}
       onPaste={(e) => { if (!(e.target as HTMLElement).closest('input, textarea')) { e.preventDefault(); paste(); } }}
@@ -59,10 +63,12 @@ export function DayChart({ trades, date, version }: { trades: Trade[]; date: str
           <span className={`panel-pnl ${pnlClass(day.trade.netPnl)}`}>{signedUsd(day.trade.netPnl)}</span>
         </div>
         <div className="panel-actions" onClick={(e) => e.stopPropagation()}>
+          {!collapsed && draw && chart?.status === 'ok' && <><UndoRedo scope={draw.scope} /><span className="divider" /></>}
           {tickers.length > 1 && tickers.map((t) => (
             <button key={t} className={t === shown ? 'active' : ''} onClick={() => setTicker(t)}>{t}</button>
           ))}
           {tickers.length > 1 && <span className="divider" />}
+          {shown && indexProxy(shown) && <><ChartViewSwitch underlying={shown} view={view} onChange={setView} /><span className="divider" /></>}
           {[1, 5, 15].map((m) => (
             <button key={m} className={interval === m ? 'active' : ''} onClick={() => setInterval(m as Interval)}>{m}m</button>
           ))}
@@ -76,7 +82,7 @@ export function DayChart({ trades, date, version }: { trades: Trade[]; date: str
           {chart?.status === 'error' && <div className="chart-message loss">Couldn't load prices: {chart.message}</div>}
           {chart?.status === 'ok' && (
             <PriceChart
-              key={`${shown}:${interval}`}
+              key={`${shown}:${view}:${interval}`}
               trade={day.trade}
               chart={chart}
               interval={interval}
@@ -98,6 +104,7 @@ export function DayChart({ trades, date, version }: { trades: Trade[]; date: str
       {!collapsed && chart?.status === 'ok' && chart.estimatedFrom && (
         <div className="muted small day-chart-note">≈ {chart.symbol} estimated from {chart.estimatedFrom} scaled by each day's closing prices.</div>
       )}
+      {!fullscreen && !collapsed && <PanelResizer onStart={startResize} />}
     </section>
   );
 }

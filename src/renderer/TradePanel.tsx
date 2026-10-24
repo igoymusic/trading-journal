@@ -6,20 +6,25 @@ import { useEffect, useRef, useState } from 'react';
 import type { Bar } from '../core/alpaca';
 import { filledBy, positionAt, replayStartIndex } from '../core/replay';
 import { chartTime } from '../core/time';
+import { shownFills } from '../core/trades';
 import { dollarRiskReward } from '../core/optionLevels';
-import { averageUnderlying, formatR, levelsFromExits, riskReward } from '../core/rr';
-import { EMPTY_JOURNAL, type PriceLevel, type Trade } from '../core/types';
-import type { LevelPrices, TradeChart } from '../shared/api';
+import { averageUnderlying, bias, formatR, levelsFromExits, riskReward } from '../core/rr';
+import { indexProxy } from '../core/indexProxy';
+import { EMPTY_JOURNAL, type PriceLevel, type Trade, type TradeJournal } from '../core/types';
+import type { ChartView, LevelPrices, TradeChart } from '../shared/api';
 import { type FillMarker, FillMarkersPrimitive } from './fillMarkers';
 import { exitKind } from '../core/markerStyles';
 import { onMarkerStylesChange } from './markerStyles';
 import { type Drawing, type ChartPoint, drawingStart, moveHandle, shiftDrawing } from '../core/drawings';
-import { DrawToolbar, type DrawingState, finishShape, pasteIntoChart, shapeFor, useDrawings } from './drawings';
+import { DrawToolbar, type DrawingState, UndoRedo, finishShape, pasteIntoChart, shapeFor, useDrawings } from './drawings';
 import { ScreenshotGallery, useScreenshotCount } from './Screenshots';
-import { DrawingsPrimitive, type Xy } from './drawingsPrimitive';
+import { DrawingsPrimitive, withOpacity, type Xy } from './drawingsPrimitive';
+import { levelStyle, onLevelStyleChange, stopColor, targetColor } from './levelStyle';
 import { holdTime, pnlClass, shortDate, signedUsd, optionUsd, usd } from './format';
 import { useJournal } from './journal';
+import { InfoTip } from './InfoTip';
 import { useChartIndicators } from './useChartIndicators';
+import { applyTo, record, setApplier } from './chartHistory';
 
 type LevelKind = 'stops' | 'targets';
 interface Levels { stops: PriceLevel[]; targets: PriceLevel[] }
@@ -49,27 +54,33 @@ function aggregate(bars: Bar[], minutes: Interval): Bar[] {
 
 export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; onClose?: () => void; onOpenSettings: () => void }) {
   const [chart, setChart] = useState<TradeChart | null>(null);
+  const [view, setView] = useState<ChartView>('etf');
   const [interval, setInterval] = useState<Interval>(1);
   const [placing, setPlacing] = useState<LevelKind | null>(null);
   // Replay: which minute bar is showing, whether it's playing, and how many candles a second.
   const [replay, setReplay] = useState<{ index: number; playing: boolean; speed: number } | null>(null);
   const [tab, setTab] = useState<'chart' | 'shots'>('chart');
   const [fullscreen, setFullscreen] = useFullscreen();
+  const [height, startResize] = usePanelHeight('tradePanelHeight');
   const [hint, setHint] = useState('');
   const shotCount = useScreenshotCount(trade.id);
   const { saveTrade } = useJournal();
   const sectionRef = useRef<HTMLElement>(null);
   const journal = trade.journal ?? EMPTY_JOURNAL;
-  const levels: Levels = { stops: journal.stops ?? [], targets: journal.targets ?? [] };
+  const savedLevels: Levels = { stops: journal.stops ?? [], targets: journal.targets ?? [] };
 
+  // Each trade opens on the main chart (SPY for SPX trades).
+  useEffect(() => setView('etf'), [trade.id]);
   useEffect(() => {
     setChart(null);
     setReplay(null);
-    window.journal.getTradeChart(trade.id).then(setChart);
-  }, [trade.id]);
+    window.journal.getTradeChart(trade.id, view).then(setChart, (err: Error) => setChart({ status: 'error', message: err.message }));
+  }, [trade.id, view]);
 
   const bars = chart?.status === 'ok' ? chart.bars : [];
-  const draw = useDrawings(trade.underlying, bars[0]?.time, bars[bars.length - 1]?.time);
+  // What the chart's prices are in: SPY for an SPX trade charted on SPY.
+  const priceSymbol = chart?.status === 'ok' ? chart.symbol : trade.underlying;
+  const draw = useDrawings(priceSymbol, bars[0]?.time, bars[bars.length - 1]?.time, `trade:${trade.id}`);
   useEffect(() => {
     if (!hint) return;
     const t = window.setTimeout(() => setHint(''), 5000);
@@ -132,6 +143,14 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
   const underlyingExit = trade.status === 'CLOSED' ? averageUnderlying(withPrices.filter((f) => f.side !== entrySide)) : undefined;
   const rr = riskReward(trade, journal);
 
+  // Lines are saved in the prices of the chart they were set on. On the other chart (SPX instead of
+  // SPY, about 10 times higher) they're moved by the same factor as the entry price.
+  const ratio = underlyingEntry && journal.underlyingEntry ? underlyingEntry / journal.underlyingEntry : 1;
+  const levelScale = ratio > 2 || ratio < 0.5 ? ratio : 1;
+  const scaleLevels = (ls: PriceLevel[]) => (levelScale === 1 ? ls : ls.map((l) => ({ ...l, price: round2(l.price * levelScale) })));
+  const levels: Levels = { stops: scaleLevels(savedLevels.stops), targets: scaleLevels(savedLevels.targets) };
+  const rrShown = rr && { ...rr, risk: rr.risk * levelScale };
+
   // What the option would have been worth at each line (real price or estimate), for dollar risk.
   const [levelPrices, setLevelPrices] = useState<LevelPrices | null>(null);
   const levelsKey = JSON.stringify(levels);
@@ -139,19 +158,27 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
     if (chart?.status !== 'ok' || !levels.stops.length && !levels.targets.length) { setLevelPrices(null); return; }
     let current = true;
     const timer = setTimeout(() => {
-      window.journal.getLevelPrices(trade.id, levels.stops, levels.targets).then((p) => { if (current) setLevelPrices(p); });
+      window.journal.getLevelPrices(trade.id, levels.stops, levels.targets, view).then((p) => { if (current) setLevelPrices(p); });
     }, 250);
     return () => { current = false; clearTimeout(timer); };
   }, [chart, levelsKey]);
 
-  function saveLevels(next: Levels) {
-    saveTrade(trade.id, {
-      ...journal,
+  // Undoing a line change puts back the saved lines (in the prices they were saved in).
+  type SavedLines = Pick<TradeJournal, 'stops' | 'targets' | 'underlyingEntry' | 'underlyingExit'>;
+  const linesName = `levels:${trade.id}`;
+  setApplier(linesName, (lines) => saveTrade(trade.id, { ...journal, ...(lines as SavedLines) }));
+
+  /** Saves the lines; `quiet` changes (made by the app, not you) can't be undone. */
+  function saveLevels(next: Levels, quiet?: boolean) {
+    const before: SavedLines = { stops: journal.stops, targets: journal.targets, underlyingEntry: journal.underlyingEntry, underlyingExit: journal.underlyingExit };
+    const after: SavedLines = {
       stops: next.stops,
       targets: next.targets,
       underlyingEntry: underlyingEntry ?? journal.underlyingEntry,
       underlyingExit: underlyingExit ?? journal.underlyingExit,
-    });
+    };
+    saveTrade(trade.id, { ...journal, ...after });
+    if (!quiet) record({ scope: `trade:${trade.id}`, key: linesName, undo: () => applyTo(linesName, before), redo: () => applyTo(linesName, after) });
   }
 
   // The first time a trade's chart loads, start its lines at the exits you actually took.
@@ -160,8 +187,30 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
     if (chart?.status !== 'ok' || journal.stops !== undefined || journal.targets !== undefined) return;
     const prices = new Map(chart.fills.flatMap((f) => (f.underlyingPrice === undefined ? [] : [[f.fillId, f.underlyingPrice] as const])));
     const found = levelsFromExits(trade, prices);
-    if (found) saveLevels(found);
+    if (found) saveLevels(found, true);
   }, [chart]);
+
+  // Once a trade has a stop and a target, a long or short position box is drawn for it. From then on
+  // it's an ordinary drawing: moving it doesn't move the lines, and moving the lines doesn't move it.
+  const boxId = `trade-box:${trade.id}`;
+  const [styleVersion, setStyleVersion] = useState(0);
+  useEffect(() => onLevelStyleChange(() => setStyleVersion((v) => v + 1)), []);
+  useEffect(() => {
+    if (!draw?.loaded || chart?.status !== 'ok' || !levelStyle().showBox) return;
+    if (journal.boxesPlaced?.includes(draw.symbol)) return;
+    const plan = planBox(trade, chart, levels);
+    if (!plan) return;
+    if (!draw.list.some((d) => d.id === boxId)) {
+      const style = levelStyle();
+      draw.put({
+        id: boxId, day: draw.dayFor(plan.a.time), kind: 'position', ...plan, color: '#787b86',
+        targetFill: withOpacity(targetColor().slice(0, 7), style.boxOpacity), stopFill: withOpacity(stopColor().slice(0, 7), style.boxOpacity),
+        labels: draw.styleSettings.positionLabels,
+      }, true);
+    }
+    // Remembered, so a box you delete stays deleted.
+    saveTrade(trade.id, { ...journal, boxesPlaced: [...(journal.boxesPlaced ?? []), draw.symbol] });
+  }, [draw?.loaded, draw?.symbol, chart, levelsKey, styleVersion]);
 
   function placeLevel(price: number) {
     if (!placing) return;
@@ -181,6 +230,7 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
   return (
     <section
       className={`trade-panel ${fullscreen ? 'fullscreen' : ''}`}
+      style={fullscreen || chartsOff ? undefined : { height }}
       ref={sectionRef}
       tabIndex={-1}
       // Clicking anywhere in the panel lets Ctrl+V paste into it.
@@ -204,12 +254,14 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
             <button className={tab === 'chart' ? 'active' : ''} onClick={() => setTab('chart')}>Chart</button>
             <button className={tab === 'shots' ? 'active' : ''} onClick={() => setTab('shots')}>Screenshots{shotCount ? ` (${shotCount})` : ''}</button>
           </div>
+          {tab === 'chart' && draw && chart?.status === 'ok' && <UndoRedo scope={draw.scope} />}
           {tab === 'chart' && chart?.status === 'ok' && (
             <button className={replay ? 'active' : ''} onClick={() => (replay ? setReplay(null) : startReplay())}
               title="Watch the trade play out minute by minute">
               {replay ? 'End replay' : '▶ Replay'}
             </button>
           )}
+          {tab === 'chart' && indexProxy(trade.underlying) && <ChartViewSwitch underlying={trade.underlying} view={view} onChange={setView} />}
           {tab === 'chart' && !chartsOff && [1, 5, 15].map((m) => (
             <button key={m} className={interval === m ? 'active' : ''} onClick={() => setInterval(m as Interval)}>{m}m</button>
           ))}
@@ -259,14 +311,22 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
         </div>}
 
         <div className="fill-list">
-          <div className="fill-list-head">Fills</div>
-          {trade.fills.map((f) => {
+          <div className="fill-list-head">Fills
+            {!!trade.assumedContracts && (
+              <InfoTip>
+                {trade.assumedContracts} contract{trade.assumedContracts === 1 ? ' was' : 's were'} closed without an opening fill, so {trade.assumedContracts === 1 ? 'it counts' : 'they count'} as {trade.direction === 'LONG' ? 'bought' : 'sold'} at the average entry.
+              </InfoTip>
+            )}
+          </div>
+          {shownFills(trade).map((f) => {
             const point = priceByFill.get(f.id);
             const buy = f.side === 'BUY';
+            const added = f.quantity - (trade.fills.find((x) => x.id === f.id)?.quantity ?? f.quantity);
             return (
               <div className="fill-item" key={f.id}>
                 <div>
-                  <span className={buy ? 'win' : 'loss'}>{f.orderType === 'EXPIRED' ? 'Expired' : buy ? 'Bought' : 'Sold'} {f.quantity}</span>
+                  <span className={buy ? 'win' : 'loss'}
+                    title={added ? `${f.quantity - added} filled, plus ${added} closed without an opening fill` : undefined}>{f.orderType === 'EXPIRED' ? 'Expired' : buy ? 'Bought' : 'Sold'} {f.quantity}</span>
                   <span> @ {optionUsd(f.price)}</span>
                 </div>
                 <div className="muted" title={f.account ? `From ${f.account}` : undefined}>
@@ -274,21 +334,23 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
                 </div>
                 {(!chart || chart.status === 'ok') && (
                   <div className="muted">
-                    {trade.underlying} {point?.underlyingPrice !== undefined ? <b className="underlying-price">{usd(point.underlyingPrice)}</b> : chart || f.timeExact === false ? 'n/a' : '…'}
+                    {priceSymbol} {point?.underlyingPrice !== undefined ? <b className="underlying-price">{usd(point.underlyingPrice)}</b> : chart || f.timeExact === false ? 'n/a' : '…'}
                   </div>
                 )}
               </div>
             );
           })}
+          <CombineBox trade={trade} />
           {chart?.status === 'ok' && (
             <RiskPanel
               trade={trade}
+              priceSymbol={priceSymbol}
               levels={levels}
               placing={placing}
               onPlacing={setPlacing}
               onChange={changeLevel}
               canMeasure={underlyingEntry !== undefined}
-              rr={rr}
+              rr={rrShown}
               prices={levelPrices}
             />
           )}
@@ -309,11 +371,72 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
           )}
         </div>
       </div>
+      {!fullscreen && <PanelResizer onStart={startResize} />}
     </section>
   );
 }
 
 /** Full screen for a chart panel; Esc leaves it. */
+/**
+ * The trade's long or short box: from your first entry to your last exit (or the latest candle while
+ * open), between your furthest stop and furthest target, labeled with the planned R:R from all of
+ * them. Null until there's both a stop and a target.
+ */
+function planBox(trade: Trade, chart: Extract<TradeChart, { status: 'ok' }>, levels: Levels) {
+  if (!levels.stops.length || !levels.targets.length) return null;
+  const entrySide = trade.direction === 'LONG' ? 'BUY' : 'SELL';
+  const at = (id: string) => chart.fills.find((p) => p.fillId === id);
+  const entries = trade.fills.filter((f) => f.side === entrySide);
+  const entryTime = at(entries[0]?.id ?? '')?.time;
+  const entryPrice = averageUnderlying(entries.map((f) => ({ quantity: f.quantity, underlying: at(f.id)?.underlyingPrice })));
+  if (entryTime === undefined || entryPrice === undefined) return null;
+  const dir = bias(trade);
+  const prices = (ls: PriceLevel[]) => ls.map((l) => l.price);
+  const stop = dir === 1 ? Math.min(...prices(levels.stops)) : Math.max(...prices(levels.stops));
+  const target = dir === 1 ? Math.max(...prices(levels.targets)) : Math.min(...prices(levels.targets));
+  const lastFill = chart.fills[chart.fills.length - 1]?.time ?? entryTime;
+  const end = trade.status === 'CLOSED' && lastFill > entryTime ? lastFill : chart.bars[chart.bars.length - 1]?.time ?? entryTime;
+  const ratio = riskReward(trade, { ...EMPTY_JOURNAL, stops: levels.stops, targets: levels.targets, underlyingEntry: entryPrice })?.plannedR;
+  return { side: dir === 1 ? 'long' as const : 'short' as const, a: { time: entryTime, price: round2(entryPrice) }, end, stop, target, ratio };
+}
+
+/** Flips an SPX trade's chart between SPY (the main one) and SPX. */
+export function ChartViewSwitch({ underlying, view, onChange }: { underlying: string; view: ChartView; onChange: (v: ChartView) => void }) {
+  const etf = indexProxy(underlying)?.etf ?? '';
+  const index = underlying.toUpperCase() === 'XSP' ? 'XSP' : 'SPX';
+  return (
+    <div className="view-tabs" title={`Show this on ${etf}'s chart or on ${index}`}>
+      <button className={view === 'etf' ? 'active' : ''} onClick={() => onChange('etf')}>{etf}</button>
+      <button className={view === 'index' ? 'active' : ''} onClick={() => onChange('index')}>{index}</button>
+    </div>
+  );
+}
+
+/** A panel's height, saved on this computer, and a handler that starts dragging its bottom edge. */
+export function usePanelHeight(key: string, initial = 460): [number, (e: React.MouseEvent) => void] {
+  const [height, setHeight] = useState(() => { try { return Number(localStorage.getItem(key)) || initial; } catch { return initial; } });
+  const start = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const fromY = e.clientY;
+    const fromH = height;
+    let h = fromH;
+    const move = (m: MouseEvent) => { h = Math.round(Math.max(260, Math.min(window.innerHeight * 1.5, fromH + m.clientY - fromY))); setHeight(h); };
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+      try { localStorage.setItem(key, String(h)); } catch { /* not remembered; fine */ }
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  };
+  return [height, start];
+}
+
+/** The strip along a panel's bottom edge that resizes it. */
+export function PanelResizer({ onStart }: { onStart: (e: React.MouseEvent) => void }) {
+  return <div className="panel-resize" title="Drag to make the chart taller or shorter" onMouseDown={onStart} />;
+}
+
 export function useFullscreen(): [boolean, (on: boolean) => void] {
   const [on, setOn] = useState(false);
   useEffect(() => {
@@ -360,7 +483,7 @@ export function PriceChart({ trade, chart, interval, levels, placing, onPlace, o
   editingRef.current = editing;
   const replayAtRef = useRef(replayAt);
   replayAtRef.current = replayAt;
-  const legend = useChartIndicators(api, seriesRef, built, chart, trade.underlying, interval, replayAt);
+  const legend = useChartIndicators(api, seriesRef, built, chart, chart.symbol, interval, replayAt);
 
   useEffect(() => {
     const el = container.current!;
@@ -582,10 +705,13 @@ export function PriceChart({ trade, chart, interval, levels, placing, onPlace, o
       if (moving) {
         const shape = draft();
         const wasMoved = moving.moved;
+        const resized = !!moving.handle;
         moving = null;
         setDraft(null);
         lock(false);
         if (wasMoved && shape && d) {
+          // A resized position shows its own reward to risk, not the trade's planned R it started with.
+          if (resized && shape.kind === 'position') delete shape.ratio;
           const start = drawingStart(shape);
           if (shape.kind === 'hline') d.put({ ...shape, price: round2(shape.price) });
           else d.put(start === null ? shape : { ...shape, day: d.dayFor(start) });
@@ -651,25 +777,48 @@ export function PriceChart({ trade, chart, interval, levels, placing, onPlace, o
     };
   }, [chart, interval, trade.id]);
 
-  // Stop and target lines, redrawn whenever they change.
+  // Stop and target lines from your entry to the right, and a position box once there's a stop and
+  // a target. Redrawn whenever they or their style change.
+  const [styleVersion, setStyleVersion] = useState(0);
+  useEffect(() => onLevelStyleChange(() => setStyleVersion((v) => v + 1)), []);
   useEffect(() => {
     const series = seriesRef.current;
+    const drawings = drawingsRef.current;
     if (!series) return;
     for (const line of lines.current.values()) series.removePriceLine(line);
     lines.current.clear();
+    const style = levelStyle();
+    const entrySide = trade.direction === 'LONG' ? 'BUY' : 'SELL';
+    const firstEntry = trade.fills.find((f) => f.side === entrySide);
+    const entryTime = chart.fills.find((p) => p.fillId === firstEntry?.id)?.time ?? chart.fills[0]?.time;
+    const entryPrice = averageUnderlying(trade.fills.filter((f) => f.side === entrySide)
+      .map((f) => ({ quantity: f.quantity, underlying: chart.fills.find((p) => p.fillId === f.id)?.underlyingPrice })));
+    const extras: Drawing[] = [];
     for (const kind of ['stops', 'targets'] as const) {
+      const color = kind === 'stops' ? stopColor() : targetColor();
       levels[kind].forEach((l, i) => {
+        // Only the price-scale tag comes from the chart; the line itself is drawn from the entry on.
         lines.current.set(`${kind}:${i}`, series.createPriceLine({
           price: l.price,
-          color: kind === 'stops' ? colors().stop : colors().target,
-          lineWidth: 2,
-          lineStyle: LineStyle.Dashed,
+          color: withOpacity(color.slice(0, 7), style.lineOpacity),
+          lineVisible: false,
           axisLabelVisible: true,
           title: `${kind === 'stops' ? 'Stop' : 'Target'} ×${l.contracts}`,
         }));
+        // A line at one of your exits starts at that exit's marker; the rest start at your entry.
+        const exit = trade.fills.filter((f) => f.side !== entrySide).map((f) => chart.fills.find((p) => p.fillId === f.id))
+          .find((p) => p?.underlyingPrice !== undefined && Math.abs(p.underlyingPrice - l.price) <= l.price * 0.0001);
+        extras.push({
+          id: `level:${kind}:${i}`, day: '', kind: 'hline', price: l.price, from: exit?.time ?? entryTime,
+          color: withOpacity(color.slice(0, 7), style.lineOpacity), width: style.width, ...(style.dash !== 'solid' ? { dash: style.dash } : {}),
+        });
       });
     }
-  }, [JSON.stringify(levels), built]);
+    if (drawings) {
+      drawings.extras = extras;
+      drawings.update();
+    }
+  }, [JSON.stringify(levels), built, styleVersion]);
 
   // Replay: redraw up to the current minute, keeping your zoom, and follow it off the right edge.
   const shownAt = useRef<number | null>(null);
@@ -750,8 +899,9 @@ function chartData(chart: Extract<TradeChart, { status: 'ok' }>, trade: Trade, i
 
   // Partial fills in the same second at the same price share one marker ("B 2 @ $79.00").
   const entrySide = trade.direction === 'LONG' ? 'BUY' : 'SELL';
+  const fills = shownFills(trade);
   const groups = new Map<string, { id: string; time: number; isEntry: boolean; side: string; qty: number; optionPrice: number; underlying?: number; contract?: string }>();
-  for (const f of trade.fills) {
+  for (const f of fills) {
     const point = chart.fills.find((p) => p.fillId === f.id);
     if (!point || (until !== null && !filledBy(point.time, until))) continue;
     const contract = info?.contract.get(f.id);
@@ -765,7 +915,7 @@ function chartData(chart: Extract<TradeChart, { status: 'ok' }>, trade: Trade, i
   }
   // Average entry price per contract, to tell exits in profit from exits at a loss.
   const entries = new Map<string, { side: 'BUY' | 'SELL'; cost: number; qty: number }>();
-  for (const f of trade.fills) {
+  for (const f of fills) {
     if (!(info ? info.entryIds.has(f.id) : f.side === entrySide)) continue;
     const k = info?.contract.get(f.id) ?? '';
     const e = entries.get(k) ?? { side: f.side as 'BUY' | 'SELL', cost: 0, qty: 0 };
@@ -817,7 +967,7 @@ function ReplayBar({ trade, chart, index, playing, speed, onPlay, onStep, onRest
       </select>
       <input type="range" min={0} max={chart.bars.length - 1} value={index} onChange={(e) => onSeek(Number(e.target.value))} />
       <span className="replay-clock">{clock}</span>
-      <span className="muted">{trade.underlying} <b className="underlying-price">{usd(bar.close)}</b></span>
+      <span className="muted">{chart.symbol} <b className="underlying-price">{usd(bar.close)}</b></span>
       <span className="replay-pos">
         {!pos.started ? <span className="muted">Not in yet</span>
           : pos.held > 0 ? <>Holding <b>{pos.held}</b></>
@@ -830,9 +980,16 @@ function ReplayBar({ trade, chart, index, playing, speed, onPlay, onStep, onRest
   );
 }
 
+const LEVEL_SOURCE = {
+  fill: 'Your fill price when you got out here',
+  market: 'The option\'s real price when the underlying reached this line',
+  estimate: 'Estimated with Black-Scholes from your entry fill\'s price, as if reached at your exit',
+};
+
 /** Side panel section for placing stops and targets and reading the R they give. */
-function RiskPanel({ trade, levels, placing, onPlacing, onChange, canMeasure, rr, prices }: {
+function RiskPanel({ trade, priceSymbol, levels, placing, onPlacing, onChange, canMeasure, rr, prices }: {
   trade: Trade;
+  priceSymbol: string;
   levels: Levels;
   placing: LevelKind | null;
   onPlacing: (kind: LevelKind | null) => void;
@@ -848,7 +1005,9 @@ function RiskPanel({ trade, levels, placing, onPlacing, onChange, canMeasure, rr
   const losing = trade.status === 'CLOSED' && trade.netPnl < 0;
   return (
     <div className="risk">
-      <div className="fill-list-head">Risk and reward</div>
+      <div className="fill-list-head">Risk and reward
+        <InfoTip>Lines start at your actual exits: winners as targets, losers as stops. Drag a line on the chart to move it. A line at one of your exits uses that exit's fill price. Others marked ≈ are estimated from your entry fill; the rest are what the option traded at when the underlying got there.</InfoTip>
+      </div>
       <div className="risk-buttons">
         {(['stops', 'targets'] as const).map((kind) => (
           <button key={kind} className={`${placing === kind ? 'active' : ''} ${kind}`} onClick={() => onPlacing(placing === kind ? null : kind)}>
@@ -856,7 +1015,11 @@ function RiskPanel({ trade, levels, placing, onPlacing, onChange, canMeasure, rr
           </button>
         ))}
       </div>
-      {(['stops', 'targets'] as const).flatMap((kind) => levels[kind].map((l, i) => (
+      {(['stops', 'targets'] as const)
+        .flatMap((kind) => levels[kind].map((l, i) => ({ kind, l, i })))
+        // Highest price first, the same order as the lines on the chart.
+        .sort((p, q) => q.l.price - p.l.price)
+        .map(({ kind, l, i }) => (
         <div className={`level-row ${kind}`} key={`${kind}${i}`}>
           <span className="level-name">{kind === 'stops' ? 'Stop' : 'Target'}</span>
           <span className="level-price">
@@ -864,11 +1027,9 @@ function RiskPanel({ trade, levels, placing, onPlacing, onChange, canMeasure, rr
             {matched?.[kind][i] && (
               <span
                 className="level-option"
-                title={matched[kind][i]!.source === 'market'
-                  ? 'The option\'s real price when the underlying reached this line'
-                  : 'Estimated with Black-Scholes from your entry\'s implied volatility, as if reached at your exit'}
+                title={LEVEL_SOURCE[matched[kind][i]!.source]}
               >
-                {matched[kind][i]!.source === 'market' ? '' : '≈'}{optionUsd(matched[kind][i]!.optionPrice)}
+                {matched[kind][i]!.source === 'estimate' ? '≈' : ''}{optionUsd(matched[kind][i]!.optionPrice)}
               </span>
             )}
           </span>
@@ -882,10 +1043,10 @@ function RiskPanel({ trade, levels, placing, onPlacing, onChange, canMeasure, rr
           <span className="muted">ct</span>
           <button className="danger-link" aria-label="Remove" onClick={() => onChange(kind, i, null)}>×</button>
         </div>
-      )))}
+      ))}
       {rr ? (
         <div className="rr-summary">
-          <div><span className="muted">Risk</span> {usd(rr.risk)} <span className="muted">on {trade.underlying}</span></div>
+          <div><span className="muted">Risk</span> {usd(rr.risk)} <span className="muted">on {priceSymbol}</span></div>
           {rr.realizedR !== undefined && <div><span className="muted">Result</span> <b className={pnlClass(rr.realizedR)}>{formatR(rr.realizedR)}</b></div>}
           {rr.plannedR !== undefined && <div><span className="muted">Planned R:R</span> <b>1 : {rr.plannedR.toFixed(1)}</b></div>}
           {dollars?.risk !== undefined && (
@@ -904,8 +1065,37 @@ function RiskPanel({ trade, levels, placing, onPlacing, onChange, canMeasure, rr
         <div className="muted small">Add a stop to measure this trade in R.</div>
       )}
       {rr && losing && !levels.targets.length && <div className="muted small">Losing trade: add the target you were aiming for to see its planned R:R.</div>}
-      {levels.stops.length + levels.targets.length > 0 && (
-        <div className="muted small">Lines start at your actual exits: winners as targets, losers as stops. Drag a line on the chart to move it. Option prices marked ≈ are estimates; the rest are what the option traded at when the underlying got there.</div>
+    </div>
+  );
+}
+
+/**
+ * Combine this trade with others on the same contract, e.g. when a closing fill has no opening
+ * fill and shows up as its own open trade. A combined trade can be split back apart.
+ */
+function CombineBox({ trade }: { trade: Trade }) {
+  const { trades, combineTrades, splitTrade } = useJournal();
+  const [pick, setPick] = useState('');
+  const same = (t: Trade) => t.underlying === trade.underlying && t.expiry === trade.expiry && t.strike === trade.strike && t.putCall === trade.putCall;
+  const others = trades.filter((t) => t.id !== trade.id && same(t)).sort((a, b) => a.openTime.localeCompare(b.openTime));
+  const label = (t: Trade) => `${shortDate(t.openTime.slice(0, 10))} ${t.openTime.slice(11, 16)} · ${t.direction === 'LONG' ? 'Long' : 'Short'} ${t.maxContracts}`
+    + ` · ${t.status === 'OPEN' ? 'open' : signedUsd(t.netPnl)}${t.merged ? ` · ${t.merged.length} combined` : ''}`;
+  return (
+    <div className="combine-box">
+      {trade.merged && (
+        <div className="combine-row">
+          <span className="muted">Combined from {trade.merged.length} trades.</span>
+          <button onClick={() => splitTrade(trade.id)} title="Show them as separate trades again">Split apart</button>
+        </div>
+      )}
+      {others.length > 0 && (
+        <div className="combine-row">
+          <select value={pick} onChange={(e) => setPick(e.target.value)} aria-label="Trade to combine with">
+            <option value="">Combine with another {trade.underlying} {trade.strike}{trade.putCall === 'CALL' ? 'C' : 'P'} trade…</option>
+            {others.map((t) => <option key={t.id} value={t.id}>{label(t)}</option>)}
+          </select>
+          <button disabled={!pick} onClick={() => { combineTrades([trade.id, pick]); setPick(''); }} title="Count these as one trade">Combine</button>
+        </div>
       )}
     </div>
   );

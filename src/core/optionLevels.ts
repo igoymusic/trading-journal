@@ -1,5 +1,6 @@
 // What the option would have been worth at each stop or target line, so risk and reward can be
-// shown in dollars. Where the underlying actually reached a line, the option's real price at that
+// shown in dollars. A line sitting where one of your exits filled uses that exit's fill price.
+// Otherwise, where the underlying actually reached a line, the option's real price at that
 // minute is used when it's known; otherwise it's estimated with Black-Scholes, holding the
 // volatility implied by your entry fill.
 
@@ -10,8 +11,8 @@ import type { PriceLevel, Trade } from './types';
 export interface LevelPrice {
   /** Option price per share at the level. */
   optionPrice: number;
-  /** "market": the option's real price when the underlying got there; "estimate": Black-Scholes. */
-  source: 'market' | 'estimate';
+  /** "fill": your exit's fill price; "market": the option's real price when the underlying got there; "estimate": Black-Scholes. */
+  source: 'fill' | 'market' | 'estimate';
   /** When the underlying reached the level (or the time the estimate assumes), epoch ms. */
   time: number;
   reached: boolean;
@@ -30,6 +31,8 @@ export interface LevelPricingInput {
   expiryTime: number;
   /** The option's real minute candles, if available. */
   optionBars?: Bar[];
+  /** Your exits: the underlying's price when each filled, and the option's fill price per share. */
+  exits?: { underlying: number; optionPrice: number; time: number }[];
 }
 
 /** Volatility assumed when the entry fill can't be explained by any volatility. */
@@ -49,9 +52,12 @@ function optionPriceAt(optionBars: Bar[] | undefined, time: number): number | un
   return best?.close;
 }
 
-export function priceLevels({ trade, levels, bars, entry, exitTime, expiryTime, optionBars }: LevelPricingInput): (LevelPrice | null)[] {
+export function priceLevels({ trade, levels, bars, entry, exitTime, expiryTime, optionBars, exits = [] }: LevelPricingInput): (LevelPrice | null)[] {
   const vol = impliedVol(entry.optionPrice, { spot: entry.underlying, strike: trade.strike, msToExpiry: expiryTime - entry.time, putCall: trade.putCall });
   return levels.map((level) => {
+    // Lines start at your exits (see levelsFromExits), so one still there is priced at that fill.
+    const exit = exits.find((e) => Math.abs(e.underlying - level.price) <= level.price * 0.0001);
+    if (exit) return { optionPrice: exit.optionPrice, source: 'fill', time: exit.time, reached: true };
     const touch = firstTouch(bars, level.price, entry.time);
     const reached = !!touch && touch.time <= Math.max(exitTime, entry.time);
     // A line that was never reached is priced as if it had been reached at your exit.

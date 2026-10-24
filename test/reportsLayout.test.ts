@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { moveSection, normalizeLayout, toggleCollapsed } from '../src/renderer/reportsLayout';
+import { moveSection, normalizeLayout, toggleChart, toggleCollapsed, toggleHidden } from '../src/renderer/reportsLayout';
 
 describe('reports layout', () => {
   it('alternates sections between two columns by default', () => {
@@ -8,7 +8,14 @@ describe('reports layout', () => {
 
   it('keeps a saved layout, dropping sections that are gone and adding new ones to the shorter column', () => {
     const saved = { columns: [['c', 'a', 'gone'], ['b']], collapsed: ['a', 'gone'] };
-    expect(normalizeLayout(saved, ['a', 'b', 'c', 'd'])).toEqual({ columns: [['c', 'a'], ['b', 'd']], collapsed: ['a'] });
+    expect(normalizeLayout(saved, ['a', 'b', 'c', 'd'])).toEqual({ columns: [['c', 'a'], ['b', 'd']], collapsed: ['a'], charts: [], hidden: [] });
+  });
+
+  it('remembers hidden sections and brings them back', () => {
+    const layout = normalizeLayout({ columns: [['a'], ['b']], collapsed: [], hidden: ['b', 'gone'] }, ['a', 'b']);
+    expect(layout.hidden).toEqual(['b']);
+    expect(toggleHidden(layout, 'b').hidden).toEqual([]);
+    expect(toggleHidden(layout, 'a').hidden).toEqual(['b', 'a']);
   });
 
   it('moves a section within a column or across to the other', () => {
@@ -22,5 +29,13 @@ describe('reports layout', () => {
     const l = { columns: [['a']], collapsed: [] };
     expect(toggleCollapsed(l, 'a').collapsed).toEqual(['a']);
     expect(toggleCollapsed(toggleCollapsed(l, 'a'), 'a').collapsed).toEqual([]);
+  });
+
+  it('puts new chart sections at the top and remembers chart views', () => {
+    const saved = { columns: [['a'], ['b']], collapsed: [] };
+    expect(normalizeLayout(saved, ['x', 'y', 'a', 'b', 'c'], 2, ['x', 'y']).columns).toEqual([['x', 'a', 'c'], ['y', 'b']]);
+    const l = { columns: [['a']], collapsed: [] };
+    expect(toggleChart(l, 'a').charts).toEqual(['a']);
+    expect(toggleChart(toggleChart(l, 'a'), 'a').charts).toEqual([]);
   });
 });

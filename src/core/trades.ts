@@ -1,6 +1,6 @@
 // Groups fills into round-trip trades: one trade per contract, from flat to flat.
 
-import { CONTRACT_MULTIPLIER, type Fill, type Trade } from './types';
+import { CONTRACT_MULTIPLIER, type Fill, isCounted, type Trade } from './types';
 
 function contractKey(f: Fill) {
   return `${f.underlying}|${f.expiry}|${f.strike}|${f.putCall}`;
@@ -8,7 +8,10 @@ function contractKey(f: Fill) {
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-export function buildTrades(fills: Fill[]): Trade[] {
+/** Trades you combined by hand: each group lists the ids of trades that count as one. */
+export type TradeMerges = string[][];
+
+export function buildTrades(fills: Fill[], merges: TradeMerges = []): Trade[] {
   const sorted = [...fills].sort((a, b) => a.execTime.localeCompare(b.execTime));
   const open = new Map<string, Fill[]>();
   const positions = new Map<string, number>();
@@ -30,10 +33,49 @@ export function buildTrades(fills: Fill[]): Trade[] {
   }
   for (const remaining of open.values()) trades.push(summarize(remaining, 'OPEN'));
 
-  return trades.sort((a, b) => (b.closeTime ?? b.openTime).localeCompare(a.closeTime ?? a.openTime));
+  return applyMerges(trades, merges).sort((a, b) => (b.closeTime ?? b.openTime).localeCompare(a.closeTime ?? a.openTime));
 }
 
-function summarize(fills: Fill[], status: Trade['status']): Trade {
+/** Replaces each group of combined trades with one trade made of all their fills. */
+function applyMerges(trades: Trade[], merges: TradeMerges): Trade[] {
+  if (!merges.length) return trades;
+  const byId = new Map(trades.map((t) => [t.id, t]));
+  const used = new Set<string>();
+  const combined: Trade[] = [];
+  for (const group of merges) {
+    const parts = group.map((id) => byId.get(id)).filter((t): t is Trade => !!t && !used.has(t.id));
+    if (parts.length < 2) continue;
+    for (const t of parts) used.add(t.id);
+    const fills = parts.flatMap((t) => t.fills).sort((a, b) => a.execTime.localeCompare(b.execTime));
+    combined.push({ ...summarize(fills, 'AUTO'), merged: parts.map((t) => t.id).sort() });
+  }
+  return [...trades.filter((t) => !used.has(t.id)), ...combined];
+}
+
+/**
+ * Adds a combine of `ids` to the saved groups. A trade that's already combined brings its whole
+ * group along, so combining twice makes one bigger group.
+ */
+export function addMerge(merges: TradeMerges, ids: string[], trades: Trade[]): TradeMerges {
+  const parts = new Set(ids.flatMap((id) => trades.find((t) => t.id === id)?.merged ?? [id]));
+  const kept = merges.filter((g) => !g.some((id) => parts.has(id)));
+  for (const g of merges) if (g.some((id) => parts.has(id))) g.forEach((id) => parts.add(id));
+  return parts.size >= 2 ? [...kept, [...parts].sort()] : kept;
+}
+
+/** Undoes the combine that made trade `id`. */
+export function removeMerge(merges: TradeMerges, id: string, trades: Trade[]): TradeMerges {
+  const parts = trades.find((t) => t.id === id)?.merged ?? [id];
+  return merges.filter((g) => !g.some((x) => parts.includes(x)));
+}
+
+/**
+ * One trade from its fills. 'AUTO' (for combined trades) works out whether it's closed: it's open
+ * while contracts are still held, and closed once they're all sold. If more were closed than opened
+ * (say a paper position you adjusted by hand, so the opening fill never happened), the missing
+ * contracts count as bought at the trade's average entry.
+ */
+function summarize(fills: Fill[], requested: Trade['status'] | 'AUTO'): Trade {
   const first = fills[0];
   const direction = first.side === 'BUY' ? 'LONG' : 'SHORT';
   const entrySide = direction === 'LONG' ? 'BUY' : 'SELL';
@@ -49,6 +91,23 @@ function summarize(fills: Fill[], status: Trade['status']): Trade {
     fees += f.fees;
     if (f.side === entrySide) { entryQty += f.quantity; entryCost += dollars; }
     else { exitQty += f.quantity; exitCost += dollars; }
+  }
+
+  let status: Trade['status'] = requested === 'AUTO' ? 'CLOSED' : requested;
+  let assumed = 0;
+  if (requested === 'AUTO') {
+    // Contracts still held (positive) or closed without an opening fill (negative).
+    const held = position * (direction === 'LONG' ? 1 : -1);
+    if (held > 0) status = 'OPEN';
+    if (held < 0 && entryQty) {
+      assumed = -held;
+      const perContract = entryCost / entryQty;
+      entryQty += assumed;
+      entryCost += assumed * perContract;
+      cash += (direction === 'LONG' ? -1 : 1) * assumed * perContract;
+      // As if they'd all been opened together.
+      maxContracts = Math.max(maxContracts, entryQty);
+    }
   }
 
   // While a trade is open, only the closed contracts have a realized result.
@@ -76,7 +135,19 @@ function summarize(fills: Fill[], status: Trade['status']): Trade {
     netPnl: round2(grossPnl - fees),
     fills,
     ...(fills.some((f) => f.account) ? { account: fills.find((f) => f.account)!.account } : {}),
+    ...(assumed ? { assumedContracts: assumed } : {}),
   };
+}
+
+/**
+ * The trade's fills as shown on charts and in the fill list: contracts closed without an opening fill
+ * are added to the first entry, as if they'd been bought (or sold) with it.
+ */
+export function shownFills(t: Trade): Fill[] {
+  if (!t.assumedContracts) return t.fills;
+  const entrySide = t.direction === 'LONG' ? 'BUY' : 'SELL';
+  const first = t.fills.find((f) => f.side === entrySide);
+  return t.fills.map((f) => (f === first ? { ...f, quantity: f.quantity + t.assumedContracts! } : f));
 }
 
 export interface Summary {
@@ -93,7 +164,7 @@ export interface Summary {
 }
 
 export function summarizeTrades(trades: Trade[]): Summary {
-  const closed = trades.filter((t) => t.status === 'CLOSED');
+  const closed = trades.filter((t) => t.status === 'CLOSED' && isCounted(t));
   const wins = closed.filter((t) => t.netPnl > 0);
   const losses = closed.filter((t) => t.netPnl < 0);
   const sum = (ts: Trade[], f: (t: Trade) => number) => ts.reduce((a, t) => a + f(t), 0);

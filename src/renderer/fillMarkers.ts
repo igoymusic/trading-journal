@@ -1,8 +1,8 @@
 // Draws trade executions the way trading platforms do: a small arrow beside the candle, pointing in
 // at the exact price, with a label placed where it doesn't cover any candles.
 
-import { markerStyles } from './markerStyles';
-import { readableText } from './colors';
+import { shownMarkerStyles } from './markerStyles';
+import { activeTheme, readableText } from './colors';
 import type { MarkerKind } from '../core/markerStyles';
 import type { LabelOffset } from '../shared/api';
 import type { CanvasRenderingTarget2D } from 'fancy-canvas';
@@ -94,11 +94,12 @@ class Renderer implements IPrimitivePaneRenderer {
   draw(target: CanvasRenderingTarget2D) {
     const { chart, series, markers, candles, offsets } = this.source;
     if (!chart || !series) return;
-    const styles = markerStyles();
+    const styles = shownMarkerStyles();
+    const look = activeTheme().markerLook;
     target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
       const timeScale = chart.timeScale();
       const halfBar = Math.max(2, timeScale.options().barSpacing * 0.4);
-      ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.font = look.font;
 
       const candleRects: Rect[] = [];
       for (const c of candles) {
@@ -153,20 +154,34 @@ class Renderer implements IPrimitivePaneRenderer {
           ctx.globalAlpha = 1;
         }
 
-        // Arrow pointing in toward the candle.
+        // Arrow pointing in toward the candle, in the theme's style.
+        if (look.glow) { ctx.shadowColor = color; ctx.shadowBlur = 8; }
         ctx.fillStyle = color;
         ctx.beginPath();
-        ctx.moveTo(a.tipX, a.y);
-        ctx.lineTo(a.tipX + dir * size, a.y - size / 2 - 1);
-        ctx.lineTo(a.tipX + dir * size, a.y + size / 2 + 1);
-        ctx.closePath();
+        if (look.pixel) {
+          // Stair steps: columns that shrink toward the point.
+          const step = Math.max(2, Math.round(size / 5));
+          for (let i = 0; i * step < size; i++) {
+            const half = Math.round(((i + 1) * step * (size / 2 + 1)) / size);
+            const x = dir < 0 ? a.tipX - (i + 1) * step : a.tipX + i * step;
+            ctx.rect(Math.round(x), Math.round(a.y - half), step, half * 2);
+          }
+        } else {
+          ctx.moveTo(a.tipX, a.y);
+          ctx.lineTo(a.tipX + dir * size, a.y - size / 2 - 1);
+          ctx.lineTo(a.tipX + dir * size, a.y + size / 2 + 1);
+          ctx.closePath();
+        }
         ctx.fill();
+        if (look.outline && !look.pixel) { ctx.strokeStyle = look.outline; ctx.lineWidth = 1; ctx.stroke(); }
 
-        // Label pill.
+        // Label bubble.
         ctx.fillStyle = color;
         ctx.beginPath();
-        ctx.roundRect(label.x, label.y, label.w, label.h, 3);
+        ctx.roundRect(label.x, label.y, label.w, label.h, Math.min(look.radius, label.h / 2));
         ctx.fill();
+        ctx.shadowBlur = 0;
+        if (look.outline) { ctx.strokeStyle = look.outline; ctx.lineWidth = 1; ctx.stroke(); }
         ctx.fillStyle = readableText(color);
         ctx.textBaseline = 'middle';
         ctx.fillText(a.marker.text, label.x + PAD_X, label.y + label.h / 2 + 0.5);

@@ -8,7 +8,7 @@ import type {
 } from 'lightweight-charts';
 import { type ChartPoint, type Drawing, drawingHandles } from '../core/drawings';
 import { chartTime, fromChartTime } from '../core/time';
-import { readableText } from './colors';
+import { activeTheme, chartTones, colors, readableText, themed } from './colors';
 
 export const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
 const HANDLE = 4;
@@ -24,6 +24,8 @@ export class DrawingsPrimitive implements ISeriesPrimitive<Time> {
   chart: IChartApiBase<Time> | null = null;
   series: ISeriesApi<SeriesType, Time> | null = null;
   drawings: Drawing[] = [];
+  /** Shapes the chart draws for you (stop and target lines, the trade's position box), under your drawings. They can't be clicked. */
+  extras: Drawing[] = [];
   /** The shape being drawn right now, before it's saved. */
   preview: Drawing | null = null;
   selected: string | null = null;
@@ -74,7 +76,15 @@ export class DrawingsPrimitive implements ISeriesPrimitive<Time> {
   }
 
   x(ms: number): number | null {
-    return this.chart?.timeScale().logicalToCoordinate(this.logical(ms) as never) ?? null;
+    const ts = this.chart?.timeScale();
+    if (!ts) return null;
+    // The chart only places whole candle positions reliably, so go between the two around it.
+    const logical = this.logical(ms);
+    const lo = Math.floor(logical);
+    const x0 = ts.logicalToCoordinate(lo as never);
+    const x1 = ts.logicalToCoordinate((lo + 1) as never);
+    if (x0 === null || x1 === null) return null;
+    return x0 + (x1 - x0) * (logical - lo);
   }
 
   y(price: number): number | null {
@@ -210,7 +220,7 @@ class Renderer implements IPrimitivePaneRenderer {
       src.width = mediaSize.width;
       src.height = mediaSize.height;
       src.textBoxes.clear();
-      const list = src.preview ? [...src.drawings.filter((d) => d.id !== src.preview!.id), src.preview] : src.drawings;
+      const list = [...src.extras, ...(src.preview ? [...src.drawings.filter((d) => d.id !== src.preview!.id), src.preview] : src.drawings)];
       for (const d of list) {
         ctx.save();
         try {
@@ -238,13 +248,16 @@ class Renderer implements IPrimitivePaneRenderer {
       ctx.textBaseline = base;
       ctx.fillText(text, x, y);
     };
+    // Labels on a position box take the theme's label style.
+    const look = themed() ? activeTheme().markerLook : undefined;
     const pill = (text: string, cx: number, cy: number, bg: string) => {
-      ctx.font = `11px ${FONT}`;
+      ctx.font = look?.font ?? `11px ${FONT}`;
       const w = ctx.measureText(text).width + 12;
       ctx.fillStyle = bg;
       ctx.beginPath();
-      ctx.roundRect(cx - w / 2, cy - 9, w, 18, 3);
+      ctx.roundRect(cx - w / 2, cy - 9, w, 18, look ? Math.min(look.radius, 9) : 3);
       ctx.fill();
+      if (look?.outline) { ctx.strokeStyle = look.outline; ctx.lineWidth = 1; ctx.setLineDash([]); ctx.stroke(); }
       label(text, cx, cy + 0.5, readableText(bg), 'center', 'middle');
     };
 
@@ -458,19 +471,32 @@ class Renderer implements IPrimitivePaneRenderer {
         if (x1 === null || x2 === null || ye === null || ys === null || yt === null) return;
         const left = Math.min(x1, x2);
         const w = Math.abs(x2 - x1);
-        ctx.fillStyle = d.targetFill ?? '#08998133';
+        // A theme colors every position box its own way, keeping each box's opacity.
+        const alpha = (fill: string | undefined, fallback: string) => (fill ?? fallback).slice(7, 9) || 'ff';
+        const targetFill = themed() ? colors().target + alpha(d.targetFill, '#08998133') : d.targetFill ?? '#08998133';
+        const stopFill = themed() ? colors().stop + alpha(d.stopFill, '#f2364533') : d.stopFill ?? '#f2364533';
+        ctx.fillStyle = targetFill;
         ctx.fillRect(left, Math.min(ye, yt), w, Math.abs(yt - ye));
-        ctx.fillStyle = d.stopFill ?? '#f2364533';
+        ctx.fillStyle = stopFill;
         ctx.fillRect(left, Math.min(ye, ys), w, Math.abs(ys - ye));
-        stroke(d.color.length >= 7 && opacityOf(d.color) > 0.1 ? d.color : '#787b86');
-        line({ x: left, y: ye }, { x: left + w, y: ye });
         const risk = Math.abs(d.a.price - d.stop);
         const reward = Math.abs(d.target - d.a.price);
         const cx = left + w / 2;
         const pct = (p: number) => `${((Math.abs(p - d.a.price) / d.a.price) * 100).toFixed(2)}%`;
-        pill(`Target ${fmt(d.target)} (${fmt(reward)}, ${pct(d.target)})`, cx, yt + (yt < ye ? -12 : 12), '#089981');
-        pill(`Stop ${fmt(d.stop)} (${fmt(risk)}, ${pct(d.stop)})`, cx, ys + (ys > ye ? 12 : -12), '#f23645');
-        pill(`${d.side === 'long' ? 'Long' : 'Short'} ${fmt(d.a.price)} · R:R ${risk ? (reward / risk).toFixed(2) : '–'}`, cx, ye, '#5d606b');
+        const show = { names: true, price: true, distance: true, percent: true, ratio: true, ...d.labels };
+        // "Target 770.76 ($1.61, 0.21%)", leaving out whatever's switched off.
+        const levelText = (name: string, price: number, move: number) => {
+          const extra = [show.distance ? `$${fmt(move)}` : '', show.percent ? pct(price) : ''].filter(Boolean).join(', ');
+          const main = [show.names ? name : '', show.price ? fmt(price) : ''].filter(Boolean).join(' ');
+          return main ? `${main}${extra ? ` (${extra})` : ''}` : extra;
+        };
+        const targetText = levelText('Target', d.target, reward);
+        const stopText = levelText('Stop', d.stop, risk);
+        if (targetText) pill(targetText, cx, yt + (yt < ye ? -12 : 12), targetFill.slice(0, 7));
+        if (stopText) pill(stopText, cx, ys + (ys > ye ? 12 : -12), stopFill.slice(0, 7));
+        const ratio = `R:R ${d.ratio !== undefined ? d.ratio.toFixed(2) : risk ? (reward / risk).toFixed(2) : '–'}`;
+        const middle = [show.price ? `${d.side === 'long' ? 'Long' : 'Short'} ${fmt(d.a.price)}` : '', show.ratio ? ratio : ''].filter(Boolean).join(' · ');
+        if (middle) pill(middle, cx, ye, themed() ? chartTones().zero : '#5d606b');
         if (selected) this.handles(ctx, d);
         break;
       }

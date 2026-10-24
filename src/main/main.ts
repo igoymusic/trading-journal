@@ -1,12 +1,12 @@
 // Electron main process: owns the window, the database and file access.
 
-import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, net, safeStorage, screen, shell } from 'electron';
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseTosStatement } from '../core/tosCsv';
-import { buildTrades, summarizeTrades } from '../core/trades';
+import { addMerge, buildTrades, removeMerge, summarizeTrades, type TradeMerges } from '../core/trades';
 import type { MistakeTag, PriceLevel, Setup, TradeJournal } from '../core/types';
-import type { ImportResult, JournalData, LabelOffset, TradeChart } from '../shared/api';
+import type { ChartView, ImportResult, JournalData, LabelOffset, TradeChart } from '../shared/api';
 import type { MarkerStyles } from '../core/markerStyles';
 import type { Indicator } from '../core/indicators';
 import { AlpacaClient } from '../core/alpaca';
@@ -17,7 +17,8 @@ import { SchwabSync } from './schwab';
 import type { SchwabSlot } from './settings';
 import { JournalDb } from './db';
 import { moveDataFromOldName } from './migrate';
-import { buildTradeChart, etfMinuteBars, historyDailyBars, historyMinuteBars, levelOptionPrices } from './market';
+import { fetchWithTimeout } from './fetchTimeout';
+import { useWebFetch, buildTradeChart, etfMinuteBars, historyDailyBars, historyMinuteBars, levelOptionPrices } from './market';
 import { Settings } from './settings';
 import { Screenshots } from './screenshots';
 import { Backups } from './backup';
@@ -38,21 +39,55 @@ function importFile(file: string): ImportResult {
   return { file: path.basename(file), found: fills.length, added, duplicates: fills.length - added, skipped: skipped.length, unmatchedFees };
 }
 
+/** Trades you combined by hand, saved in the journal database. */
+function tradeMerges(): TradeMerges {
+  try { return JSON.parse(db.getMeta('trade-merges') ?? '[]'); } catch { return []; }
+}
+
+function allTrades() {
+  return buildTrades(db.allFills(), tradeMerges());
+}
+
 function journalData(): JournalData {
   const journals = db.tradeJournals();
-  const trades = buildTrades(db.allFills()).map((t) => ({ ...t, journal: journals.get(t.id) }));
+  const trades = allTrades().map((t) => ({ ...t, journal: journals.get(t.id) }));
   return { trades, summary: summarizeTrades(trades), setups: db.setups(), mistakes: db.mistakeTags(), positives: db.positiveTags(), dayNotes: db.dayNotes() };
 }
 
+/** Width and height that fit all of Home, or as much as the screen allows. */
+const HOME_SIZE = { width: 1440, height: 1020 };
+
+/**
+ * Where the window opens: where it was when you last closed it, if that's still on a screen;
+ * otherwise centered, just big enough for Home.
+ */
+function startBounds(): Electron.Rectangle & { maximized?: boolean } {
+  const saved = settings.windowBounds;
+  if (saved) {
+    const area = screen.getDisplayMatching(saved).workArea;
+    const visible = saved.x < area.x + area.width - 100 && saved.x + saved.width > area.x + 100 && saved.y >= area.y - 10 && saved.y < area.y + area.height - 100;
+    if (visible) return saved;
+  }
+  const area = screen.getPrimaryDisplay().workArea;
+  const width = Math.min(HOME_SIZE.width, area.width);
+  const height = Math.min(HOME_SIZE.height, area.height);
+  return { x: area.x + Math.round((area.width - width) / 2), y: area.y + Math.round((area.height - height) / 2), width, height };
+}
+
 async function createWindow() {
+  const { maximized, ...bounds } = startBounds();
   const win = new BrowserWindow({
-    width: 1400,
-    height: 900,
+    ...bounds,
+    show: false,
     backgroundColor: '#131722',
     title: 'Moon Journal',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true },
   });
   win.setMenuBarVisibility(false);
+  if (maximized) win.maximize();
+  win.show();
+  // Remember the size and place for next time.
+  win.on('close', () => { settings.windowBounds = { ...win.getNormalBounds(), maximized: win.isMaximized() }; });
   // Help links (like Alpaca's sign-up page) open in the normal web browser, and only those sites.
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https:\/\/([a-z0-9-]+\.)*(alpaca\.markets|snaptrade\.com)\//.test(url)) shell.openExternal(url);
@@ -88,9 +123,14 @@ function chartSource() {
   return schwabData?.status().signedIn ? schwabData : schwab;
 }
 
+// Every request the app makes gives up after 30 seconds rather than hanging a screen forever.
+globalThis.fetch = fetchWithTimeout(globalThis.fetch, 30_000);
+
 moveDataFromOldName(app.getPath('appData'), app.getPath('userData'));
 
 app.whenReady().then(async () => {
+  // Daily index closes go through Chrome's network stack, which data sites treat as a browser.
+  useWebFetch(((input: string, init?: RequestInit) => net.fetch(input, init as any)) as unknown as typeof fetch);
   // Headless test runs on Linux have no keyring to encrypt saved secrets with.
   if (process.platform === 'linux' && process.env.TJ_SCREENSHOT) safeStorage.setUsePlainTextEncryption(true);
   db = new JournalDb(path.join(app.getPath('userData'), 'journal.sqlite'));
@@ -120,6 +160,14 @@ app.whenReady().then(async () => {
   ipcMain.handle('journal:saveSetups', (_event, setups: Setup[]) => db.saveSetups(setups));
   ipcMain.handle('journal:saveMistakes', (_event, mistakes: MistakeTag[]) => db.saveMistakeTags(mistakes));
   ipcMain.handle('journal:savePositives', (_event, positives: MistakeTag[]) => db.savePositiveTags(positives));
+  ipcMain.handle('trades:combine', (_event, ids: string[]) => {
+    db.setMeta('trade-merges', JSON.stringify(addMerge(tradeMerges(), ids, allTrades())));
+    return journalData();
+  });
+  ipcMain.handle('trades:split', (_event, id: string) => {
+    db.setMeta('trade-merges', JSON.stringify(removeMerge(tradeMerges(), id, allTrades())));
+    return journalData();
+  });
   ipcMain.handle('journal:saveDayNote', (_event, date: string, notes: string) => db.saveDayNote(date, notes));
 
   ipcMain.handle('drawings:get', (_event, symbol: string, days: string[]) => db.drawings(symbol, days));
@@ -144,30 +192,30 @@ app.whenReady().then(async () => {
   ipcMain.handle('shots:caption', (_event, id: string, caption: string) => db.setImageCaption(id, caption));
   ipcMain.handle('shots:remove', (_event, id: string) => shots.remove(id));
 
-  ipcMain.handle('market:dayChart', async (_event, date: string, underlying: string): Promise<TradeChart> => {
-    const day = dayChartTrade(buildTrades(db.allFills()), date, underlying);
+  ipcMain.handle('market:dayChart', async (_event, date: string, underlying: string, view?: ChartView): Promise<TradeChart> => {
+    const day = dayChartTrade(allTrades(), date, underlying);
     if (!day) return { status: 'error', message: 'No trades on this day.' };
     try {
-      return await buildTradeChart(day.trade, db, settings, undefined, chartSource());
+      return await buildTradeChart(day.trade, db, settings, undefined, chartSource(), view);
     } catch (err) {
       return { status: 'error', message: (err as Error).message };
     }
   });
-  ipcMain.handle('market:tradeChart', async (_event, tradeId: string): Promise<TradeChart> => {
-    const trade = buildTrades(db.allFills()).find((t) => t.id === tradeId);
+  ipcMain.handle('market:tradeChart', async (_event, tradeId: string, view?: ChartView): Promise<TradeChart> => {
+    const trade = allTrades().find((t) => t.id === tradeId);
     if (!trade) return { status: 'error', message: 'Trade not found.' };
     try {
-      return await buildTradeChart(trade, db, settings, undefined, chartSource());
+      return await buildTradeChart(trade, db, settings, undefined, chartSource(), view);
     } catch (err) {
       return { status: 'error', message: (err as Error).message };
     }
   });
 
-  ipcMain.handle('market:levelPrices', async (_event, tradeId: string, stops: PriceLevel[], targets: PriceLevel[]) => {
-    const trade = buildTrades(db.allFills()).find((t) => t.id === tradeId);
+  ipcMain.handle('market:levelPrices', async (_event, tradeId: string, stops: PriceLevel[], targets: PriceLevel[], view?: ChartView) => {
+    const trade = allTrades().find((t) => t.id === tradeId);
     if (!trade) return null;
     try {
-      return await levelOptionPrices(trade, stops, targets, db, settings);
+      return await levelOptionPrices(trade, stops, targets, db, settings, undefined, view);
     } catch {
       return null;
     }
@@ -178,6 +226,7 @@ app.whenReady().then(async () => {
     reportsLayout: settings.reportsLayout,
     hiddenAccounts: settings.hiddenAccounts,
     colors: settings.colors,
+    theme: settings.theme,
     markerStyles: settings.markerStyles,
     optionPriceDisplay: settings.optionPriceDisplay,
     indicators: settings.indicators,
@@ -190,9 +239,10 @@ app.whenReady().then(async () => {
     historyDailyBars(underlying, beforeDay, Math.min(count, 2500), fromSchwab, db, settings, chartSource()).catch(() => []));
   ipcMain.handle('settings:setOptionPriceDisplay', (_event, mode: 'quote' | 'contract') => { settings.optionPriceDisplay = mode; });
   ipcMain.handle('settings:setMarkerStyles', (_event, styles: MarkerStyles | null) => { settings.markerStyles = styles ?? undefined; });
+  ipcMain.handle('settings:setTheme', (_event, id: string | null) => { settings.theme = id ?? undefined; });
   ipcMain.handle('settings:setColors', (_event, colors: Record<string, string> | null) => { settings.colors = colors ?? undefined; });
   ipcMain.handle('settings:setHiddenAccounts', (_event, names: string[]) => { settings.hiddenAccounts = names; });
-  ipcMain.handle('settings:setReportsLayout', (_event, layout: { columns: string[][]; collapsed: string[] }) => { settings.reportsLayout = layout; });
+  ipcMain.handle('settings:setReportsLayout', (_event, layout: { columns: string[][]; collapsed: string[]; charts?: string[]; hidden?: string[] }) => { settings.reportsLayout = layout; });
   // Removes CSV-imported fills, then re-reads the brokers' full history, since sync skipped
   // everything the CSV already had.
   ipcMain.handle('journal:removeImported', async () => {
