@@ -701,11 +701,9 @@ html[data-theme="ink"] .modal-backdrop { background: rgba(30, 28, 25, 0.35); }
    themes/stickers.ts picks one for each spot when the app opens and on every theme switch. Big ones
    only go in empty space; inside panels they stay faint and behind the contents. */
 .topbar { position: relative; }
-.topbar-sticker { position: absolute; top: 50%; translate: 0 -50%; height: 44px; pointer-events: none; background: center / contain no-repeat; }
-.topbar-sticker.rocket { left: 25%; width: 76px; background-image: var(--stk-banner); opacity: 0.9; }
-.topbar-sticker.moon { left: 68%; width: 44px; background-image: var(--stk-banner-moon); opacity: 0.85; }
-html:not([data-theme="default"]) .topbar-sticker.moon { display: none; }
-@media (max-width: 1100px) { .topbar-sticker { display: none; } }
+/* A rocket just left of the buttons on the right. */
+.topbar-sticker { width: 72px; height: 44px; margin: -8px 6px -8px 0; flex: none; pointer-events: none; background: var(--stk-banner) center / contain no-repeat; opacity: 0.9; }
+@media (max-width: 900px) { .topbar-sticker { display: none; } }
 /* An astronaut fills the empty space under the left-hand stats on Home. */
 .home > .home-rail:first-child { align-self: stretch; }
 .home-mascot { flex: 1 1 0; min-height: 0; max-height: 250px; margin-top: 4px; pointer-events: none; background: var(--stk-mascot) center bottom / contain no-repeat; filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.3)); }

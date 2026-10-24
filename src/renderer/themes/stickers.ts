@@ -7,7 +7,6 @@ const FILES = import.meta.glob('./stickers/*.webp', { eager: true, import: 'defa
 const SPOTS = {
   mascot: ['astro-hips', 'astro-thumbs', 'astro-celebrate', 'astro-flag', 'astro-ride'],
   banner: ['rocket-side', 'astro-ride', 'rocket-launch'],
-  bannerMoon: ['moon-crescent', 'moon-half', 'moon-full'],
   goals: ['rocket-launch', 'rocket-side', 'astro-flag'],
   calendar: ['moon-crescent', 'moon-half', 'moon-full'],
   streaks: ['rocket-trail'],
@@ -39,7 +38,7 @@ export function pickStickers(themeId: string): Record<string, string> {
     shown[spot] = name;
     used.add(name);
     const url = file(set, name);
-    if (url) vars[`--stk-${spot.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`] = `url("${url}")`;
+    if (url) vars[`--stk-${spot}`] = `url("${url}")`;
   }
   return vars;
 }
