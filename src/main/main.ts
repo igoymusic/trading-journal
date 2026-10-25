@@ -287,7 +287,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('settings:saveAlpaca', async (_event, keys: { keyId: string; secretKey: string } | null) => {
     if (!keys) {
       settings.setAlpacaCredentials(null);
-      return { ok: true, message: 'Alpaca keys removed.' };
+      return { ok: true, message: 'Market data keys removed.' };
     }
     try {
       // A cheap request to prove the keys work before saving them.
@@ -295,7 +295,7 @@ app.whenReady().then(async () => {
       const day = Date.now() - 7 * 86400_000;
       await probe.minuteBars('SPY', day, day + 60_000);
       settings.setAlpacaCredentials(keys);
-      return { ok: true, message: 'Connected to Alpaca. Your keys are saved.' };
+      return { ok: true, message: 'Connected. Your keys are saved.' };
     } catch (err) {
       return { ok: false, message: (err as Error).message };
     }

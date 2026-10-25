@@ -73,17 +73,24 @@ export function SettingsDialog({ onClose, onSynced, onColorsChanged }: { onClose
     {
       name: 'Connections',
       sections: [
-        { name: 'Brokers', body: <BrokersSettings onSynced={onSynced} /> },
-        { name: 'Schwab trading', body: <SchwabSettings slot="trading" onSynced={onSynced} /> },
-        { name: 'Schwab market data', body: <SchwabSettings slot="marketData" onSynced={onSynced} /> },
         {
-          name: 'Market data (Alpaca)',
+          name: 'Brokers',
           body: (
             <>
-              <h3>Market data (Alpaca)</h3>
+              <BrokersSettings onSynced={onSynced} />
+              <hr className="settings-divider" />
+              <SchwabSettings slot="trading" onSynced={onSynced} />
+            </>
+          ),
+        },
+        {
+          name: 'Market data',
+          body: (
+            <>
+              <h3>Market data</h3>
               <p className="muted">
                 Used to draw the underlying's chart and find its exact price at each of your fills.
-                A free Alpaca account works. Keys are stored encrypted on this computer only.
+                A free account works. Keys are stored encrypted on this computer only.
               </p>
               {!settings?.hasAlpacaKey && <AlpacaSteps />}
               {settings?.hasAlpacaKey ? (

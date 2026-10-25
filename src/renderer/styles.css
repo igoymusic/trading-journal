@@ -698,6 +698,8 @@ html[data-theme="ink"] button { border-color: #3a362f; }
 html[data-theme="ink"] .theme-art .art-scene { opacity: 0.2; }
 html[data-theme="ink"] .modal-backdrop { background: rgba(30, 28, 25, 0.35); }
 
+.settings-divider { border: none; border-top: 1px solid var(--border); margin: 22px 0 16px; }
+
 /* ---------- Pictures: Yogi's moons, rockets and astronauts, in every theme ----------
    themes/stickers.ts picks one for each spot when the app opens and on every theme switch. Big ones
    only go in empty space; inside panels they stay faint and behind the contents. */
