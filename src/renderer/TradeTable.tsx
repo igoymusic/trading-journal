@@ -1,5 +1,6 @@
 import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
-import type { Trade } from '../core/types';
+import { formatR, riskReward } from '../core/rr';
+import { isCounted, type Trade } from '../core/types';
 import { COLUMNS, DEFAULT_COLUMNS, moveColumn, resolveColumns } from './columns';
 import { longDate, pnlClass, signedUsd } from './format';
 import { useJournal } from './journal';
@@ -25,10 +26,57 @@ export function TradeTable({ trades, selectedId, onSelect, expanded, renderDetai
   const [pickerOpen, setPickerOpen] = useState(false);
   const [dragging, setDragging] = useState<string | null>(null);
   const [sort, setSort] = useState<SortState | null>(null);
+  // Column widths you've dragged, in pixels, remembered on this computer. Columns without one share the rest.
+  const [widths, setWidths] = useState<Record<string, number>>(() => {
+    try { return JSON.parse(localStorage.getItem('tradeColumnWidths') ?? '{}'); } catch { return {}; }
+  });
+  const [resizing, setResizing] = useState<string | null>(null);
+  const tableRef = useRef<HTMLTableElement>(null);
+  // A resize ends with a click on the header; that click shouldn't sort.
+  const justResized = useRef(false);
+  function saveWidths(next: Record<string, number>) {
+    setWidths(next);
+    try { localStorage.setItem('tradeColumnWidths', JSON.stringify(next)); } catch { /* not remembered; fine */ }
+  }
+  function startResize(e: React.MouseEvent, id: string) {
+    e.preventDefault();
+    e.stopPropagation();
+    // The other columns grow or shrink to keep the table the width of the page.
+    const start: Record<string, number> = { ...widths };
+    const th = (e.currentTarget as HTMLElement).closest('th');
+    const x0 = e.clientX;
+    const w0 = Math.round(th?.getBoundingClientRect().width ?? 100);
+    setResizing(id);
+    const move = (m: MouseEvent) => saveWidths({ ...start, [id]: Math.max(40, Math.round(w0 + m.clientX - x0)) });
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+      setResizing(null);
+      justResized.current = true;
+      setTimeout(() => { justResized.current = false; }, 0);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  }
+  function resetWidth(id: string) {
+    const { [id]: _, ...rest } = widths;
+    saveWidths(rest);
+  }
   const { setups } = useJournal();
 
   useEffect(() => {
-    window.journal.getSettings().then((s) => setColumnIds(resolveColumns(s.tradeColumns).map((c) => c.id)));
+    window.journal.getSettings().then((s) => {
+      let ids = resolveColumns(s.tradeColumns).map((c) => c.id);
+      // The Include column came later: show it once on tables set up before then (it can be hidden again).
+      try {
+        if (s.tradeColumns && !ids.includes('include') && !localStorage.getItem('includeColumnShown')) {
+          ids = ['include', ...ids];
+          window.journal.setTradeColumns(ids);
+        }
+        localStorage.setItem('includeColumnShown', '1');
+      } catch { /* fine */ }
+      setColumnIds(ids);
+    });
   }, []);
 
   function saveColumns(ids: string[] | null) {
@@ -69,13 +117,18 @@ export function TradeTable({ trades, selectedId, onSelect, expanded, renderDetai
     onDragEnd: () => setDragging(null),
   });
 
-  function dayBar(day: string, dayTrades: Trade[]) {
+  function dayBar(day: string, listed: Trade[]) {
+    // Trades with Include unticked are listed but left out of the day's numbers.
+    const dayTrades = listed.filter(isCounted);
     const dayPnl = Math.round(dayTrades.reduce((a, t) => a + t.netPnl, 0) * 100) / 100;
     const wins = dayTrades.filter((t) => t.netPnl > 0).length;
+    const rs = dayTrades.map((t) => riskReward(t, t.journal)?.realizedR).filter((r): r is number => r !== undefined);
+    const dayR = rs.reduce((a, r) => a + r, 0);
     return (
       <tr className="day-row" key={`bar:${day}`}>
         <td colSpan={Math.max(1, pnlAt + lead)}>
-          {longDate(day)} <span className="muted">· {plural(dayTrades.length, 'trade')} · {plural(wins, 'win')}</span>
+          {longDate(day)} <span className="muted">· {plural(dayTrades.length, 'trade')} · {plural(wins, 'win')}{listed.length > dayTrades.length ? ` · ${listed.length - dayTrades.length} not included` : ''}</span>
+          {rs.length > 0 && <span className={pnlClass(dayR)} title={`Realized R over ${plural(rs.length, 'trade')} with a stop`}> · {formatR(dayR)}</span>}
         </td>
         <td className={`num ${pnlClass(dayPnl)}`}>{signedUsd(dayPnl)}</td>
         {pnlAt < columns.length - 1 && <td colSpan={columns.length - 1 - pnlAt} />}
@@ -88,7 +141,7 @@ export function TradeTable({ trades, selectedId, onSelect, expanded, renderDetai
     const open = !!expanded?.has(t.id);
     return (
       <Fragment key={t.id}>
-        <tr className={`trade-row ${t.id === selectedId || open ? 'selected' : ''}`} onClick={() => onSelect(t.id)}>
+        <tr className={`trade-row ${t.id === selectedId || open ? 'selected' : ''} ${isCounted(t) ? '' : 'not-counted'}`} onClick={() => onSelect(t.id)}>
           {lead > 0 && <td className="chev-col muted">{open ? '▾' : '▸'}</td>}
           {columns.map((c) => <td key={c.id} className={c.numeric ? 'num' : ''}>{flat && c.renderFlat ? c.renderFlat(t) : c.render(t)}</td>)}
         </tr>
@@ -116,7 +169,11 @@ export function TradeTable({ trades, selectedId, onSelect, expanded, renderDetai
           )}
         </div>
       </div>
-      <table>
+      <table ref={tableRef}>
+        <colgroup>
+          {lead > 0 && <col style={{ width: 22 }} />}
+          {columns.map((c) => <col key={c.id} style={widths[c.id] ? { width: widths[c.id] } : undefined} />)}
+        </colgroup>
         <thead>
           {/* A single day's summary bar sits above the column labels. Several days each get one in the list, or none when sorted. */}
           {days.length === 1 && dayBar(days[0][0], days[0][1])}
@@ -125,12 +182,17 @@ export function TradeTable({ trades, selectedId, onSelect, expanded, renderDetai
             {columns.map((c) => (
               <th
                 key={c.id}
+                data-col={c.id}
                 className={`sortable ${c.numeric ? 'num' : ''} ${dragging === c.id ? 'dragging' : ''} ${sort?.id === c.id ? 'sorted' : ''}`}
-                title="Click to sort, drag to move"
-                onClick={() => setSort(nextSort(sort, c.id))}
+                title="Click to sort, drag to move, drag the right edge to resize"
+                onClick={() => { if (!justResized.current) setSort(nextSort(sort, c.id)); }}
                 {...dragProps(c.id)}
+                draggable={!resizing}
               >
                 {c.label}{sortArrow(sort, c.id)}
+                <span className={`col-resize ${resizing === c.id ? 'active' : ''}`} title="Drag to resize; double-click to reset"
+                  onMouseDown={(e) => startResize(e, c.id)} onClick={(e) => e.stopPropagation()}
+                  onDoubleClick={(e) => { e.stopPropagation(); resetWidth(c.id); }} />
               </th>
             ))}
           </tr>

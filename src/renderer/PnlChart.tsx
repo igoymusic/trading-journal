@@ -1,4 +1,4 @@
-import { colors, withAlpha } from './colors';
+import { activeTheme, chartTones, colors, withAlpha } from './colors';
 import { BaselineSeries, ColorType, createChart, type Time } from 'lightweight-charts';
 import { useEffect, useRef, useState } from 'react';
 import { equityCurve } from '../core/calendar';
@@ -35,8 +35,8 @@ export function PnlChart({ trades }: { trades: Trade[] }) {
   useEffect(() => {
     const c = createChart(container.current!, {
       autoSize: true,
-      layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: '#787b86', attributionLogo: false },
-      grid: { vertLines: { visible: false }, horzLines: { color: '#1f2430' } },
+      layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: chartTones().muted, fontFamily: activeTheme().fonts.body, attributionLogo: false },
+      grid: { vertLines: { visible: false }, horzLines: { color: chartTones().grid } },
       rightPriceScale: { borderVisible: false },
       timeScale: { borderVisible: false, fixLeftEdge: true, fixRightEdge: true },
       handleScroll: false,

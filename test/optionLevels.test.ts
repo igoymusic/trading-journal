@@ -35,6 +35,12 @@ describe('option price at stop and target lines', () => {
     expect(p).toMatchObject({ source: 'market', optionPrice: 1.72, reached: true, time: t0 + 4 * MIN });
   });
 
+  it('prices a line at one of your exits at that exit\'s fill', () => {
+    const exits = [{ underlying: 777.2, optionPrice: 7.1, time: 123 }];
+    const [p] = priceLevels({ ...input, levels: [{ price: 777.2, contracts: 1 }], exits });
+    expect(p).toEqual({ optionPrice: 7.1, source: 'fill', time: 123, reached: true });
+  });
+
   it('estimates with the entry volatility where it never got there', () => {
     const [p] = priceLevels({ ...input, levels: [{ price: 776.2, contracts: 1 }] });
     const vol = impliedVol(1.36, { spot: 776.7, strike: 776, msToExpiry: input.expiryTime - t0, putCall: 'CALL' })!;

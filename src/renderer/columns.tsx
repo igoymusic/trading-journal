@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import { playbookScore, type Setup, type Trade } from '../core/types';
 import { holdTime, pnlClass, shortDate, contractUsd, signedUsd, timeOf, usd } from './format';
 import { formatR, riskReward } from '../core/rr';
-import { MistakeNames, PositiveNames, RulesCell, SetupBadge, Stars } from './journal';
+import { IncludeBox, MistakeNames, PositiveNames, RulesCell, SetupBadge, Stars } from './journal';
 import type { SortValue } from './sorting';
 
 export interface Column {
@@ -18,7 +18,8 @@ export interface Column {
   renderFlat?(t: Trade): ReactNode;
 }
 
-const contractsTraded = (t: Trade) => t.fills.reduce((a, f) => a + (f.side === (t.direction === 'LONG' ? 'BUY' : 'SELL') ? f.quantity : 0), 0);
+/** Contracts opened, counting any closed without an opening fill (see summarize). */
+const contractsTraded = (t: Trade) => t.fills.reduce((a, f) => a + (f.side === (t.direction === 'LONG' ? 'BUY' : 'SELL') ? f.quantity : 0), t.assumedContracts ?? 0);
 
 /** Days from the entry date to expiration (0 = traded on expiration day). */
 function dteAtEntry(t: Trade) {
@@ -32,6 +33,7 @@ function returnPct(t: Trade) {
 }
 
 export const COLUMNS: Column[] = [
+  { id: 'include', label: 'Include', sort: (t) => (t.journal?.excluded ? 0 : 1), render: (t) => <IncludeBox trade={t} /> },
   { id: 'opened', label: 'Opened', sort: (t) => t.openTime, renderFlat: (t) => `${shortDate(t.openTime.slice(0, 10))} ${timeOf(t.openTime)}`, render: (t) => timeOf(t.openTime) },
   { id: 'closed', label: 'Closed', sort: (t) => t.closeTime, renderFlat: (t) => (t.closeTime ? `${shortDate(t.closeTime.slice(0, 10))} ${timeOf(t.closeTime)}` : <span className="badge">OPEN</span>), render: (t) => (t.closeTime ? timeOf(t.closeTime) : <span className="badge">OPEN</span>) },
   { id: 'openDate', label: 'Date', sort: (t) => t.openTime, render: (t) => shortDate(t.openTime.slice(0, 10)) },
@@ -75,7 +77,7 @@ export const COLUMNS: Column[] = [
   { id: 'net', label: 'Net P&L', sort: (t) => t.netPnl, numeric: true, render: (t) => <span className={pnlClass(t.netPnl)}>{signedUsd(t.netPnl)}</span> },
 ];
 
-export const DEFAULT_COLUMNS = ['opened', 'closed', 'contract', 'setup', 'side', 'qty', 'avgEntry', 'avgExit', 'held', 'fees', 'rating', 'r', 'net'];
+export const DEFAULT_COLUMNS = ['include', 'opened', 'closed', 'contract', 'setup', 'side', 'qty', 'avgEntry', 'avgExit', 'held', 'fees', 'rating', 'r', 'net'];
 
 const byId = new Map(COLUMNS.map((c) => [c.id, c]));
 

@@ -38,6 +38,9 @@ export interface FillPoint {
   priceTime?: number;
 }
 
+/** For SPX trades: SPY's own chart ('etf', the default) or SPX itself ('index'). */
+export type ChartView = 'etf' | 'index';
+
 export type TradeChart =
   | { status: 'needs-key' }
   | { status: 'error'; message: string }
@@ -99,6 +102,8 @@ export interface ColorScheme {
   win: string;
   loss: string;
   accent: string;
+  /** Lines and shapes on the Home and Reports charts (score radar, running P&L). */
+  chart: string;
   candleUp: string;
   candleDown: string;
   entry: string;
@@ -113,11 +118,13 @@ export interface SettingsView {
   /** Visible trade table columns in order; undefined means the defaults. */
   tradeColumns?: string[];
   goals: Goals;
-  reportsLayout?: { columns: string[][]; collapsed: string[] };
+  reportsLayout?: { columns: string[][]; collapsed: string[]; charts?: string[]; hidden?: string[] };
   /** Accounts left out of the journal's numbers. */
   hiddenAccounts: string[];
-  /** Only the colors you changed. */
+  /** Only the colors you changed. These belong to the default look; themes bring their own. */
   colors?: Partial<ColorScheme>;
+  /** The theme picked in Settings; undefined is the default look. */
+  theme?: string;
   /** How entry and exit markers look. */
   markerStyles: MarkerStyles;
   /** Option prices as quoted ($0.15) or as paid per contract ($15.00). */
@@ -147,10 +154,10 @@ export interface JournalApi {
   getJournal(): Promise<JournalData>;
   /** Opens a file picker; resolves to null if the user cancels. */
   importThinkorswim(): Promise<ImportResult | null>;
-  getTradeChart(tradeId: string): Promise<TradeChart>;
+  getTradeChart(tradeId: string, view?: ChartView): Promise<TradeChart>;
   /** One chart of a day's trades on one ticker. */
-  getDayChart(date: string, underlying: string): Promise<TradeChart>;
-  getLevelPrices(tradeId: string, stops: PriceLevel[], targets: PriceLevel[]): Promise<LevelPrices | null>;
+  getDayChart(date: string, underlying: string, view?: ChartView): Promise<TradeChart>;
+  getLevelPrices(tradeId: string, stops: PriceLevel[], targets: PriceLevel[], view?: ChartView): Promise<LevelPrices | null>;
   getSettings(): Promise<SettingsView>;
   /** Saves (or clears, with null) the Alpaca keys after checking they work. */
   saveAlpacaKeys(keys: { keyId: string; secretKey: string } | null): Promise<{ ok: boolean; message: string }>;
@@ -159,6 +166,10 @@ export interface JournalApi {
   setTradeColumns(ids: string[] | null): Promise<void>;
   setGoals(goals: Goals): Promise<void>;
   /** Deletes every thinkorswim CSV import, then re-syncs brokers from the start. */
+  /** Counts these trades as one; returns the journal with the change. */
+  combineTrades(ids: string[]): Promise<JournalData>;
+  /** Undoes a combine. */
+  splitTrade(id: string): Promise<JournalData>;
   removeImported(): Promise<{ removed: number; sync: SyncResult | null }>;
   /** Each account in the journal with how many fills it has; null is CSV imports with no account. */
   accountFillCounts(): Promise<{ account: string | null; fills: number }[]>;
@@ -184,6 +195,8 @@ export interface JournalApi {
   setHiddenAccounts(names: string[]): Promise<void>;
   /** Saves your colors; null goes back to the defaults. */
   setColors(colors: Partial<ColorScheme> | null): Promise<void>;
+  /** Saves the picked theme; null goes back to the default look. */
+  setTheme(id: string | null): Promise<void>;
   /** Saves how entry and exit markers look; null goes back to the defaults. */
   setMarkerStyles(styles: MarkerStyles | null): Promise<void>;
   setOptionPriceDisplay(mode: 'quote' | 'contract'): Promise<void>;
@@ -194,7 +207,7 @@ export interface JournalApi {
   etfMinuteBars(symbol: string, days: string[]): Promise<Bar[]>;
   /** Completed daily candles before `beforeDay`. */
   historyDailyBars(underlying: string, beforeDay: string, count: number, fromSchwab: boolean): Promise<DayBar[]>;
-  setReportsLayout(layout: { columns: string[][]; collapsed: string[] }): Promise<void>;
+  setReportsLayout(layout: { columns: string[][]; collapsed: string[]; charts?: string[] }): Promise<void>;
   saveTradeJournal(tradeId: string, journal: TradeJournal): Promise<void>;
   saveSetups(setups: Setup[]): Promise<void>;
   saveMistakes(mistakes: MistakeTag[]): Promise<void>;

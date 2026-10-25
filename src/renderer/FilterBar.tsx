@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { DTE_BUCKETS, EMPTY_FILTER, isFiltering, type TradeFilter } from '../core/reports';
+import { type DateRange, DEFAULT_FILTER, DTE_BUCKETS, isFiltering, type TradeFilter } from '../core/reports';
 import type { Trade } from '../core/types';
 import { useJournal } from './journal';
+
+const RANGES: [DateRange | '', string][] = [
+  ['', 'All time'], ['today', 'Today'], ['wtd', 'Week to date'], ['mtd', 'Month to date'], ['ytd', 'Year to date'],
+  ['lastYear', 'Last year'], ['custom', 'Custom range'],
+];
 
 /** Filters shared by the All trades and Reports tabs. */
 export function FilterBar({ trades, filter, onChange, shown }: {
@@ -14,15 +19,23 @@ export function FilterBar({ trades, filter, onChange, shown }: {
   const { setups, mistakes, positives } = useJournal();
   const set = (patch: Partial<TradeFilter>) => onChange({ ...filter, ...patch });
   const symbols = [...new Set(trades.map((t) => t.underlying))].sort();
+  // Dates picked before there was a dropdown count as a custom range.
+  const range = filter.range ?? (filter.from || filter.to ? 'custom' : '');
 
   return (
     <div className="filter-bar">
-      <label className="filter-dates">
-        <span>From</span>
-        <input type="date" value={filter.from ?? ''} onChange={(e) => set({ from: e.target.value || undefined })} />
-        <span>to</span>
-        <input type="date" value={filter.to ?? ''} onChange={(e) => set({ to: e.target.value || undefined })} />
-      </label>
+      <div className="filter-dates">
+        <select value={range} onChange={(e) => set(e.target.value ? { range: e.target.value as DateRange } : { range: undefined, from: undefined, to: undefined })} title="Which dates to show">
+          {RANGES.map(([value, name]) => <option key={value} value={value}>{name}</option>)}
+        </select>
+        {range === 'custom' && (
+          <>
+            <input type="date" value={filter.from ?? ''} onChange={(e) => set({ from: e.target.value || undefined })} />
+            <span>to</span>
+            <input type="date" value={filter.to ?? ''} onChange={(e) => set({ to: e.target.value || undefined })} />
+          </>
+        )}
+      </div>
       <MultiPick label="Symbol" options={symbols.map((s) => ({ id: s, name: s }))} value={filter.symbols} onChange={(symbols) => set({ symbols })} />
       <MultiPick label="Setup" options={[...setups, { id: 'none', name: 'No setup' }]} value={filter.setups} onChange={(s) => set({ setups: s })} />
       <MultiPick label="Did well" options={[{ id: 'none', name: 'No positive tags' }, ...positives]} value={filter.positives ?? []} onChange={(p) => set({ positives: p })} />
@@ -31,11 +44,9 @@ export function FilterBar({ trades, filter, onChange, shown }: {
       <Toggle options={[['CALL', 'Calls'], ['PUT', 'Puts']]} value={filter.putCall} onChange={(putCall) => set({ putCall })} />
       <Toggle options={[['LONG', 'Long'], ['SHORT', 'Short']]} value={filter.direction} onChange={(direction) => set({ direction })} />
       <Toggle options={[['win', 'Winners'], ['loss', 'Losers']]} value={filter.result} onChange={(result) => set({ result })} />
-      {isFiltering(filter) && (
-        <>
-          <span className="muted">{shown} of {trades.length} trades</span>
-          <button className="link-button" onClick={() => onChange(EMPTY_FILTER)}>Clear filters</button>
-        </>
+      <span className="muted">{shown} of {trades.length} trades</span>
+      {(filter.range !== DEFAULT_FILTER.range || isFiltering({ ...filter, range: undefined })) && (
+        <button className="link-button" onClick={() => onChange(DEFAULT_FILTER)} title="Back to month to date with no other filters">Reset filters</button>
       )}
     </div>
   );

@@ -1,7 +1,8 @@
 // One chart per day and ticker: every trade's fills on the underlying together.
 
 import { tradeDay } from './calendar';
-import type { Trade } from './types';
+import { shownFills } from './trades';
+import { isCounted, type Trade } from './types';
 
 /** The tickers traded on a day, most-traded first. */
 export function dayTickers(trades: Trade[], date: string): string[] {
@@ -31,7 +32,7 @@ export function dayChartTrade(trades: Trade[], date: string, underlying: string)
       contract.set(f.id, `${f.strike}${f.putCall === 'CALL' ? 'C' : 'P'}`);
     }
   }
-  const fills = picked.flatMap((t) => t.fills).sort((a, b) => a.execTime.localeCompare(b.execTime));
+  const fills = picked.flatMap(shownFills).sort((a, b) => a.execTime.localeCompare(b.execTime));
   const first = picked[0];
   return {
     trade: {
@@ -41,8 +42,9 @@ export function dayChartTrade(trades: Trade[], date: string, underlying: string)
       closeTime: fills[fills.length - 1].execTime,
       status: 'CLOSED',
       fills,
-      netPnl: picked.reduce((a, t) => a + t.netPnl, 0),
+      netPnl: picked.filter(isCounted).reduce((a, t) => a + t.netPnl, 0),
       journal: undefined,
+      assumedContracts: undefined,
     },
     entryIds,
     contract,
