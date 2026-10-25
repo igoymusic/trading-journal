@@ -175,7 +175,7 @@ button.link { background: none; border: none; color: var(--blue); padding: 6px; 
 .heat-col { color: var(--muted); text-align: center; }
 .heat-day { color: var(--muted); align-self: center; }
 .heat-cell { height: 34px; border-radius: var(--radius); display: flex; align-items: center; justify-content: center; font-variant-numeric: tabular-nums; color: var(--text); font-weight: 500; }
-.heat-cell.no-trades { background: var(--panel-2); opacity: 0.45; }
+.heat-cell.no-trades { background: var(--panel); border: 1px solid var(--border); }
 .heat-scale { display: flex; align-items: center; gap: 8px; justify-content: flex-end; margin-top: 8px; font-size: 11px; color: var(--muted); }
 .heat-scale i { width: 120px; height: 8px; border-radius: var(--radius); background: linear-gradient(90deg, var(--red), var(--panel-2), var(--green)); }
 .pnl-chart-body { height: 190px; margin: 4px 6px 8px; }
@@ -651,7 +651,7 @@ html[data-theme="cartoon"] button { border-width: 2px; border-color: #141a45; }
 html[data-theme="cartoon"] :is(h1, h2, h3, h4, .panel-title, .view-title) { font-weight: 600; letter-spacing: 0.01em; }
 
 /* Minimalist: light and airy, soft shadows instead of lines. */
-html[data-theme="minimal"] :is(.tile, .card, .trade-panel, .journal-editor, .year-block, .empty, .cal-day, .cal-week) { border-color: transparent; box-shadow: 0 1px 3px rgba(43, 45, 92, 0.08), 0 4px 14px rgba(43, 45, 92, 0.06); }
+html[data-theme="minimal"] :is(.tile, .card, .trade-panel, .journal-editor, .year-block, .empty) { border-color: transparent; box-shadow: 0 1px 3px rgba(43, 45, 92, 0.08), 0 4px 14px rgba(43, 45, 92, 0.06); }
 html[data-theme="minimal"] .theme-art .art-scene { opacity: 0.12; }
 html[data-theme="minimal"] .modal-backdrop { background: rgba(43, 45, 92, 0.35); }
 
@@ -724,6 +724,18 @@ html[data-theme="ink"] .modal-backdrop { background: rgba(30, 28, 25, 0.35); }
 .fill-list { background: linear-gradient(color-mix(in srgb, var(--panel) 80%, transparent), color-mix(in srgb, var(--panel) 80%, transparent)) right 14px bottom 14px / 100px 100px no-repeat, var(--stk-trade) right 14px bottom 14px / 100px 100px no-repeat; }
 /* Under the list of Settings sections. */
 .settings-nav { background: var(--stk-settings) center bottom 20px / 120px auto no-repeat; }
+/* Calendar days and the empty heat map boxes look raised: a light top edge and a shadow under them.
+   Each theme can swap the shadow for its own (retro's offset print shadow, cartoon's outline drop). */
+:root { --raise: inset 0 1px 0 rgba(255, 255, 255, 0.09), 0 4px 0 rgba(0, 0, 0, 0.45), 0 6px 12px rgba(0, 0, 0, 0.25); }
+html[data-theme="minimal"], html[data-theme="ink"] { --raise: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 2px 0 rgba(40, 36, 30, 0.12), 0 4px 10px rgba(40, 36, 30, 0.08); }
+html[data-theme="retro"] { --raise: inset 1px 1px 0 rgba(255, 255, 255, 0.07), 3px 3px 0 rgba(0, 0, 0, 0.38); }
+html[data-theme="pixel"] { --raise: inset 2px 2px 0 rgba(255, 255, 255, 0.07), 3px 3px 0 rgba(0, 0, 0, 0.45); }
+html[data-theme="cartoon"] { --raise: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 3px 0 #141a45; }
+html[data-theme="neon"] { --raise: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 3px 0 rgba(0, 0, 0, 0.5), 0 0 10px color-mix(in srgb, var(--blue) 12%, transparent); }
+.cal-day, .cal-week, .heat-cell.no-trades { box-shadow: var(--raise); background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 55%); }
+html[data-theme="retro"] :is(.cal-day, .cal-week, .heat-cell.no-trades) { border-width: 2px; }
+.cal-day.outside { box-shadow: none; }
+
 /* An astronaut after the last thing on All trades, Reports and day pages (bottom left), and on the Year tab (bottom right).
    It sits at the bottom of the window when the page is short and moves down as the page grows. */
 .view.with-art { display: flex; flex-direction: column; }
