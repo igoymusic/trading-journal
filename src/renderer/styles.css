@@ -175,7 +175,7 @@ button.link { background: none; border: none; color: var(--blue); padding: 6px; 
 .heat-col { color: var(--muted); text-align: center; }
 .heat-day { color: var(--muted); align-self: center; }
 .heat-cell { height: 34px; border-radius: var(--radius); display: flex; align-items: center; justify-content: center; font-variant-numeric: tabular-nums; color: var(--text); font-weight: 500; }
-.heat-cell.empty { background: var(--panel-2); opacity: 0.45; }
+.heat-cell.no-trades { background: var(--panel-2); opacity: 0.45; }
 .heat-scale { display: flex; align-items: center; gap: 8px; justify-content: flex-end; margin-top: 8px; font-size: 11px; color: var(--muted); }
 .heat-scale i { width: 120px; height: 8px; border-radius: var(--radius); background: linear-gradient(90deg, var(--red), var(--panel-2), var(--green)); }
 .pnl-chart-body { height: 190px; margin: 4px 6px 8px; }
@@ -724,6 +724,16 @@ html[data-theme="ink"] .modal-backdrop { background: rgba(30, 28, 25, 0.35); }
 .fill-list { background: linear-gradient(color-mix(in srgb, var(--panel) 80%, transparent), color-mix(in srgb, var(--panel) 80%, transparent)) right 14px bottom 14px / 100px 100px no-repeat, var(--stk-trade) right 14px bottom 14px / 100px 100px no-repeat; }
 /* Under the list of Settings sections. */
 .settings-nav { background: var(--stk-settings) center bottom 20px / 120px auto no-repeat; }
+/* An astronaut after the last thing on All trades, Reports and day pages (bottom left), and on the Year tab (bottom right).
+   It sits at the bottom of the window when the page is short and moves down as the page grows. */
+.view.with-art { display: flex; flex-direction: column; }
+.view.with-art > * { flex-shrink: 0; }
+.page-art { margin-top: auto; align-self: flex-start; width: 170px; height: 170px; margin-left: 20px; margin-bottom: 12px; border-top: 16px solid transparent; pointer-events: none; background: center bottom / contain no-repeat; filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.3)); }
+.page-art.year { align-self: flex-end; margin: auto 24px 12px 0; }
+.page-art.trades { background-image: var(--stk-trades); }
+.page-art.reports { background-image: var(--stk-reports); }
+.page-art.day { background-image: var(--stk-day); }
+.page-art.year { background-image: var(--stk-year); }
 /* "Nothing here yet" spots get a friendly astronaut at full strength. */
 .empty:not(.heat-cell) { max-width: 560px; padding-right: 150px; }
 .empty:not(.heat-cell)::before { top: 18px; right: 20px; bottom: auto; width: 120px; height: 120px; background-image: var(--stk-empty); background-position: center; }

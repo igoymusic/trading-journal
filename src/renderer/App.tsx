@@ -76,6 +76,8 @@ export function App() {
   const activeMonth = tabs.active.startsWith('month:')
     ? { year: Number(tabs.active.slice(6, 10)), month: Number(tabs.active.slice(11, 13)) }
     : null;
+  // Which page gets an astronaut at the end of it (Home has its own, under the left-hand stats).
+  const pageArt = activeDay ? 'day' : tabs.active === 'trades' || tabs.active === 'reports' || tabs.active === 'year' ? tabs.active : null;
 
   const load = () => window.journal.getJournal().then(setData);
 
@@ -233,7 +235,7 @@ export function App() {
       )}
       {notice && <Notice key={notice} text={notice} onDone={() => setNotice(null)} />}
       {!data ? null : !hasTrades ? <EmptyState onImport={importCsv} onOpenSettings={() => setShowSettings(true)} /> : (
-        <main className="view" key={colorsVersion}>
+        <main className={`view${pageArt ? ' with-art' : ''}`} key={colorsVersion}>
           {filterTab && <FilterBar trades={data.trades} filter={filter} onChange={setFilter} shown={filtered.length} />}
           {scoped && tabs.active !== 'home' && <SummaryBar s={scoped} trades={scopedTrades ?? []} day={!!activeDay} />}
           {tabs.active === 'home' && (
@@ -295,6 +297,7 @@ export function App() {
               <TradeTable trades={filtered} selectedId={selectedId} onSelect={(id) => setSelectedId(id === selectedId ? null : id)} />
             </>
           )}
+          {pageArt && <div className={`page-art ${pageArt}`} />}
         </main>
       )}
       {showSettings && <SettingsDialog onSynced={afterSync} onColorsChanged={redraw} onClose={() => { setShowSettings(false); setSettingsVersion((v) => v + 1); }} />}

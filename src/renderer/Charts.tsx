@@ -262,7 +262,7 @@ export function Heatmap({ cells }: { cells: HeatCell[] }) {
               return (
                 <div
                   key={h}
-                  className={`heat-cell ${c.trades ? '' : 'empty'}`}
+                  className={`heat-cell${c.trades ? '' : ' no-trades'}`}
                   style={c.trades ? { background: withAlpha(c.netPnl >= 0 ? colors().win : colors().loss, strength) } : undefined}
                   onMouseMove={(e) => t.show(e, c.trades
                     ? <><b>{DAY_LABELS[d]} {HOUR_LABELS[h]}{h === 9 ? '–10am' : ''}</b><div>{signedUsd(c.netPnl)}</div><div className="muted">{c.trades} trade{c.trades === 1 ? '' : 's'} · {Math.round((c.wins / c.trades) * 100)}% won</div></>
@@ -279,6 +279,13 @@ export function Heatmap({ cells }: { cells: HeatCell[] }) {
       {t.el}
     </div>
   );
+}
+
+/** Axis values in order of importance, leaving out any whose label would sit on top of one already kept. */
+function spreadTicks(values: number[], y: (v: number) => number, room = 14) {
+  const kept: number[] = [];
+  for (const v of values) if (!kept.some((k) => Math.abs(y(k) - y(v)) < room)) kept.push(v);
+  return kept;
 }
 
 /** Minutes as "45s", "12m", "1h 5m" or "2d". */
@@ -402,7 +409,7 @@ export function EquityDrawdown({ points, height = 230 }: { points: { date: strin
     <div className="chart-box" ref={ref} onMouseLeave={() => { t.hide(); setHover(null); }}>
       {width > 0 && points.length > 0 && (
         <svg width={width} height={height} onMouseMove={move} role="img" aria-label="Running P&L and drawdown">
-          {[eLo, 0, eHi].filter((v, i, a) => a.indexOf(v) === i).map((v) => (
+          {spreadTicks([0, eHi, eLo], ey).map((v) => (
             <g key={`e${v}`}>
               <line x1={left} x2={width} y1={ey(v)} y2={ey(v)} stroke={v === 0 ? tone().zero : tone().grid} />
               <text x={left - 6} y={ey(v)} textAnchor="end" dominantBaseline="middle" fontSize={10} fill={tone().muted}>{shortUsd(v)}</text>
@@ -410,7 +417,7 @@ export function EquityDrawdown({ points, height = 230 }: { points: { date: strin
           ))}
           <path d={line((p) => p.equity, ey)} fill="none" stroke={colors().chart} strokeWidth={2} strokeLinejoin="round" />
           <text x={width - 8} y={4 + eqH + gap - 9} textAnchor="end" fontSize={10} fill={tone().muted}>Drawdown: how far below the last high</text>
-          {[dLo, 0].map((v) => (
+          {spreadTicks([0, dLo], dy).map((v) => (
             <g key={`d${v}`}>
               <line x1={left} x2={width} y1={dy(v)} y2={dy(v)} stroke={tone().grid} />
               <text x={left - 6} y={dy(v)} textAnchor="end" dominantBaseline="middle" fontSize={10} fill={tone().muted}>{shortUsd(v)}</text>

@@ -14,6 +14,11 @@ const SPOTS = {
   empty: ['astro-thumbs', 'astro-hips', 'astro-ride', 'astro-write'],
   settings: ['moon-full', 'moon-crescent', 'moon-half'],
   trade: ['rocket-trail', 'rocket-launch', 'moon-crescent'],
+  // One astronaut per page at the end of All trades, Reports, a day, and the Year tab.
+  trades: ['astro-hips', 'astro-thumbs', 'astro-celebrate', 'astro-flag', 'astro-ride'],
+  reports: ['astro-hips', 'astro-thumbs', 'astro-celebrate', 'astro-flag', 'astro-ride'],
+  day: ['astro-hips', 'astro-thumbs', 'astro-celebrate', 'astro-flag', 'astro-ride'],
+  year: ['astro-hips', 'astro-thumbs', 'astro-celebrate', 'astro-flag', 'astro-ride'],
 } as const;
 export type Spot = keyof typeof SPOTS;
 
