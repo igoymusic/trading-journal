@@ -38,6 +38,9 @@ export interface FillPoint {
   priceTime?: number;
 }
 
+/** For SPX trades: SPY's own chart ('etf', the default) or SPX itself ('index'). */
+export type ChartView = 'etf' | 'index';
+
 export type TradeChart =
   | { status: 'needs-key' }
   | { status: 'error'; message: string }
@@ -147,10 +150,10 @@ export interface JournalApi {
   getJournal(): Promise<JournalData>;
   /** Opens a file picker; resolves to null if the user cancels. */
   importThinkorswim(): Promise<ImportResult | null>;
-  getTradeChart(tradeId: string): Promise<TradeChart>;
+  getTradeChart(tradeId: string, view?: ChartView): Promise<TradeChart>;
   /** One chart of a day's trades on one ticker. */
-  getDayChart(date: string, underlying: string): Promise<TradeChart>;
-  getLevelPrices(tradeId: string, stops: PriceLevel[], targets: PriceLevel[]): Promise<LevelPrices | null>;
+  getDayChart(date: string, underlying: string, view?: ChartView): Promise<TradeChart>;
+  getLevelPrices(tradeId: string, stops: PriceLevel[], targets: PriceLevel[], view?: ChartView): Promise<LevelPrices | null>;
   getSettings(): Promise<SettingsView>;
   /** Saves (or clears, with null) the Alpaca keys after checking they work. */
   saveAlpacaKeys(keys: { keyId: string; secretKey: string } | null): Promise<{ ok: boolean; message: string }>;

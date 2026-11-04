@@ -6,9 +6,9 @@ import type { JournalApi } from '../shared/api';
 const api: JournalApi = {
   getJournal: () => ipcRenderer.invoke('journal:get'),
   importThinkorswim: () => ipcRenderer.invoke('journal:importTos'),
-  getDayChart: (date, underlying) => ipcRenderer.invoke('market:dayChart', date, underlying),
-  getTradeChart: (tradeId) => ipcRenderer.invoke('market:tradeChart', tradeId),
-  getLevelPrices: (tradeId, stops, targets) => ipcRenderer.invoke('market:levelPrices', tradeId, stops, targets),
+  getDayChart: (date, underlying, view) => ipcRenderer.invoke('market:dayChart', date, underlying, view),
+  getTradeChart: (tradeId, view) => ipcRenderer.invoke('market:tradeChart', tradeId, view),
+  getLevelPrices: (tradeId, stops, targets, view) => ipcRenderer.invoke('market:levelPrices', tradeId, stops, targets, view),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveAlpacaKeys: (keys) => ipcRenderer.invoke('settings:saveAlpaca', keys),
   setTimeZone: (tz) => ipcRenderer.invoke('settings:setTimeZone', tz),
