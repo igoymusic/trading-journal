@@ -18,6 +18,8 @@ export interface DayChartTrade {
   entryIds: Set<string>;
   /** Short contract name per fill, e.g. "580C", to tell trades apart on the chart. */
   contract: Map<string, string>;
+  /** The trade each fill belongs to, so an exit is judged against its own trade's entry. */
+  tradeOf: Map<string, string>;
 }
 
 export function dayChartTrade(trades: Trade[], date: string, underlying: string): DayChartTrade | null {
@@ -25,11 +27,13 @@ export function dayChartTrade(trades: Trade[], date: string, underlying: string)
   if (!picked.length) return null;
   const entryIds = new Set<string>();
   const contract = new Map<string, string>();
+  const tradeOf = new Map<string, string>();
   for (const t of picked) {
     const entrySide = t.direction === 'LONG' ? 'BUY' : 'SELL';
     for (const f of t.fills) {
       if (f.side === entrySide) entryIds.add(f.id);
       contract.set(f.id, `${f.strike}${f.putCall === 'CALL' ? 'C' : 'P'}`);
+      tradeOf.set(f.id, t.id);
     }
   }
   const fills = picked.flatMap(shownFills).sort((a, b) => a.execTime.localeCompare(b.execTime));
@@ -48,5 +52,6 @@ export function dayChartTrade(trades: Trade[], date: string, underlying: string)
     },
     entryIds,
     contract,
+    tradeOf,
   };
 }

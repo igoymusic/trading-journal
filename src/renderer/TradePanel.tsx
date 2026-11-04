@@ -889,7 +889,7 @@ export function PriceChart({ trade, chart, interval, levels, placing, onPlace, o
 }
 
 /** Candles and fill markers for the chart, cut off at `until` during a replay. */
-export interface FillInfo { entryIds: Set<string>; contract: Map<string, string> }
+export interface FillInfo { entryIds: Set<string>; contract: Map<string, string>; tradeOf?: Map<string, string> }
 
 function chartData(chart: Extract<TradeChart, { status: 'ok' }>, trade: Trade, interval: Interval, until: number | null, info?: FillInfo) {
   const tz = chart.timeZone;
@@ -913,11 +913,13 @@ function chartData(chart: Extract<TradeChart, { status: 'ok' }>, trade: Trade, i
       optionPrice: f.price, underlying: point.underlyingPrice, contract,
     });
   }
-  // Average entry price per contract, to tell exits in profit from exits at a loss.
+  // Average entry price per trade (on a day chart, each of the day's trades separately), to tell
+  // exits in profit from exits at a loss.
+  const tradeKey = (id: string) => info?.tradeOf?.get(id) ?? info?.contract.get(id) ?? '';
   const entries = new Map<string, { side: 'BUY' | 'SELL'; cost: number; qty: number }>();
   for (const f of fills) {
     if (!(info ? info.entryIds.has(f.id) : f.side === entrySide)) continue;
-    const k = info?.contract.get(f.id) ?? '';
+    const k = tradeKey(f.id);
     const e = entries.get(k) ?? { side: f.side as 'BUY' | 'SELL', cost: 0, qty: 0 };
     e.cost += f.price * f.quantity;
     e.qty += f.quantity;
@@ -930,7 +932,7 @@ function chartData(chart: Extract<TradeChart, { status: 'ok' }>, trade: Trade, i
     const price = g.underlying ?? candles.find((c) => c.time === candleTime)?.close;
     if (price === undefined) continue;
     const text = `${g.side === 'BUY' ? 'B' : 'S'} ${g.qty}${g.contract ? ` ${g.contract}` : ''} @ ${optionUsd(g.optionPrice)}${g.underlying === undefined ? ' (approx.)' : ''}`;
-    const e = entries.get(g.contract ?? '');
+    const e = entries.get(tradeKey(g.id));
     const style = g.isEntry ? 'entry' : exitKind(e?.side ?? (entrySide as 'BUY' | 'SELL'), e?.qty ? e.cost / e.qty : undefined, g.optionPrice);
     markers.push({ id: g.id, time: candleTime, price, kind: g.isEntry ? 'entry' : 'exit', style, text });
   }
