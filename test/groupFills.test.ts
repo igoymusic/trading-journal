@@ -15,14 +15,24 @@ describe('groupFills', () => {
     expect(rows.map((r) => `${r.fill.side} ${r.fill.quantity} @ ${r.fill.price}`)).toEqual(['BUY 2 @ 7.9', 'SELL 1 @ 8.5', 'SELL 1 @ 7.9']);
   });
 
-  it('keeps fills apart when the price, time or side differs, or the time is unknown', () => {
+  it('keeps fills apart when the price differs, they are more than 10 seconds apart, or the time is unknown', () => {
     const rows = groupFills([
       f('a', 'BUY', 7.9, '2026-11-03 10:58:20'),
       f('b', 'BUY', 7.95, '2026-11-03 10:58:20'),
-      f('c', 'BUY', 7.95, '2026-11-03 10:58:21'),
-      { ...f('d', 'BUY', 7.95, '2026-11-03 10:58:21'), timeExact: false },
+      f('c', 'BUY', 7.95, '2026-11-03 10:58:31'),
+      { ...f('d', 'BUY', 7.95, '2026-11-03 10:58:31'), timeExact: false },
     ], []);
     expect(rows).toHaveLength(4);
+  });
+
+  it('joins fills at the same price up to 10 seconds after the first one', () => {
+    const rows = groupFills([
+      f('a', 'SELL', 8.5, '2026-11-03 10:59:44'),
+      f('b', 'SELL', 8.5, '2026-11-03 10:59:50'),
+      f('c', 'SELL', 8.5, '2026-11-03 10:59:54'),
+      f('d', 'SELL', 8.5, '2026-11-03 10:59:55'),
+    ], []);
+    expect(rows.map((r) => `${r.fill.quantity} ${r.fill.execTime.slice(11)}`)).toEqual(['3 10:59:44', '1 10:59:55']);
   });
 
   it('adds up contracts closed without an opening fill', () => {
