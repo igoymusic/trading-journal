@@ -101,6 +101,9 @@ export function DayChart({ trades, date, version }: { trades: Trade[]; date: str
           )}
         </div>
       </div>}
+      {!collapsed && chart?.status === 'ok' && chart.futureOn && (
+        <div className="muted small day-chart-note">{chart.futureOn.future} drawn on {chart.futureOn.etf}, each fill at {chart.futureOn.etf}'s price when it filled.</div>
+      )}
       {!collapsed && chart?.status === 'ok' && chart.estimatedFrom && (
         <div className="muted small day-chart-note">≈ {chart.symbol} estimated from {chart.estimatedFrom} scaled by each day's closing prices.</div>
       )}

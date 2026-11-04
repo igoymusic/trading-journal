@@ -2,6 +2,7 @@
 // spans, and the underlying's exact price at every fill. Results are cached in the database.
 
 import { AlpacaClient, type Bar, occSymbol } from '../core/alpaca';
+import { futureEtf } from '../core/futures';
 import { type IndexProxy, indexProxy, parseFredCsv, parseYahooChart, ratioDay } from '../core/indexProxy';
 import type { DayBar } from '../core/indicators';
 import { type LevelPrice, priceLevels } from '../core/optionLevels';
@@ -49,6 +50,13 @@ function chartEtf(underlying: string, view: ChartView): string | undefined {
  * is 'index'; then it's SPX from Schwab when signed in, or SPY scaled to SPX.
  */
 export async function buildTradeChart(trade: Trade, db: JournalDb, settings: Settings, fetchFn?: typeof fetch, schwab?: SchwabSync, view: ChartView = 'etf'): Promise<TradeChart> {
+  // Free market data has no futures: /ES and /MES chart on SPY, marked at SPY's price at each fill.
+  if (trade.contract) {
+    const stand = futureEtf(trade.underlying);
+    if (!stand) return { status: 'error', message: `No chart for /${trade.underlying}: free market data doesn't have futures, and there's no ETF that tracks it closely enough to stand in.` };
+    const chart = await etfChart(trade, stand, db, settings, fetchFn);
+    return chart.status === 'ok' ? { ...chart, futureOn: { future: `/${trade.underlying}`, etf: stand } } : chart;
+  }
   const etf = chartEtf(trade.underlying, view);
   if (etf) return etfChart(trade, etf, db, settings, fetchFn);
   // Index options chart the real index when Schwab is signed in and has its minutes.
@@ -133,7 +141,7 @@ export async function buildTradeChart(trade: Trade, db: JournalDb, settings: Set
 async function etfChart(trade: Trade, etf: string, db: JournalDb, settings: Settings, fetchFn?: typeof fetch): Promise<TradeChart> {
   // Fill prices on the scaled chart are saved under the fill's id, so these get their own key.
   const fills = trade.fills.map((f) => ({ ...f, id: `${f.id}@${etf}` }));
-  const chart = await buildTradeChart({ ...trade, underlying: etf, fills }, db, settings, fetchFn);
+  const chart = await buildTradeChart({ ...trade, underlying: etf, fills, contract: undefined }, db, settings, fetchFn);
   if (chart.status !== 'ok') return chart;
   return { ...chart, fills: chart.fills.map((p) => ({ ...p, fillId: p.fillId.slice(0, -etf.length - 1) })) };
 }
@@ -288,7 +296,7 @@ export async function levelOptionPrices(trade: Trade, stops: PriceLevel[], targe
     entry: { time: point.time, underlying: point.underlyingPrice * r, optionPrice: entryFill.price },
     exitTime: trade.closeTime ? zonedToUtcMillis(trade.closeTime, settings.timeZone) : Date.now(),
     expiryTime: zonedToUtcMillis(`${trade.expiry}T16:00:00`, 'America/New_York'),
-    optionBars: await optionBars(trade, client, db),
+    optionBars: trade.contract ? [] : await optionBars(trade, client, db),
     exits: trade.fills.filter((f) => f.side !== entrySide).flatMap((f) => {
       const p = chart.fills.find((q) => q.fillId === f.id);
       return p?.underlyingPrice === undefined ? [] : [{ underlying: p.underlyingPrice * r, optionPrice: f.price, time: p.time }];

@@ -5,6 +5,7 @@
 //   reward = how far it moved in your favor (realized) or would have to your targets (planned)
 //   R      = reward / risk
 
+import { multiplierOf } from './futures';
 import type { PriceLevel, Trade, TradeJournal } from './types';
 
 /** +1 if the trade makes money when the underlying rises (long call, short put), -1 otherwise. */
@@ -61,7 +62,7 @@ export function averageUnderlying(fills: { quantity: number; underlying?: number
  * are left out. Null if nothing could be identified.
  */
 export function levelsFromExits(
-  trade: Pick<Trade, 'putCall' | 'direction' | 'avgEntry' | 'fills'>,
+  trade: Pick<Trade, 'putCall' | 'direction' | 'avgEntry' | 'fills' | 'multiplier'>,
   underlyingByFill: Map<string, number>,
 ): { stops: PriceLevel[]; targets: PriceLevel[] } | null {
   const entrySide = trade.direction === 'LONG' ? 'BUY' : 'SELL';
@@ -76,7 +77,7 @@ export function levelsFromExits(
   for (const f of trade.fills) {
     const u = underlyingByFill.get(f.id);
     if (f.side === entrySide || u === undefined || !f.quantity) continue;
-    const perContract = dir * (f.price * 100 - trade.avgEntry) - entryFeePerContract - f.fees / f.quantity;
+    const perContract = dir * (f.price * multiplierOf(f) - trade.avgEntry) - entryFeePerContract - f.fees / f.quantity;
     const kind = perContract > 0 ? 'targets' : 'stops';
     const move = b * (u - entryU);
     if (kind === 'targets' ? move <= 0 : move >= 0) continue;

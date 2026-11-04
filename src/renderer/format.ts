@@ -1,5 +1,7 @@
 // Display helpers. Option prices show as quoted ($0.20) or per contract ($20.00), as picked in Settings.
 
+import { futureLabel } from '../core/futures';
+
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 });
 
 export function usd(n: number): string {
@@ -22,6 +24,24 @@ export function optionUsd(quote: number): string {
 /** A per-contract dollar amount (like a trade's average entry, $15.00) in the style picked in Settings. */
 export function contractUsd(dollars: number): string {
   return optionUsd(dollars / 100);
+}
+
+const points = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+
+/** A fill's price: an option's in the style picked in Settings, a future's in points ("5,843.25"). */
+export function fillPrice(price: number, x: { contract?: string }): string {
+  return x.contract ? points.format(price) : optionUsd(price);
+}
+
+/** A trade's per-contract dollars (avg entry or exit) shown like its fills' prices. */
+export function tradePrice(dollars: number, t: { contract?: string; multiplier?: number }): string {
+  return t.contract ? points.format(dollars / (t.multiplier ?? 1)) : contractUsd(dollars);
+}
+
+/** "SPY 580C 10/12" for an option, "/MES Dec 26" for a future. */
+export function contractName(t: { underlying: string; strike: number; putCall: string; expiry: string; contract?: string }): string {
+  if (t.contract) return futureLabel(t.underlying, t.expiry);
+  return `${t.underlying} ${t.strike}${t.putCall === 'CALL' ? 'C' : 'P'} ${shortDate(t.expiry)}`;
 }
 
 export function signedUsd(n: number): string {

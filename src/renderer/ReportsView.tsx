@@ -235,7 +235,7 @@ function useVisuals(trades: Trade[]): Record<string, ReactNode | null> {
       distribution: closed.length ? <Histogram bins={pnlHistogram(closed)} /> : null,
       daily: days.length ? <DailyBars days={days.slice(-90)} /> : null,
       holdTime: closed.length ? (
-        <ScatterChart points={closed.map((t) => ({ x: holdMinutes(t), y: t.netPnl, label: `${shortDate(t.openTime.slice(0, 10))} ${t.underlying} ${t.strike} ${t.putCall === 'CALL' ? 'C' : 'P'}` }))} />
+        <ScatterChart points={closed.map((t) => ({ x: holdMinutes(t), y: t.netPnl, label: `${shortDate(t.openTime.slice(0, 10))} ${t.contract ? `/${t.underlying}` : `${t.underlying} ${t.strike} ${t.putCall === 'CALL' ? 'C' : 'P'}`}` }))} />
       ) : null,
     };
   }, [trades]);
