@@ -7,6 +7,7 @@ import type { Bar } from '../core/alpaca';
 import { filledBy, positionAt, replayStartIndex } from '../core/replay';
 import { chartTime } from '../core/time';
 import { shownFills } from '../core/trades';
+import { groupFills } from '../core/fills';
 import { dollarRiskReward } from '../core/optionLevels';
 import { averageUnderlying, bias, formatR, levelsFromExits, riskReward } from '../core/rr';
 import { indexProxy } from '../core/indexProxy';
@@ -318,10 +319,9 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
               </InfoTip>
             )}
           </div>
-          {shownFills(trade).map((f) => {
+          {groupFills(shownFills(trade), trade.fills).map(({ fill: f, added }) => {
             const point = priceByFill.get(f.id);
             const buy = f.side === 'BUY';
-            const added = f.quantity - (trade.fills.find((x) => x.id === f.id)?.quantity ?? f.quantity);
             return (
               <div className="fill-item" key={f.id}>
                 <div>
@@ -1100,3 +1100,4 @@ function CombineBox({ trade }: { trade: Trade }) {
     </div>
   );
 }
+

@@ -13,6 +13,7 @@ import { AlpacaClient } from '../core/alpaca';
 import type { Goals } from '../core/goals';
 import { dayChartTrade } from '../core/dayChart';
 import { BrokerSync } from './brokerSync';
+import { addContextMenu } from './contextMenu';
 import { SchwabSync } from './schwab';
 import type { SchwabSlot } from './settings';
 import { JournalDb } from './db';
@@ -88,6 +89,7 @@ async function createWindow() {
   win.show();
   // Remember the size and place for next time.
   win.on('close', () => { settings.windowBounds = { ...win.getNormalBounds(), maximized: win.isMaximized() }; });
+  addContextMenu(win);
   // Help links (like Alpaca's sign-up page) open in the normal web browser, and only those sites.
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https:\/\/([a-z0-9-]+\.)*(alpaca\.markets|snaptrade\.com)\//.test(url)) shell.openExternal(url);
