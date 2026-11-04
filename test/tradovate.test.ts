@@ -148,3 +148,25 @@ describe('flipping from long to short in one order', () => {
     expect(short).toMatchObject({ status: 'CLOSED', grossPnl: 50, fees: 2.48, maxContracts: 2, id: 'tv:f:202~rest' });
   });
 });
+
+describe('a real Tradovate Orders export', () => {
+  // Two rows from a prop-firm account's Orders report (values start with a space, extra columns at the end).
+  const csv = [
+    'orderId,Account,Order ID,B/S,Contract,Product,Product Description,avgPrice,filledQty,Fill Time,lastCommandId,Status,_priceFormat,_priceFormatType,_tickSize,spreadDefinitionId,Version ID,Timestamp,Date,Quantity,Text,Type,Limit Price,Stop Price,decimalLimit,decimalStop,Filled Qty,Avg Fill Price,decimalFillAvg,Venue,Notional Value,Currency',
+    '727681720004,TAKEPROFIT290110956,727681720004, Buy,MESZ6,MES,Micro E-mini S&P 500,7728.0,1,11/04/2026 11:45:55,727681720004, Filled,-2,0,0.25,,727681720004,11/04/2026 11:45:55,11/4/26,1,Chart, Market,,,,,1,7728.00,7728.0,,"38,640.00",USD',
+    '727681720011,TAKEPROFIT290110956,727681720011, Sell,MESZ6,MES,Micro E-mini S&P 500,7729.0,1,11/04/2026 11:46:10,727681720011, Filled,-2,0,0.25,,727681720011,11/04/2026 11:46:10,11/4/26,1,Chart, Market,,,,,1,7729.00,7729.0,,"38,645.00",USD',
+    '',
+  ].join('\n');
+
+  it('reads both fills as one /MES trade', () => {
+    const { fills, skipped, kind } = parseTradovateCsv(csv, TZ);
+    expect(kind).toBe('orders');
+    expect(skipped).toEqual([]);
+    expect(fills[0]).toMatchObject({
+      execTime: '2026-11-04T11:45:55', side: 'BUY', quantity: 1, price: 7728, contract: 'MESZ6',
+      account: 'Tradovate · TAKEPROFIT290110956', orderType: 'MARKET',
+    });
+    const [trade] = buildTrades(fills);
+    expect(trade).toMatchObject({ status: 'CLOSED', direction: 'LONG', grossPnl: 5, closeTime: '2026-11-04T11:46:10' });
+  });
+});
