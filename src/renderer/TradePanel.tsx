@@ -360,12 +360,6 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
               day's closing prices. Expect it within a point or two of the real index.
             </div>
           )}
-          {chart?.status === 'ok' && chart.futureOn && (
-            <div className="muted small">
-              Free market data has no futures, so this {chart.futureOn.future} trade is drawn on {chart.futureOn.etf}. Each fill is marked at
-              {' '}{chart.futureOn.etf}'s price the second it filled; fills while {chart.futureOn.etf} wasn't trading (before 4am or after 8pm New York time) sit at its last price.
-            </div>
-          )}
           {chart?.status === 'ok' && chart.feed === 'iex' && (
             <div className="muted small">Some prices come from the IEX exchange only, so they can differ by a cent or two.</div>
           )}
