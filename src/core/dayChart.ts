@@ -32,7 +32,7 @@ export function dayChartTrade(trades: Trade[], date: string, underlying: string)
     const entrySide = t.direction === 'LONG' ? 'BUY' : 'SELL';
     for (const f of t.fills) {
       if (f.side === entrySide) entryIds.add(f.id);
-      contract.set(f.id, `${f.strike}${f.putCall === 'CALL' ? 'C' : 'P'}`);
+      contract.set(f.id, f.contract ?? `${f.strike}${f.putCall === 'CALL' ? 'C' : 'P'}`);
       tradeOf.set(f.id, t.id);
     }
   }

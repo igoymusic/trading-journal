@@ -107,6 +107,9 @@ export class JournalDb {
     const fillCols = (this.db.prepare('PRAGMA table_info(fills)').all() as { name: string }[]).map((c) => c.name);
     if (!fillCols.includes('account')) this.db.exec('ALTER TABLE fills ADD COLUMN account TEXT');
     if (!fillCols.includes('time_exact')) this.db.exec('ALTER TABLE fills ADD COLUMN time_exact INTEGER NOT NULL DEFAULT 1');
+    // Added with Tradovate: a futures fill's contract name and dollars per point.
+    if (!fillCols.includes('contract')) this.db.exec('ALTER TABLE fills ADD COLUMN contract TEXT');
+    if (!fillCols.includes('multiplier')) this.db.exec('ALTER TABLE fills ADD COLUMN multiplier REAL');
     // Added with playbooks: each setup's rules, and which ones a trade followed.
     if (!cols.includes('rules_followed')) this.db.exec("ALTER TABLE trade_journal ADD COLUMN rules_followed TEXT");
     const setupCols = (this.db.prepare('PRAGMA table_info(setups)').all() as { name: string }[]).map((c) => c.name);
@@ -148,8 +151,8 @@ export class JournalDb {
   addFills(fills: Fill[], opts: { addNew?: boolean } = {}): number {
     const insert = this.db.prepare(`
       INSERT OR IGNORE INTO fills
-        (id, broker, exec_time, underlying, expiry, strike, put_call, side, quantity, position_effect, price, order_type, spread, fees, account, time_exact)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+        (id, broker, exec_time, underlying, expiry, strike, put_call, side, quantity, position_effect, price, order_type, spread, fees, account, time_exact, contract, multiplier)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
     let added = 0;
     let retimed = 0;
     const existing = this.allFills();
@@ -163,7 +166,7 @@ export class JournalDb {
     try {
       for (const f of opts.addNew === false ? [] : fresh) {
         const result = insert.run(f.id, f.broker, f.execTime, f.underlying, f.expiry, f.strike, f.putCall, f.side,
-          f.quantity, f.positionEffect, f.price, f.orderType, f.spread, f.fees, f.account ?? null, f.timeExact === false ? 0 : 1);
+          f.quantity, f.positionEffect, f.price, f.orderType, f.spread, f.fees, f.account ?? null, f.timeExact === false ? 0 : 1, f.contract ?? null, f.multiplier ?? null);
         added += Number(result.changes);
       }
       for (const f of fills) if (f.timeExact !== false && known.get(f.id)?.timeExact === false) retimed += Number(retime.run(f.execTime, f.id).changes);
@@ -213,6 +216,7 @@ export class JournalDb {
       positionEffect: r.position_effect, price: r.price, orderType: r.order_type, spread: r.spread, fees: r.fees,
       ...(r.account ? { account: r.account } : {}),
       ...(r.time_exact === 0 ? { timeExact: false } : {}),
+      ...(r.contract ? { contract: r.contract, multiplier: r.multiplier } : {}),
     }));
   }
 

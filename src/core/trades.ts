@@ -1,6 +1,7 @@
 // Groups fills into round-trip trades: one trade per contract, from flat to flat.
 
-import { CONTRACT_MULTIPLIER, type Fill, isCounted, type Trade } from './types';
+import { multiplierOf } from './futures';
+import { type Fill, isCounted, type Trade } from './types';
 
 function contractKey(f: Fill) {
   return `${f.underlying}|${f.expiry}|${f.strike}|${f.putCall}`;
@@ -17,23 +18,40 @@ export function buildTrades(fills: Fill[], merges: TradeMerges = []): Trade[] {
   const positions = new Map<string, number>();
   const trades: Trade[] = [];
 
-  for (const fill of sorted) {
-    const key = contractKey(fill);
-    const signed = fill.side === 'BUY' ? fill.quantity : -fill.quantity;
-    const before = positions.get(key) ?? 0;
-    const after = before + signed;
-    const current = open.get(key) ?? [];
-    current.push(fill);
-    open.set(key, current);
-    positions.set(key, after);
-    if (after === 0) {
-      trades.push(summarize(current, 'CLOSED'));
-      open.delete(key);
+  for (const whole of sorted) {
+    const key = contractKey(whole);
+    // One order that goes straight from long to short (or back), common with futures, closes
+    // the first trade and opens the next: split it at the point the position is flat.
+    const start = positions.get(key) ?? 0;
+    const end = start + (whole.side === 'BUY' ? whole.quantity : -whole.quantity);
+    const pieces = start !== 0 && end !== 0 && Math.sign(start) !== Math.sign(end) ? splitFill(whole, Math.abs(start)) : [whole];
+    for (const fill of pieces) {
+      const signed = fill.side === 'BUY' ? fill.quantity : -fill.quantity;
+      const before = positions.get(key) ?? 0;
+      const after = before + signed;
+      const current = open.get(key) ?? [];
+      current.push(fill);
+      open.set(key, current);
+      positions.set(key, after);
+      if (after === 0) {
+        trades.push(summarize(current, 'CLOSED'));
+        open.delete(key);
+      }
     }
   }
   for (const remaining of open.values()) trades.push(summarize(remaining, 'OPEN'));
 
   return applyMerges(trades, merges).sort((a, b) => (b.closeTime ?? b.openTime).localeCompare(a.closeTime ?? a.openTime));
+}
+
+/** A fill cut in two: the first `closing` contracts, then the rest (fees shared by contracts). */
+function splitFill(f: Fill, closing: number): Fill[] {
+  const share = (q: number) => Math.round((f.fees * q / f.quantity) * 10000) / 10000;
+  const rest = f.quantity - closing;
+  return [
+    { ...f, quantity: closing, fees: share(closing), positionEffect: 'CLOSE' },
+    { ...f, id: `${f.id}~rest`, quantity: rest, fees: Math.round((f.fees - share(closing)) * 10000) / 10000, positionEffect: 'OPEN' },
+  ];
 }
 
 /** Replaces each group of combined trades with one trade made of all their fills. */
@@ -86,7 +104,7 @@ function summarize(fills: Fill[], requested: Trade['status'] | 'AUTO'): Trade {
   for (const f of fills) {
     position += f.side === 'BUY' ? f.quantity : -f.quantity;
     maxContracts = Math.max(maxContracts, Math.abs(position));
-    const dollars = f.price * f.quantity * CONTRACT_MULTIPLIER;
+    const dollars = f.price * f.quantity * multiplierOf(f);
     cash += f.side === 'SELL' ? dollars : -dollars;
     fees += f.fees;
     if (f.side === entrySide) { entryQty += f.quantity; entryCost += dollars; }
@@ -136,6 +154,7 @@ function summarize(fills: Fill[], requested: Trade['status'] | 'AUTO'): Trade {
     fills,
     ...(fills.some((f) => f.account) ? { account: fills.find((f) => f.account)!.account } : {}),
     ...(assumed ? { assumedContracts: assumed } : {}),
+    ...(first.contract ? { contract: first.contract, multiplier: first.multiplier } : {}),
   };
 }
 

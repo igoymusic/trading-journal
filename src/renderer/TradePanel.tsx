@@ -21,7 +21,7 @@ import { DrawToolbar, type DrawingState, UndoRedo, finishShape, pasteIntoChart, 
 import { ScreenshotGallery, useScreenshotCount } from './Screenshots';
 import { DrawingsPrimitive, withOpacity, type Xy } from './drawingsPrimitive';
 import { levelStyle, onLevelStyleChange, stopColor, targetColor } from './levelStyle';
-import { holdTime, pnlClass, shortDate, signedUsd, optionUsd, usd } from './format';
+import { contractName, fillPrice, holdTime, pnlClass, shortDate, signedUsd, usd } from './format';
 import { useJournal } from './journal';
 import { InfoTip } from './InfoTip';
 import { useChartIndicators } from './useChartIndicators';
@@ -244,7 +244,7 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
     >
       <div className="panel-head">
         <div>
-          <span className="panel-title">{trade.underlying} {trade.strike}{trade.putCall === 'CALL' ? 'C' : 'P'} {shortDate(trade.expiry)}</span>
+          <span className="panel-title" title={trade.contract}>{contractName(trade)}</span>
           <span className="muted"> · {trade.direction === 'LONG' ? 'Long' : 'Short'} {trade.maxContracts} · held {holdTime(trade.openTime, trade.closeTime)}</span>
           <span className={`panel-pnl ${pnlClass(trade.netPnl)}`}>{signedUsd(trade.netPnl)}</span>
           {rr?.realizedR !== undefined && <span className={`panel-r ${pnlClass(rr.realizedR)}`}>{formatR(rr.realizedR)}</span>}
@@ -327,7 +327,7 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
                 <div>
                   <span className={buy ? 'win' : 'loss'}
                     title={added ? `${f.quantity - added} filled, plus ${added} closed without an opening fill` : undefined}>{f.orderType === 'EXPIRED' ? 'Expired' : buy ? 'Bought' : 'Sold'} {f.quantity}</span>
-                  <span> @ {optionUsd(f.price)}</span>
+                  <span> @ {fillPrice(f.price, f)}</span>
                 </div>
                 <div className="muted" title={f.account ? `From ${f.account}` : undefined}>
                   {f.timeExact === false ? 'time not reported' : f.execTime.slice(11)}
@@ -358,6 +358,12 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
             <div className="muted small">
               ≈ {chart.symbol} has no free minute data, so this chart is {chart.estimatedFrom} scaled to {chart.symbol} by each
               day's closing prices. Expect it within a point or two of the real index.
+            </div>
+          )}
+          {chart?.status === 'ok' && chart.futureOn && (
+            <div className="muted small">
+              Free market data has no futures, so this {chart.futureOn.future} trade is drawn on {chart.futureOn.etf}. Each fill is marked at
+              {' '}{chart.futureOn.etf}'s price the second it filled; fills while {chart.futureOn.etf} wasn't trading (before 4am or after 8pm New York time) sit at its last price.
             </div>
           )}
           {chart?.status === 'ok' && chart.feed === 'iex' && (
@@ -931,7 +937,7 @@ function chartData(chart: Extract<TradeChart, { status: 'ok' }>, trade: Trade, i
     // Without an exact price, fall back to the close of the fill's candle.
     const price = g.underlying ?? candles.find((c) => c.time === candleTime)?.close;
     if (price === undefined) continue;
-    const text = `${g.side === 'BUY' ? 'B' : 'S'} ${g.qty}${g.contract ? ` ${g.contract}` : ''} @ ${optionUsd(g.optionPrice)}${g.underlying === undefined ? ' (approx.)' : ''}`;
+    const text = `${g.side === 'BUY' ? 'B' : 'S'} ${g.qty}${g.contract ? ` ${g.contract}` : ''} @ ${fillPrice(g.optionPrice, trade)}${g.underlying === undefined ? ' (approx.)' : ''}`;
     const e = entries.get(tradeKey(g.id));
     const style = g.isEntry ? 'entry' : exitKind(e?.side ?? (entrySide as 'BUY' | 'SELL'), e?.qty ? e.cost / e.qty : undefined, g.optionPrice);
     markers.push({ id: g.id, time: candleTime, price, kind: g.isEntry ? 'entry' : 'exit', style, text });
@@ -982,6 +988,7 @@ function ReplayBar({ trade, chart, index, playing, speed, onPlay, onStep, onRest
   );
 }
 
+const FUTURE_ESTIMATE = 'The future\'s price here, estimated by moving your entry fill in step with the chart';
 const LEVEL_SOURCE = {
   fill: 'Your fill price when you got out here',
   market: 'The option\'s real price when the underlying reached this line',
@@ -1029,9 +1036,9 @@ function RiskPanel({ trade, priceSymbol, levels, placing, onPlacing, onChange, c
             {matched?.[kind][i] && (
               <span
                 className="level-option"
-                title={LEVEL_SOURCE[matched[kind][i]!.source]}
+                title={trade.contract && matched[kind][i]!.source === 'estimate' ? FUTURE_ESTIMATE : LEVEL_SOURCE[matched[kind][i]!.source]}
               >
-                {matched[kind][i]!.source === 'estimate' ? '≈' : ''}{optionUsd(matched[kind][i]!.optionPrice)}
+                {matched[kind][i]!.source === 'estimate' ? '≈' : ''}{fillPrice(matched[kind][i]!.optionPrice, trade)}
               </span>
             )}
           </span>
@@ -1093,7 +1100,7 @@ function CombineBox({ trade }: { trade: Trade }) {
       {others.length > 0 && (
         <div className="combine-row">
           <select value={pick} onChange={(e) => setPick(e.target.value)} aria-label="Trade to combine with">
-            <option value="">Combine with another {trade.underlying} {trade.strike}{trade.putCall === 'CALL' ? 'C' : 'P'} trade…</option>
+            <option value="">Combine with another {trade.contract ? contractName(trade) : `${trade.underlying} ${trade.strike}${trade.putCall === 'CALL' ? 'C' : 'P'}`} trade…</option>
             {others.map((t) => <option key={t.id} value={t.id}>{label(t)}</option>)}
           </select>
           <button disabled={!pick} onClick={() => { combineTrades([trade.id, pick]); setPick(''); }} title="Count these as one trade">Combine</button>

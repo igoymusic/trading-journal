@@ -6,6 +6,7 @@
 
 import type { Bar } from './alpaca';
 import { bsPrice, impliedVol } from './blackScholes';
+import { multiplierOf } from './futures';
 import type { PriceLevel, Trade } from './types';
 
 export interface LevelPrice {
@@ -53,6 +54,7 @@ function optionPriceAt(optionBars: Bar[] | undefined, time: number): number | un
 }
 
 export function priceLevels({ trade, levels, bars, entry, exitTime, expiryTime, optionBars, exits = [] }: LevelPricingInput): (LevelPrice | null)[] {
+  if (trade.contract) return futureLevels({ trade, levels, bars, entry, exitTime, expiryTime, exits });
   const vol = impliedVol(entry.optionPrice, { spot: entry.underlying, strike: trade.strike, msToExpiry: expiryTime - entry.time, putCall: trade.putCall });
   return levels.map((level) => {
     // Lines start at your exits (see levelsFromExits), so one still there is priced at that fill.
@@ -78,11 +80,27 @@ export function priceLevels({ trade, levels, bars, entry, exitTime, expiryTime, 
 export function dollarRiskReward(trade: Trade, stops: PriceLevel[], stopPrices: (LevelPrice | null)[], targets: PriceLevel[], targetPrices: (LevelPrice | null)[]) {
   const dir = trade.direction === 'LONG' ? 1 : -1;
   // Dollars made per contract if the option were closed at that price (avgEntry is per contract).
-  const perContract = (p: LevelPrice) => dir * (p.optionPrice * 100 - trade.avgEntry);
+  const perContract = (p: LevelPrice) => dir * (p.optionPrice * multiplierOf(trade) - trade.avgEntry);
   const sum = (levels: PriceLevel[], prices: (LevelPrice | null)[]) =>
     prices.every((p) => p) && levels.length ? levels.reduce((a, l, i) => a + l.contracts * perContract(prices[i]!), 0) : undefined;
   const stopPnl = sum(stops, stopPrices);
   const targetPnl = sum(targets, targetPrices);
   const risk = stopPnl !== undefined && stopPnl < 0 ? -stopPnl : undefined;
   return { risk, reward: targetPnl, ratio: risk && targetPnl !== undefined ? targetPnl / risk : undefined };
+}
+
+/**
+ * A future charted on its ETF (an /ES trade on SPY): the future moves in step with the ETF, so a
+ * line's futures price is the entry fill scaled by how far the ETF is from where it was at entry.
+ */
+function futureLevels({ levels, bars, entry, exitTime, exits = [] }: LevelPricingInput): (LevelPrice | null)[] {
+  if (!entry.underlying) return levels.map(() => null);
+  const perEtf = entry.optionPrice / entry.underlying;
+  return levels.map((level) => {
+    const exit = exits.find((e) => Math.abs(e.underlying - level.price) <= level.price * 0.0001);
+    if (exit) return { optionPrice: exit.optionPrice, source: 'fill', time: exit.time, reached: true };
+    const touch = firstTouch(bars, level.price, entry.time);
+    const reached = !!touch && touch.time <= Math.max(exitTime, entry.time);
+    return { optionPrice: Math.round(level.price * perEtf * 100) / 100, source: 'estimate', time: reached ? touch!.time : exitTime, reached };
+  });
 }

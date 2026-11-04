@@ -27,6 +27,8 @@ export interface ImportResult {
   duplicates: number;
   skipped: number;
   unmatchedFees: number;
+  /** Something worth knowing about this file, e.g. that a Tradovate Performance export has no fees. */
+  note?: string;
 }
 
 export interface FillPoint {
@@ -48,6 +50,8 @@ export type TradeChart =
     status: 'ok'; symbol: string; timeZone: string; feed: string; bars: Bar[]; fills: FillPoint[];
     /** Set when the index's prices are estimated from this ETF (e.g. SPX from SPY). */
     estimatedFrom?: string;
+    /** A futures trade drawn on its ETF's chart (/ES on SPY): markers sit at the ETF's price at each fill. */
+    futureOn?: { future: string; etf: string };
   };
 
 /** Option prices at a trade's stop and target lines, in the same order as the lines. */

@@ -2,7 +2,8 @@
 
 import type { ReactNode } from 'react';
 import { playbookScore, type Setup, type Trade } from '../core/types';
-import { holdTime, pnlClass, shortDate, contractUsd, signedUsd, timeOf, usd } from './format';
+import { holdTime, pnlClass, shortDate, tradePrice, signedUsd, timeOf, usd } from './format';
+import { futureLabel } from '../core/futures';
 import { formatR, riskReward } from '../core/rr';
 import { IncludeBox, MistakeNames, PositiveNames, RulesCell, SetupBadge, Stars } from './journal';
 import type { SortValue } from './sorting';
@@ -39,19 +40,21 @@ export const COLUMNS: Column[] = [
   { id: 'openDate', label: 'Date', sort: (t) => t.openTime, render: (t) => shortDate(t.openTime.slice(0, 10)) },
   {
     id: 'contract', label: 'Contract', sort: (t) => `${t.underlying} ${t.expiry} ${String(t.strike).padStart(8, '0')} ${t.putCall}`,
-    render: (t) => <span className="contract"><b>{t.underlying}</b> {t.strike}{t.putCall === 'CALL' ? 'C' : 'P'} <span className="muted">{shortDate(t.expiry)}</span></span>,
+    render: (t) => (t.contract
+      ? <span className="contract" title={t.contract}><b>{futureLabel(t.underlying, t.expiry)}</b></span>
+      : <span className="contract"><b>{t.underlying}</b> {t.strike}{t.putCall === 'CALL' ? 'C' : 'P'} <span className="muted">{shortDate(t.expiry)}</span></span>),
   },
-  { id: 'symbol', label: 'Symbol', sort: (t) => t.underlying, render: (t) => <b>{t.underlying}</b> },
-  { id: 'strike', label: 'Strike', sort: (t) => t.strike, numeric: true, render: (t) => t.strike },
-  { id: 'type', label: 'Call/Put', sort: (t) => t.putCall, render: (t) => (t.putCall === 'CALL' ? 'Call' : 'Put') },
+  { id: 'symbol', label: 'Symbol', sort: (t) => t.underlying, render: (t) => <b>{t.contract ? `/${t.underlying}` : t.underlying}</b> },
+  { id: 'strike', label: 'Strike', sort: (t) => t.strike, numeric: true, render: (t) => (t.contract ? '' : t.strike) },
+  { id: 'type', label: 'Call/Put', sort: (t) => t.putCall, render: (t) => (t.contract ? 'Future' : t.putCall === 'CALL' ? 'Call' : 'Put') },
   { id: 'expiry', label: 'Expiration', sort: (t) => t.expiry, render: (t) => shortDate(t.expiry) },
-  { id: 'dte', label: 'DTE', sort: (t) => dteAtEntry(t), numeric: true, render: (t) => dteAtEntry(t) },
+  { id: 'dte', label: 'DTE', sort: (t) => dteAtEntry(t), numeric: true, render: (t) => (t.contract ? '' : dteAtEntry(t)) },
   { id: 'side', label: 'Side', sort: (t) => t.direction, render: (t) => (t.direction === 'LONG' ? 'Long' : 'Short') },
   { id: 'qty', label: 'Max qty', sort: (t) => t.maxContracts, numeric: true, render: (t) => t.maxContracts },
   { id: 'contracts', label: 'Contracts traded', sort: (t) => contractsTraded(t), numeric: true, render: (t) => contractsTraded(t) },
   { id: 'fills', label: 'Fills', sort: (t) => t.fills.length, numeric: true, render: (t) => t.fills.length },
-  { id: 'avgEntry', label: 'Avg entry', sort: (t) => t.avgEntry, numeric: true, render: (t) => contractUsd(t.avgEntry) },
-  { id: 'avgExit', label: 'Avg exit', sort: (t) => t.avgExit, numeric: true, render: (t) => (t.avgExit === undefined ? '' : contractUsd(t.avgExit)) },
+  { id: 'avgEntry', label: 'Avg entry', sort: (t) => t.avgEntry, numeric: true, render: (t) => tradePrice(t.avgEntry, t) },
+  { id: 'avgExit', label: 'Avg exit', sort: (t) => t.avgExit, numeric: true, render: (t) => (t.avgExit === undefined ? '' : tradePrice(t.avgExit, t)) },
   { id: 'held', label: 'Held', sort: (t) => (t.closeTime ? Date.parse(t.closeTime) - Date.parse(t.openTime) : null), numeric: true, render: (t) => holdTime(t.openTime, t.closeTime) },
   { id: 'gross', label: 'Gross P&L', sort: (t) => t.grossPnl, numeric: true, render: (t) => <span className={pnlClass(t.grossPnl)}>{signedUsd(t.grossPnl)}</span> },
   { id: 'fees', label: 'Fees', sort: (t) => t.fees, numeric: true, render: (t) => <span className="muted">{usd(t.fees)}</span> },

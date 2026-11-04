@@ -83,7 +83,7 @@ export function applyFilter(trades: Trade[], f: TradeFilter): Trade[] {
     if (from && day < from) return false;
     if (to && day > to) return false;
     if (f.symbols.length && !f.symbols.includes(t.underlying)) return false;
-    if (f.putCall && t.putCall !== f.putCall) return false;
+    if (f.putCall && (t.contract || t.putCall !== f.putCall)) return false;
     if (f.direction && t.direction !== f.direction) return false;
     if (f.setups.length && !f.setups.includes(j?.setupId ?? 'none')) return false;
     if (f.mistakes.length) {
@@ -96,7 +96,7 @@ export function applyFilter(trades: Trade[], f: TradeFilter): Trade[] {
     }
     if (f.result === 'win' && !(t.status === 'CLOSED' && t.netPnl > 0)) return false;
     if (f.result === 'loss' && !(t.status === 'CLOSED' && t.netPnl < 0)) return false;
-    if (f.dte.length && !f.dte.includes(dteBucket(t).key)) return false;
+    if (f.dte.length && (t.contract || !f.dte.includes(dteBucket(t).key))) return false;
     return true;
   });
 }
@@ -193,8 +193,8 @@ export function buildReports(all: Trade[], setups: Setup[], mistakes: MistakeTag
       (t) => (t.journal?.mistakes.length ? t.journal.mistakes : ['none'])),
     positive: groupBy(trades, [{ key: 'none', label: 'No positive tags' }, ...positives.map((m) => ({ key: m.id, label: m.name }))],
       (t) => (t.journal?.positives?.length ? t.journal.positives : ['none'])),
-    dte: groupBy(trades, DTE_BUCKETS, (t) => [dteBucket(t).key]),
-    putCall: groupBy(trades, [{ key: 'CALL', label: 'Calls' }, { key: 'PUT', label: 'Puts' }], (t) => [t.putCall]),
+    dte: groupBy(trades, DTE_BUCKETS, (t) => (t.contract ? [] : [dteBucket(t).key])),
+    putCall: groupBy(trades, [{ key: 'CALL', label: 'Calls' }, { key: 'PUT', label: 'Puts' }], (t) => (t.contract ? [] : [t.putCall])),
     direction: groupBy(trades, [{ key: 'LONG', label: 'Bought to open' }, { key: 'SHORT', label: 'Sold to open' }], (t) => [t.direction]),
     timeOfDay: groupBy(trades, slots, (t) => [slotOf(t)]),
     weekday: groupBy(trades, WEEKDAYS.map((d, i) => ({ key: String(i), label: d })), (t) => [String(new Date(`${t.openTime.slice(0, 10)}T12:00:00`).getDay())]),

@@ -4,6 +4,7 @@ import { app, BrowserWindow, dialog, ipcMain, net, safeStorage, screen, shell } 
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseTosStatement } from '../core/tosCsv';
+import { isTradovateCsv, parseTradovateCsv } from '../core/tradovateCsv';
 import { addMerge, buildTrades, removeMerge, summarizeTrades, type TradeMerges } from '../core/trades';
 import type { MistakeTag, PriceLevel, Setup, TradeJournal } from '../core/types';
 import type { ChartView, ImportResult, JournalData, LabelOffset, TradeChart } from '../shared/api';
@@ -34,8 +35,19 @@ let schwabData: SchwabSync;
 let shots: Screenshots;
 let backups: Backups;
 
+/** Imports a thinkorswim Account Statement or a Tradovate export, whichever the file is. */
 function importFile(file: string): ImportResult {
-  const { fills, skipped, unmatchedFees } = parseTosStatement(readFileSync(file, 'utf8'));
+  const text = readFileSync(file, 'utf8');
+  if (isTradovateCsv(text)) {
+    const { fills, skipped, kind } = parseTradovateCsv(text, settings.timeZone);
+    const added = db.addFills(fills);
+    const unknown = skipped.find((s) => s.reason.startsWith('Unknown futures product'))?.reason;
+    const note = kind === 'performance'
+      ? 'Tradovate\'s Performance report has no commissions; import the Fills report instead to include them'
+      : unknown;
+    return { file: path.basename(file), found: fills.length, added, duplicates: fills.length - added, skipped: skipped.filter((s) => !s.reason.startsWith('Order ')).length, unmatchedFees: 0, ...(note ? { note } : {}) };
+  }
+  const { fills, skipped, unmatchedFees } = parseTosStatement(text);
   const added = db.addFills(fills);
   return { file: path.basename(file), found: fills.length, added, duplicates: fills.length - added, skipped: skipped.length, unmatchedFees };
 }
@@ -150,7 +162,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('journal:importTos', async (event): Promise<ImportResult | null> => {
     const win = BrowserWindow.fromWebContents(event.sender)!;
     const pick = await dialog.showOpenDialog(win, {
-      title: 'Import thinkorswim Account Statement',
+      title: 'Import a thinkorswim Account Statement or Tradovate report',
       filters: [{ name: 'CSV files', extensions: ['csv'] }],
       properties: ['openFile'],
     });

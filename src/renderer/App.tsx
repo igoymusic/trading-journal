@@ -203,7 +203,7 @@ export function App() {
             </button>
           )}
           <button onClick={() => setShowSettings(true)}>Settings</button>
-          <button className="primary" onClick={importCsv} title="Bring in trades from a thinkorswim account statement (CSV)">Import trades</button>
+          <button className="primary" onClick={importCsv} title="Bring in trades from a thinkorswim account statement or a Tradovate Fills report (CSV)">Import trades</button>
         </div>
       </header>
       {hasTrades && (
@@ -373,6 +373,7 @@ function describeImport(r: ImportResult): string {
   if (r.duplicates) parts.push(`${r.duplicates} already in your journal`);
   if (r.skipped) parts.push(`${r.skipped} rows skipped`);
   if (r.unmatchedFees) parts.push(`${r.unmatchedFees} fills without fee info`);
+  if (r.note) parts.push(r.note);
   return parts.join(' · ');
 }
 
@@ -384,11 +385,17 @@ function EmptyState({ onImport, onOpenSettings }: { onImport: () => void; onOpen
       <p>Open <b>Settings</b> and click <b>Connect a broker</b>, then sign in to your broker. Your option trades come in on their own from then on.</p>
       <button className="primary" onClick={onOpenSettings}>Open Settings</button>
       <details>
-        <summary>Or import a thinkorswim file instead</summary>
+        <summary>Or import a thinkorswim or Tradovate file instead</summary>
+        <p className="muted">thinkorswim:</p>
         <ol>
           <li>In thinkorswim, open <b>Monitor</b> then <b>Account Statement</b>.</li>
           <li>Pick a date range and click <b>Apply</b>.</li>
           <li>Click the menu icon at the top right and choose <b>Export to File</b>.</li>
+        </ol>
+        <p className="muted">Tradovate (futures):</p>
+        <ol>
+          <li>In Tradovate, open <b>Account Reports</b> and pick the <b>Fills</b> tab (Orders or Performance work too).</li>
+          <li>Pick a date range, then download it as <b>CSV</b>.</li>
         </ol>
         <button onClick={onImport}>Choose the CSV file</button>
       </details>

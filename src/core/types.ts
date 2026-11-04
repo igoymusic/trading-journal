@@ -7,7 +7,7 @@ export type Side = 'BUY' | 'SELL';
 export interface Fill {
   /** Stable id so re-importing the same file never creates duplicates. */
   id: string;
-  broker: 'thinkorswim' | 'snaptrade' | 'schwab';
+  broker: 'thinkorswim' | 'snaptrade' | 'schwab' | 'tradovate';
   /** Which brokerage account it came from, when known (broker sync). */
   account?: string;
   /** False when the broker only reported the date; execTime is then a placeholder time that day. */
@@ -29,6 +29,13 @@ export interface Fill {
   spread: string;
   /** Commissions plus misc fees for this fill, in dollars, as a positive number. */
   fees: number;
+  /**
+   * Futures only: the contract's name, e.g. "MESZ6". A futures fill has strike 0, putCall "CALL"
+   * (so a long counts as bullish), expiry the contract's expiration and `price` in points.
+   */
+  contract?: string;
+  /** Dollars per point of `price` for one contract; 100 (shares per option) when left out. */
+  multiplier?: number;
 }
 
 /** A round trip on one option contract: from flat, to a position, back to flat. */
@@ -62,6 +69,9 @@ export interface Trade {
   merged?: string[];
   /** Contracts closed without an opening fill, counted as bought (or sold) at the average entry. */
   assumedContracts?: number;
+  /** Futures only: the contract's name ("MESZ6") and dollars per point (see Fill). */
+  contract?: string;
+  multiplier?: number;
 }
 
 /** What you record about a trade: the setup it was, mistakes made, a 0.5-5 rating (half stars) and free notes. */
