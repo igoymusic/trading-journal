@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { futureEtf, futureLabel, parseContract, thirdFriday } from '../src/core/futures';
-import { priceLevels } from '../src/core/optionLevels';
+import { futureEtf, futureLabel, parseContract, thirdFriday, toTick } from '../src/core/futures';
+import { futuresRiskReward, priceLevels } from '../src/core/optionLevels';
 import { levelsFromExits } from '../src/core/rr';
 import { isTradovateCsv, parseTradovateCsv, parseTradovateTime, toNumber } from '../src/core/tradovateCsv';
 import { buildTrades } from '../src/core/trades';
@@ -128,7 +128,7 @@ describe('Tradovate import', () => {
       entry: { time: 0, underlying: 584, optionPrice: 5843.25 }, exitTime: 60_000, expiryTime: 0,
     });
     expect(p).toMatchObject({ source: 'estimate', reached: true });
-    expect(p!.optionPrice).toBeCloseTo(5853.26, 2);
+    expect(p!.optionPrice).toBe(5853.25);
   });
 });
 
@@ -168,5 +168,34 @@ describe('a real Tradovate Orders export', () => {
     });
     const [trade] = buildTrades(fills);
     expect(trade).toMatchObject({ status: 'CLOSED', direction: 'LONG', grossPnl: 5, closeTime: '2026-11-04T11:46:10' });
+  });
+});
+
+describe('futures risk in ticks', () => {
+  const [trade] = buildTrades(parseTradovateCsv(FILLS_CSV, TZ).fills).filter((t) => t.underlying === 'MES');
+  const at = (price: number) => ({ optionPrice: price, source: 'fill' as const, time: 0, reached: true });
+
+  it('counts ticks from the average entry and prices them at $1.25 a tick for /MES', () => {
+    const r = futuresRiskReward(trade, [{ price: 583.5, contracts: 1 }], [at(5838)], [{ price: 584.7, contracts: 1 }], [at(5850.5)])!;
+    expect(r.tickValue).toBe(1.25);
+    expect(r.risk).toEqual({ ticks: 21, dollars: 26.25 });
+    expect(r.reward).toEqual({ ticks: 29, dollars: 36.25 });
+    expect(r.ratio).toBeCloseTo(36.25 / 26.25, 6);
+  });
+
+  it('weights ticks by contracts at each line', () => {
+    const r = futuresRiskReward(trade, [{ price: 583.5, contracts: 2 }], [at(5841.25)], [], [])!;
+    expect(r.risk).toEqual({ ticks: 8, dollars: 20 });
+    expect(r.reward).toBeUndefined();
+  });
+
+  it('has no risk when the stop is on the winning side', () => {
+    expect(futuresRiskReward(trade, [{ price: 585, contracts: 1 }], [at(5845)], [], [])!.risk).toBeUndefined();
+  });
+
+  it('rounds estimated prices to the tick', () => {
+    expect(toTick(5853.31, 'ES')).toBe(5853.25);
+    expect(toTick(5853.38, 'MES')).toBe(5853.5);
+    expect(toTick(71.234, 'CL')).toBe(71.23);
   });
 });
