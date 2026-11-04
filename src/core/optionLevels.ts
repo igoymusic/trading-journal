@@ -6,7 +6,7 @@
 
 import type { Bar } from './alpaca';
 import { bsPrice, impliedVol } from './blackScholes';
-import { multiplierOf } from './futures';
+import { futureSpec, multiplierOf, toTick } from './futures';
 import type { PriceLevel, Trade } from './types';
 
 export interface LevelPrice {
@@ -89,11 +89,42 @@ export function dollarRiskReward(trade: Trade, stops: PriceLevel[], stopPrices: 
   return { risk, reward: targetPnl, ratio: risk && targetPnl !== undefined ? targetPnl / risk : undefined };
 }
 
+export interface FuturesSide {
+  /** Contract-weighted average ticks from your average entry (always positive). */
+  ticks: number;
+  /** Dollars over all the level's contracts (positive; for a reward below entry, negative). */
+  dollars: number;
+}
+
+/**
+ * A futures trade's risk and reward measured in ticks from your average entry, and in dollars
+ * (ticks × tick value × contracts). Null for anything that isn't a known futures contract.
+ */
+export function futuresRiskReward(trade: Trade, stops: PriceLevel[], stopPrices: (LevelPrice | null)[], targets: PriceLevel[], targetPrices: (LevelPrice | null)[]) {
+  const spec = futureSpec(trade.underlying);
+  if (!trade.contract || !spec) return null;
+  const entry = trade.avgEntry / multiplierOf(trade);
+  const dir = trade.direction === 'LONG' ? 1 : -1;
+  /** Ticks in your favor from the entry to a price. */
+  const ticksTo = (price: number) => Math.round((dir * (price - entry)) / spec.tick * 100) / 100;
+  const tickValue = spec.tick * multiplierOf(trade);
+  const side = (levels: PriceLevel[], prices: (LevelPrice | null)[]) => {
+    const contracts = levels.reduce((a, l) => a + l.contracts, 0);
+    if (!levels.length || !contracts || prices.length !== levels.length || !prices.every((p) => p)) return undefined;
+    const total = levels.reduce((a, l, i) => a + l.contracts * ticksTo(prices[i]!.optionPrice), 0);
+    return { ticks: total / contracts, dollars: Math.round(total * tickValue * 100) / 100 };
+  };
+  const stop = side(stops, stopPrices);
+  const target = side(targets, targetPrices);
+  const risk = stop && stop.ticks < 0 ? { ticks: -stop.ticks, dollars: -stop.dollars } : undefined;
+  return { tickSize: spec.tick, tickValue, ticksTo, risk, reward: target, ratio: risk && target ? target.dollars / risk.dollars : undefined };
+}
+
 /**
  * A future charted on its ETF (an /ES trade on SPY): the future moves in step with the ETF, so a
  * line's futures price is the entry fill scaled by how far the ETF is from where it was at entry.
  */
-function futureLevels({ levels, bars, entry, exitTime, exits = [] }: LevelPricingInput): (LevelPrice | null)[] {
+function futureLevels({ trade, levels, bars, entry, exitTime, exits = [] }: LevelPricingInput): (LevelPrice | null)[] {
   if (!entry.underlying) return levels.map(() => null);
   const perEtf = entry.optionPrice / entry.underlying;
   return levels.map((level) => {
@@ -101,6 +132,6 @@ function futureLevels({ levels, bars, entry, exitTime, exits = [] }: LevelPricin
     if (exit) return { optionPrice: exit.optionPrice, source: 'fill', time: exit.time, reached: true };
     const touch = firstTouch(bars, level.price, entry.time);
     const reached = !!touch && touch.time <= Math.max(exitTime, entry.time);
-    return { optionPrice: Math.round(level.price * perEtf * 100) / 100, source: 'estimate', time: reached ? touch!.time : exitTime, reached };
+    return { optionPrice: toTick(level.price * perEtf, trade.underlying), source: 'estimate', time: reached ? touch!.time : exitTime, reached };
   });
 }

@@ -7,40 +7,42 @@
 export interface FutureSpec {
   /** Dollars per one point of price, per contract. */
   multiplier: number;
+  /** Smallest price step (one tick), in points. A tick is worth tick × multiplier dollars. */
+  tick: number;
   /** The ETF whose chart stands in for the future's, if there is one. */
   etf?: string;
   name: string;
 }
 
 const SPECS: Record<string, FutureSpec> = {
-  ES: { multiplier: 50, etf: 'SPY', name: 'E-mini S&P 500' },
-  MES: { multiplier: 5, etf: 'SPY', name: 'Micro E-mini S&P 500' },
-  NQ: { multiplier: 20, etf: 'QQQ', name: 'E-mini Nasdaq-100' },
-  MNQ: { multiplier: 2, etf: 'QQQ', name: 'Micro E-mini Nasdaq-100' },
-  RTY: { multiplier: 50, etf: 'IWM', name: 'E-mini Russell 2000' },
-  M2K: { multiplier: 5, etf: 'IWM', name: 'Micro E-mini Russell 2000' },
-  YM: { multiplier: 5, etf: 'DIA', name: 'E-mini Dow' },
-  MYM: { multiplier: 0.5, etf: 'DIA', name: 'Micro E-mini Dow' },
-  CL: { multiplier: 1000, name: 'Crude Oil' },
-  MCL: { multiplier: 100, name: 'Micro Crude Oil' },
-  QM: { multiplier: 500, name: 'E-mini Crude Oil' },
-  NG: { multiplier: 10000, name: 'Natural Gas' },
-  GC: { multiplier: 100, name: 'Gold' },
-  MGC: { multiplier: 10, name: 'Micro Gold' },
-  SI: { multiplier: 5000, name: 'Silver' },
-  SIL: { multiplier: 1000, name: 'Micro Silver' },
-  HG: { multiplier: 25000, name: 'Copper' },
-  ZB: { multiplier: 1000, name: '30-Year T-Bond' },
-  ZN: { multiplier: 1000, name: '10-Year T-Note' },
-  ZF: { multiplier: 1000, name: '5-Year T-Note' },
-  ZT: { multiplier: 2000, name: '2-Year T-Note' },
-  '6E': { multiplier: 125000, name: 'Euro FX' },
-  M6E: { multiplier: 12500, name: 'Micro Euro FX' },
-  '6J': { multiplier: 12500000, name: 'Japanese Yen' },
-  '6B': { multiplier: 62500, name: 'British Pound' },
-  BTC: { multiplier: 5, name: 'Bitcoin' },
-  MBT: { multiplier: 0.1, name: 'Micro Bitcoin' },
-  MET: { multiplier: 0.1, name: 'Micro Ether' },
+  ES: { multiplier: 50, tick: 0.25, etf: 'SPY', name: 'E-mini S&P 500' },
+  MES: { multiplier: 5, tick: 0.25, etf: 'SPY', name: 'Micro E-mini S&P 500' },
+  NQ: { multiplier: 20, tick: 0.25, etf: 'QQQ', name: 'E-mini Nasdaq-100' },
+  MNQ: { multiplier: 2, tick: 0.25, etf: 'QQQ', name: 'Micro E-mini Nasdaq-100' },
+  RTY: { multiplier: 50, tick: 0.1, etf: 'IWM', name: 'E-mini Russell 2000' },
+  M2K: { multiplier: 5, tick: 0.1, etf: 'IWM', name: 'Micro E-mini Russell 2000' },
+  YM: { multiplier: 5, tick: 1, etf: 'DIA', name: 'E-mini Dow' },
+  MYM: { multiplier: 0.5, tick: 1, etf: 'DIA', name: 'Micro E-mini Dow' },
+  CL: { multiplier: 1000, tick: 0.01, name: 'Crude Oil' },
+  MCL: { multiplier: 100, tick: 0.01, name: 'Micro Crude Oil' },
+  QM: { multiplier: 500, tick: 0.025, name: 'E-mini Crude Oil' },
+  NG: { multiplier: 10000, tick: 0.001, name: 'Natural Gas' },
+  GC: { multiplier: 100, tick: 0.1, name: 'Gold' },
+  MGC: { multiplier: 10, tick: 0.1, name: 'Micro Gold' },
+  SI: { multiplier: 5000, tick: 0.005, name: 'Silver' },
+  SIL: { multiplier: 1000, tick: 0.005, name: 'Micro Silver' },
+  HG: { multiplier: 25000, tick: 0.0005, name: 'Copper' },
+  ZB: { multiplier: 1000, tick: 0.03125, name: '30-Year T-Bond' },
+  ZN: { multiplier: 1000, tick: 0.015625, name: '10-Year T-Note' },
+  ZF: { multiplier: 1000, tick: 0.0078125, name: '5-Year T-Note' },
+  ZT: { multiplier: 2000, tick: 0.00390625, name: '2-Year T-Note' },
+  '6E': { multiplier: 125000, tick: 5e-05, name: 'Euro FX' },
+  M6E: { multiplier: 12500, tick: 0.0001, name: 'Micro Euro FX' },
+  '6J': { multiplier: 12500000, tick: 5e-07, name: 'Japanese Yen' },
+  '6B': { multiplier: 62500, tick: 0.0001, name: 'British Pound' },
+  BTC: { multiplier: 5, tick: 5, name: 'Bitcoin' },
+  MBT: { multiplier: 0.1, tick: 5, name: 'Micro Bitcoin' },
+  MET: { multiplier: 0.1, tick: 0.5, name: 'Micro Ether' },
 };
 
 export const futureSpec = (root: string): FutureSpec | undefined => SPECS[root.toUpperCase()];
@@ -82,6 +84,13 @@ export const isFuture = (x: { contract?: string }): boolean => !!x.contract;
 
 /** Dollars per point of price per contract: 100 for options (one contract is 100 shares). */
 export const multiplierOf = (x: { multiplier?: number }): number => x.multiplier ?? 100;
+
+/** Rounds a price to the contract's tick (5853.31 -> 5853.25 for /ES). */
+export function toTick(price: number, root: string): number {
+  const tick = futureSpec(root)?.tick;
+  if (!tick) return Math.round(price * 100) / 100;
+  return Math.round(Math.round(price / tick) * tick * 1e8) / 1e8;
+}
 
 /** "/MES Dec 26" style label for a futures contract month. */
 export function futureLabel(root: string, expiry: string): string {

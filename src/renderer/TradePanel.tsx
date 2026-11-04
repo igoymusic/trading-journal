@@ -8,7 +8,7 @@ import { filledBy, positionAt, replayStartIndex } from '../core/replay';
 import { chartTime } from '../core/time';
 import { shownFills } from '../core/trades';
 import { groupFills } from '../core/fills';
-import { dollarRiskReward } from '../core/optionLevels';
+import { dollarRiskReward, futuresRiskReward } from '../core/optionLevels';
 import { averageUnderlying, bias, formatR, levelsFromExits, riskReward } from '../core/rr';
 import { indexProxy } from '../core/indexProxy';
 import { EMPTY_JOURNAL, type PriceLevel, type Trade, type TradeJournal } from '../core/types';
@@ -358,12 +358,6 @@ export function TradePanel({ trade, onClose, onOpenSettings }: { trade: Trade; o
             <div className="muted small">
               ≈ {chart.symbol} has no free minute data, so this chart is {chart.estimatedFrom} scaled to {chart.symbol} by each
               day's closing prices. Expect it within a point or two of the real index.
-            </div>
-          )}
-          {chart?.status === 'ok' && chart.futureOn && (
-            <div className="muted small">
-              Free market data has no futures, so this {chart.futureOn.future} trade is drawn on {chart.futureOn.etf}. Each fill is marked at
-              {' '}{chart.futureOn.etf}'s price the second it filled; fills while {chart.futureOn.etf} wasn't trading (before 4am or after 8pm New York time) sit at its last price.
             </div>
           )}
           {chart?.status === 'ok' && chart.feed === 'iex' && (
@@ -1009,13 +1003,23 @@ function RiskPanel({ trade, priceSymbol, levels, placing, onPlacing, onChange, c
 }) {
   // Only use prices that line up with the current lines (they arrive a moment after a change).
   const matched = prices && prices.stops.length === levels.stops.length && prices.targets.length === levels.targets.length ? prices : null;
-  const dollars = matched ? dollarRiskReward(trade, levels.stops, matched.stops, levels.targets, matched.targets) : null;
+  const dollars = matched && !trade.contract ? dollarRiskReward(trade, levels.stops, matched.stops, levels.targets, matched.targets) : null;
+  // Futures: risk and reward in ticks from your entry, and what those ticks are worth.
+  const fut = trade.contract ? futuresRiskReward(trade, levels.stops, matched?.stops ?? [], levels.targets, matched?.targets ?? []) : null;
+  // Ticks your exits actually made (or lost) from the average entry, and that in R.
+  const futGot = fut && trade.avgExit !== undefined ? fut.ticksTo(trade.avgExit / (trade.multiplier ?? 1)) : undefined;
+  const futR = fut?.risk && futGot !== undefined ? futGot / fut.risk.ticks : undefined;
+  const ticks = (n: number) => `${Math.round(n * 10) / 10} tick${Math.round(n * 10) / 10 === 1 ? '' : 's'}`;
   if (!canMeasure) return <div className="risk muted small">R needs the underlying's price at your entry, which isn't available for this trade.</div>;
   const losing = trade.status === 'CLOSED' && trade.netPnl < 0;
   return (
     <div className="risk">
       <div className="fill-list-head">Risk and reward
-        <InfoTip>Lines start at your actual exits: winners as targets, losers as stops. Drag a line on the chart to move it. A line at one of your exits uses that exit's fill price. Others marked ≈ are estimated from your entry fill; the rest are what the option traded at when the underlying got there.</InfoTip>
+        {trade.contract ? (
+          <InfoTip>Lines start at your actual exits: winners as targets, losers as stops. Drag a line on the {priceSymbol} chart to move it. Each line shows the {contractName(trade)} price there: your fill price at one of your exits, otherwise (marked ≈) your entry moved in step with {priceSymbol}. Risk and reward count ticks from your average entry; one tick is {fut ? `${fut.tickSize} points, worth ${usd(fut.tickValue)} a contract` : 'the smallest price step'}.</InfoTip>
+        ) : (
+          <InfoTip>Lines start at your actual exits: winners as targets, losers as stops. Drag a line on the chart to move it. A line at one of your exits uses that exit's fill price. Others marked ≈ are estimated from your entry fill; the rest are what the option traded at when the underlying got there.</InfoTip>
+        )}
       </div>
       <div className="risk-buttons">
         {(['stops', 'targets'] as const).map((kind) => (
@@ -1039,6 +1043,7 @@ function RiskPanel({ trade, priceSymbol, levels, placing, onPlacing, onChange, c
                 title={trade.contract && matched[kind][i]!.source === 'estimate' ? FUTURE_ESTIMATE : LEVEL_SOURCE[matched[kind][i]!.source]}
               >
                 {matched[kind][i]!.source === 'estimate' ? '≈' : ''}{fillPrice(matched[kind][i]!.optionPrice, trade)}
+                {fut && <span className="muted"> ({(() => { const t = fut.ticksTo(matched[kind][i]!.optionPrice); return `${t > 0 ? '+' : ''}${Math.round(t * 10) / 10}t`; })()})</span>}
               </span>
             )}
           </span>
@@ -1055,9 +1060,20 @@ function RiskPanel({ trade, priceSymbol, levels, placing, onPlacing, onChange, c
       ))}
       {rr ? (
         <div className="rr-summary">
-          <div><span className="muted">Risk</span> {usd(rr.risk)} <span className="muted">on {priceSymbol}</span></div>
-          {rr.realizedR !== undefined && <div><span className="muted">Result</span> <b className={pnlClass(rr.realizedR)}>{formatR(rr.realizedR)}</b></div>}
-          {rr.plannedR !== undefined && <div><span className="muted">Planned R:R</span> <b>1 : {rr.plannedR.toFixed(1)}</b></div>}
+          {fut?.risk ? (
+            <div>
+              <span className="muted">Risk</span> <b className="loss">{ticks(fut.risk.ticks)}</b> <span className="muted">·</span> <b className="loss">{usd(fut.risk.dollars)}</b>
+              {fut.reward && <> <span className="muted">· reward</span> <b className={pnlClass(fut.reward.ticks)}>{ticks(fut.reward.ticks)}</b> <span className="muted">·</span> <b className={pnlClass(fut.reward.dollars)}>{signedUsd(fut.reward.dollars)}</b></>}
+            </div>
+          ) : trade.contract ? (
+            <div><span className="muted">Risk</span> {usd(rr.risk)} <span className="muted">on {priceSymbol} (ticks show once the {contractName(trade)} prices load)</span></div>
+          ) : (
+            <div><span className="muted">Risk</span> {usd(rr.risk)} <span className="muted">on {priceSymbol}</span></div>
+          )}
+          {futR !== undefined ? <div><span className="muted">Result</span> <b className={pnlClass(futR)}>{formatR(futR)}</b> <span className="muted">({ticks(Math.abs(futGot!))} {futGot! >= 0 ? 'made' : 'lost'})</span></div>
+            : rr.realizedR !== undefined && <div><span className="muted">Result</span> <b className={pnlClass(rr.realizedR)}>{formatR(rr.realizedR)}</b></div>}
+          {fut?.ratio !== undefined ? <div><span className="muted">Planned R:R</span> <b>1 : {fut.ratio.toFixed(1)}</b></div>
+            : rr.plannedR !== undefined && <div><span className="muted">Planned R:R</span> <b>1 : {rr.plannedR.toFixed(1)}</b></div>}
           {dollars?.risk !== undefined && (
             <div className="rr-dollars">
               <div>
