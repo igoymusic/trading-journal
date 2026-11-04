@@ -85,7 +85,7 @@ export function SchwabSettings({ slot, onSynced }: { slot: SchwabSlot; onSynced:
           {status.signedIn && status.marketDataOnly && (
             <p className="muted small">
               This app only has Market Data, so it can't read your trades. Remove it here and enter your app with
-              Accounts and Trading Production instead; put the Market Data app in the section below.
+              Accounts and Trading Production instead.
             </p>
           )}
           <div className="row broker-actions">

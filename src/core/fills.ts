@@ -50,3 +50,27 @@ export function matchFills(incoming: Fill[], existing: Fill[]): { fresh: Fill[];
   }
   return { fresh: out, matched };
 }
+
+/** How close together fills at the same price can be and still show as one row. */
+const GROUP_SECONDS = 10;
+const seconds = (t: string) => Date.parse(t.replace(' ', 'T')) / 1000;
+
+/**
+ * Fills on the same side and price within 10 seconds of the row's first fill, shown as one row
+ * ("Bought 2" rather than two "Bought 1" rows) at that first fill's time. `added` counts contracts
+ * closed without an opening fill that the row includes.
+ */
+export function groupFills<F extends Pick<Fill, 'id' | 'side' | 'price' | 'quantity' | 'execTime' | 'orderType' | 'timeExact'>>(
+  shown: F[], real: { id: string; quantity: number }[],
+): { fill: F; added: number }[] {
+  const rows: { fill: F; added: number }[] = [];
+  for (const f of shown) {
+    const added = f.quantity - (real.find((x) => x.id === f.id)?.quantity ?? f.quantity);
+    const last = rows[rows.length - 1];
+    const same = last && last.fill.side === f.side && last.fill.price === f.price && Math.abs(seconds(f.execTime) - seconds(last.fill.execTime)) <= GROUP_SECONDS
+      && last.fill.orderType === f.orderType && last.fill.timeExact !== false && f.timeExact !== false;
+    if (same) rows[rows.length - 1] = { fill: { ...last.fill, quantity: last.fill.quantity + f.quantity }, added: last.added + added };
+    else rows.push({ fill: f, added });
+  }
+  return rows;
+}

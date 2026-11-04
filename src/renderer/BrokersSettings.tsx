@@ -7,12 +7,10 @@ export function BrokersSettings({ onSynced }: { onSynced: (result: SyncResult) =
   const [accounts, setAccounts] = useState<BrokerAccount[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
-  const [relay, setRelay] = useState('');
 
   async function load() {
     const s = await window.journal.brokerStatus();
     setStatus(s);
-    setRelay(s.relayUrl);
     setAccounts(null);
     if (s.connected) window.journal.brokerAccounts().then(setAccounts, () => setAccounts([]));
   }
@@ -86,14 +84,6 @@ export function BrokersSettings({ onSynced }: { onSynced: (result: SyncResult) =
       )}
       {status?.lastSync && <p className="muted">Last synced {new Date(status.lastSync).toLocaleString()}</p>}
       {message && <p className={message.ok ? 'win' : 'loss'}>{message.text}</p>}
-      <details className="advanced">
-        <summary>Relay address</summary>
-        <p className="muted">The small cloud service that holds the SnapTrade key. Leave it as it came unless you were told to change it.</p>
-        <div className="row">
-          <input value={relay} onChange={(e) => setRelay(e.target.value)} placeholder="https://moon-relay.example.workers.dev" spellCheck={false} />
-          <button disabled={relay === status?.relayUrl} onClick={async () => { await window.journal.setRelayUrl(relay); load(); }}>Save</button>
-        </div>
-      </details>
     </>
   );
 }

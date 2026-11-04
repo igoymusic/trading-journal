@@ -8,19 +8,20 @@ import { isCounted, type Trade } from '../core/types';
 import type { ImportResult, JournalData, SyncResult } from '../shared/api';
 import { DayView } from './DayView';
 import { FilterBar } from './FilterBar';
-import { GoalsCard } from './GoalsCard';
+import { Home } from './Home';
 import { JournalContext, type JournalContextValue, TradeJournalEditor } from './journal';
 import { pnlClass, signedUsd, usd } from './format';
 import { MonthView } from './MonthView';
-import { PnlChart } from './PnlChart';
 import { ReportsView } from './ReportsView';
 import { AccountPicker, accountOf, accountsIn } from './AccountPicker';
 import { describeSync } from './BrokersSettings';
-import { applyColors } from './colors';
+import { activeTheme, applyColors, applyTheme } from './colors';
+import { ThemeArt } from './ThemeArt';
 import { applyMarkerStyles } from './markerStyles';
 import { applyIndicators } from './indicatorsStore';
 import { setOptionPriceDisplay } from './format';
 import { SettingsDialog } from './SettingsDialog';
+import logo from './logo.png';
 import { ErrorBoundary } from './ErrorBoundary';
 import { TradePanel } from './TradePanel';
 import { type ActiveTab, initialTabs, monthKey, tabsReducer } from './tabs';
@@ -36,7 +37,12 @@ export function App() {
   useEffect(() => { window.journal.getSettings().then((s) => setHiddenAccounts(s.hiddenAccounts)); }, []);
   // Your colors; charts redraw (the view remounts) when they change.
   const [colorsVersion, setColorsVersion] = useState(0);
-  useEffect(() => { window.journal.getSettings().then((s) => { applyColors(s.colors); applyMarkerStyles(s.markerStyles); setOptionPriceDisplay(s.optionPriceDisplay); applyIndicators(s.indicators); setColorsVersion((v) => v + 1); }); }, []);
+  const redraw = () => {
+    setColorsVersion((v) => v + 1);
+    // Charts draw their labels in the theme's font, so draw again once it has loaded.
+    document.fonts.load(activeTheme().markerLook.font).then(() => setColorsVersion((v) => v + 1), () => {});
+  };
+  useEffect(() => { window.journal.getSettings().then((s) => { applyColors(s.colors); applyTheme(s.theme); applyMarkerStyles(s.markerStyles); setOptionPriceDisplay(s.optionPriceDisplay); applyIndicators(s.indicators); redraw(); }); }, []);
   const accounts = useMemo(() => accountsIn(allData?.trades ?? []), [allData]);
   const data = useMemo(() => {
     if (!allData || !hiddenAccounts.length) return allData;
@@ -64,11 +70,14 @@ export function App() {
   const [filter, setFilter] = useState<TradeFilter>(DEFAULT_FILTER);
   const filtered = useMemo(() => applyFilter(data?.trades ?? [], filter), [data, filter]);
   const filterTab = tabs.active === 'trades' || tabs.active === 'reports';
-  const selected = data?.trades.find((t) => t.id === selectedId) ?? null;
+  // A trade you just combined lives on inside the combined one.
+  const selected = data?.trades.find((t) => t.id === selectedId) ?? data?.trades.find((t) => selectedId && t.merged?.includes(selectedId)) ?? null;
   const activeDay = tabs.active.startsWith('day:') ? tabs.active.slice(4) : null;
   const activeMonth = tabs.active.startsWith('month:')
     ? { year: Number(tabs.active.slice(6, 10)), month: Number(tabs.active.slice(11, 13)) }
     : null;
+  // Which page gets an astronaut at the end of it (Home has its own, under the left-hand stats).
+  const pageArt = activeDay ? 'day' : tabs.active === 'trades' || tabs.active === 'reports' || tabs.active === 'year' ? tabs.active : null;
 
   const load = () => window.journal.getJournal().then(setData);
 
@@ -77,6 +86,9 @@ export function App() {
     setups: data?.setups ?? [],
     mistakes: data?.mistakes ?? [],
     positives: data?.positives ?? [],
+    trades: data?.trades ?? [],
+    combineTrades(ids) { window.journal.combineTrades(ids).then(setData); },
+    splitTrade(id) { window.journal.splitTrade(id).then(setData); },
     saveTrade(tradeId, journal) {
       setData((d) => d && { ...d, trades: d.trades.map((t) => (t.id === tradeId ? { ...t, journal } : t)) });
       window.journal.saveTradeJournal(tradeId, journal);
@@ -108,7 +120,7 @@ export function App() {
       });
       window.journal.savePositives(positives);
     },
-  }), [data?.setups, data?.mistakes, data?.positives]);
+  }), [data?.setups, data?.mistakes, data?.positives, data?.trades]);
 
   function saveDayNote(date: string, notes: string) {
     setData((d) => d && { ...d, dayNotes: { ...d.dayNotes, [date]: notes } });
@@ -177,19 +189,21 @@ export function App() {
   return (
     <JournalContext.Provider value={journalApi}>
     <div className="app">
+      <ThemeArt key={colorsVersion} />
       <header className="topbar">
         <div className="topbar-title">
-          <h1>Moon Journal</h1>
+          <h1><img className="logo" src={activeTheme().art?.logo ?? logo} alt="" />Moon Journal</h1>
           {accounts.length > 1 && <AccountPicker accounts={accounts} hidden={hiddenAccounts} onChange={changeHiddenAccounts} />}
         </div>
         <div className="topbar-actions">
+          <i className="topbar-sticker" />
           {brokerConnected && (
             <button disabled={syncing} onClick={() => syncBrokers(true)} title="Bring in new trades from your brokers">
               {syncing ? 'Syncing…' : '↻ Refresh'}
             </button>
           )}
           <button onClick={() => setShowSettings(true)}>Settings</button>
-          <button className="primary" onClick={importCsv}>Import thinkorswim CSV</button>
+          <button className="primary" onClick={importCsv} title="Bring in trades from a thinkorswim account statement (CSV)">Import trades</button>
         </div>
       </header>
       {hasTrades && (
@@ -219,29 +233,20 @@ export function App() {
           })}
         </nav>
       )}
-      {notice && <div className="notice" onClick={() => setNotice(null)}>{notice}</div>}
+      {notice && <Notice key={notice} text={notice} onDone={() => setNotice(null)} />}
       {!data ? null : !hasTrades ? <EmptyState onImport={importCsv} onOpenSettings={() => setShowSettings(true)} /> : (
-        <main className="view" key={colorsVersion}>
+        <main className={`view${pageArt ? ' with-art' : ''}`} key={colorsVersion}>
           {filterTab && <FilterBar trades={data.trades} filter={filter} onChange={setFilter} shown={filtered.length} />}
-          {scoped && <SummaryBar s={scoped} trades={scopedTrades ?? []} day={!!activeDay} />}
+          {scoped && tabs.active !== 'home' && <SummaryBar s={scoped} trades={scopedTrades ?? []} day={!!activeDay} />}
           {tabs.active === 'home' && (
-            <div className="home">
-              <PnlChart trades={data.trades} />
-              <div className="home-side">
-              <div className="card">
-                <MonthView
-                  compact
-                  goals={goals}
-                  trades={data.trades}
-                  year={homeMonth.year}
-                  month={homeMonth.month}
-                  onMonthChange={(year, month) => setHomeMonth({ year, month })}
-                  onOpenDay={(date) => dispatch({ type: 'openDayFromHome', date })}
-                />
-              </div>
-              <GoalsCard trades={data.trades} goals={goals} year={homeMonth.year} month={homeMonth.month} onOpenSettings={() => setShowSettings(true)} />
-              </div>
-            </div>
+            <Home
+              trades={data.trades}
+              goals={goals}
+              month={homeMonth}
+              onMonthChange={(year, month) => setHomeMonth({ year, month })}
+              onOpenDay={(date) => dispatch({ type: 'openDayFromHome', date })}
+              onOpenSettings={() => setShowSettings(true)}
+            />
           )}
           {tabs.active === 'year' && (
             <YearView
@@ -292,9 +297,10 @@ export function App() {
               <TradeTable trades={filtered} selectedId={selectedId} onSelect={(id) => setSelectedId(id === selectedId ? null : id)} />
             </>
           )}
+          {pageArt && <div className={`page-art ${pageArt}`} />}
         </main>
       )}
-      {showSettings && <SettingsDialog onSynced={afterSync} onColorsChanged={() => setColorsVersion((v) => v + 1)} onClose={() => { setShowSettings(false); setSettingsVersion((v) => v + 1); }} />}
+      {showSettings && <SettingsDialog onSynced={afterSync} onColorsChanged={redraw} onClose={() => { setShowSettings(false); setSettingsVersion((v) => v + 1); }} />}
     </div>
     </JournalContext.Provider>
   );
@@ -333,6 +339,32 @@ function PinIcon({ filled }: { filled: boolean }) {
       <path d="M9 3h6l-1 6 4 4v2H6v-2l4-4-1-6z" />
       <path d="M12 15v6" strokeLinecap="round" />
     </svg>
+  );
+}
+
+/**
+ * A message under the top bar that fades away on its own: after 6 seconds, or 20 for problems
+ * (a failed sync or import, an expired sign-in). Hovering keeps it up; clicking closes it.
+ */
+function Notice({ text, onDone }: { text: string; onDone: () => void }) {
+  const [fading, setFading] = useState(false);
+  const [hover, setHover] = useState(false);
+  const problem = /failed|run out|error/i.test(text);
+  useEffect(() => {
+    if (hover) { setFading(false); return; }
+    const t = setTimeout(() => setFading(true), problem ? 20000 : 6000);
+    return () => clearTimeout(t);
+  }, [hover, problem]);
+  return (
+    <div
+      className={`notice${fading ? ' fading' : ''}`}
+      onClick={onDone}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      onTransitionEnd={() => fading && onDone()}
+    >
+      {text}
+    </div>
   );
 }
 

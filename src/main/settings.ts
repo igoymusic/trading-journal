@@ -11,17 +11,21 @@ import type { SchwabSlot } from '../shared/api';
 
 interface StoredSettings {
   timeZone: string;
+  /** Where the window was when you last closed it. */
+  windowBounds?: { x: number; y: number; width: number; height: number; maximized?: boolean };
   /** Trade table columns, in display order. */
   tradeColumns?: string[];
   goals?: Goals;
   /** Report sections' columns, order and collapsed state. */
-  reportsLayout?: { columns: string[][]; collapsed: string[] };
+  reportsLayout?: { columns: string[][]; collapsed: string[]; charts?: string[]; hidden?: string[] };
   /** Address of the SnapTrade relay; empty uses the one built into the app. */
   relayUrl?: string;
   /** This person's SnapTrade sign-in: the user id, and the secret encrypted like the Alpaca keys. */
   snaptrade?: { userId: string; secret: string };
   /** Colors changed from the defaults, e.g. { win: "#00c853" }. */
   colors?: Record<string, string>;
+  /** The look picked in Settings (a theme id); undefined is the default look. */
+  theme?: string;
   /** Accounts left out of the journal's numbers (by name). */
   hiddenAccounts?: string[];
   /** Indicators shown on every chart. */
@@ -70,6 +74,15 @@ export class Settings {
 
   private save() {
     writeFileSync(this.file, JSON.stringify(this.data, null, 2));
+  }
+
+  get windowBounds() {
+    return this.data.windowBounds;
+  }
+
+  set windowBounds(bounds: StoredSettings['windowBounds']) {
+    this.data.windowBounds = bounds;
+    this.save();
   }
 
   get timeZone() {
@@ -125,6 +138,15 @@ export class Settings {
     // Only keep real "#rrggbb" colors.
     const clean = Object.fromEntries(Object.entries(c ?? {}).filter(([, v]) => /^#[0-9a-f]{6}$/i.test(v)));
     this.data.colors = Object.keys(clean).length ? clean : undefined;
+    this.save();
+  }
+
+  get theme() {
+    return this.data.theme;
+  }
+
+  set theme(id: string | undefined) {
+    this.data.theme = id && /^[a-z]{1,20}$/.test(id) && id !== 'default' ? id : undefined;
     this.save();
   }
 
