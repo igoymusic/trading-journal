@@ -25,7 +25,7 @@ button:hover { filter: brightness(1.15); }
 
 .notice { margin: 12px 20px 0; padding: 8px 12px; border-radius: 4px; background: var(--panel-2); border-left: 3px solid var(--blue); cursor: pointer; }
 
-.summary { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; padding: 16px 20px; }
+.summary { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 12px; padding: 16px 20px; }
 .tile { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; }
 .tile-label { color: var(--muted); font-size: 12px; }
 .tile-value { font-size: 22px; font-weight: 600; margin-top: 2px; font-variant-numeric: tabular-nums; }
@@ -55,8 +55,9 @@ td { padding: 6px 8px; border-bottom: 1px solid #22262f; white-space: nowrap; }
 
 .topbar-actions { display: flex; gap: 8px; }
 .trade-row.selected td { background: #1c2333; }
+.trade-row.not-counted td:not(:first-child) { opacity: 0.45; }
 
-.trade-panel { margin: 0 20px 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; display: flex; flex-direction: column; height: 460px; flex-shrink: 0; }
+.trade-panel { position: relative; margin: 0 20px 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; display: flex; flex-direction: column; height: 460px; flex-shrink: 0; }
 .panel-head { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--border); }
 .panel-title { font-weight: 600; font-size: 15px; }
 .panel-pnl { margin-left: 12px; font-weight: 600; font-size: 15px; }
@@ -68,9 +69,10 @@ td { padding: 6px 8px; border-bottom: 1px solid #22262f; white-space: nowrap; }
 .chart { position: absolute; inset: 0; }
 .chart-message { padding: 40px; text-align: center; color: var(--muted); }
 .chart-message p { margin-bottom: 14px; }
-.fill-list { width: 290px; border-left: 1px solid var(--border); overflow: auto; padding: 8px 12px; }
+.fill-list { width: 340px; border-left: 1px solid var(--border); overflow: auto; padding: 8px 12px; }
 .fill-list-head { color: var(--muted); font-size: 12px; margin-bottom: 6px; }
-.fill-item { padding: 6px 0; border-bottom: 1px solid #22262f; font-variant-numeric: tabular-nums; }
+.fill-item { padding: 6px 0; border-bottom: 1px solid #22262f; font-variant-numeric: tabular-nums; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; font-size: 13px; white-space: nowrap; }
+.fill-item > div:first-child { margin-right: auto; }
 .underlying-price { color: var(--text); }
 .small { font-size: 11px; margin-top: 8px; }
 
@@ -196,6 +198,7 @@ button.link { background: none; border: none; color: var(--blue); padding: 6px; 
 .stars.small { font-size: 13px; }
 .stars.editable span { cursor: pointer; }
 .stars .on { color: #fdd835; }
+.stars .half { background: linear-gradient(90deg, #fdd835 50%, #4a4e59 50%); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .notes { display: block; width: 100%; min-height: 70px; resize: vertical; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 8px 10px; font: inherit; line-height: 1.5; }
 .notes:focus, .journal-field select:focus, .quick-add:focus { outline: 1px solid var(--blue); border-color: var(--blue); }
 .day-note { margin-bottom: 14px; min-height: 60px; }
@@ -218,13 +221,13 @@ button.link { background: none; border: none; color: var(--blue); padding: 6px; 
 .rr-summary { margin: 8px 0 4px; display: grid; gap: 2px; }
 .level-option { margin-left: 6px; color: var(--muted); font-size: 12px; }
 .rr-dollars { margin-top: 4px; }
-.fill-list { width: 290px; }
+.fill-list { width: 340px; }
 
 /* Filters */
 .filter-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 14px 20px 0; }
 .filter-bar button { padding: 4px 10px; font-size: 12px; }
 .filter-dates { display: flex; align-items: center; gap: 6px; color: var(--muted); }
-.filter-dates input { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 3px 6px; font: inherit; font-size: 12px; color-scheme: dark; }
+.filter-dates input, .filter-dates select { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 3px 6px; font: inherit; font-size: 12px; color-scheme: dark; }
 .toggle { display: inline-flex; }
 .toggle button { border-radius: 0; margin-left: -1px; }
 .toggle button:first-child { border-radius: 4px 0 0 4px; margin-left: 0; }
@@ -451,3 +454,25 @@ th.sorted { color: var(--text); }
 .indicator-inputs input[type=number], .indicator-inputs select { width: 120px; }
 .indicator-inputs input[type=range] { accent-color: var(--blue); width: 120px; }
 .chart-legend { position: absolute; top: 4px; left: 8px; z-index: 3; display: flex; flex-direction: column; gap: 1px; font-size: 11px; pointer-events: none; text-shadow: 0 0 3px #131722; }
+
+/* Stop and target line style popover, and the target/stop color pair for positions. */
+.draw-style.levels-pop { top: auto; bottom: 0; width: 240px; }
+.level-style { display: flex; flex-direction: column; gap: 8px; }
+.level-style label.check { display: flex; align-items: center; gap: 6px; }
+.position-colors label { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.position-colors input[type='color'] { width: 28px; height: 22px; padding: 0; border: none; background: none; }
+.draw-style .position-colors { gap: 14px; }
+.draw-style .position-colors label, .draw-style .level-style label.check { flex-direction: row; align-items: center; gap: 6px; justify-content: flex-start; }
+.draw-style .level-style label.check input { width: auto; }
+.position-labels { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
+.position-labels .muted { width: 100%; margin: 0; }
+.draw-style .position-labels label.check { flex-direction: row; align-items: center; gap: 4px; font-size: 12px; }
+.draw-style .position-labels input { width: auto; }
+
+/* Drag a chart panel's bottom edge to resize it. */
+.panel-resize { position: absolute; left: 0; right: 0; bottom: -5px; height: 10px; cursor: ns-resize; z-index: 5; }
+.panel-resize:hover { background: linear-gradient(transparent 4px, var(--blue) 4px, var(--blue) 6px, transparent 6px); }
+
+/* Resizable trade table columns. */
+.trades th .col-resize { position: absolute; top: 0; right: -3px; width: 7px; height: 100%; cursor: col-resize; z-index: 3; }
+.trades th .col-resize:hover, .trades th .col-resize.active { background: var(--blue); opacity: 0.6; }

@@ -1,7 +1,7 @@
 // Groups trades by calendar day for the month view. A trade counts on the day it closed
 // (still-open trades count on the day they opened), same as the trade list.
 
-import type { Trade } from './types';
+import { isCounted, type Trade } from './types';
 
 export interface DayStats {
   /** "YYYY-MM-DD" */
@@ -48,6 +48,7 @@ export function tradeDay(t: Trade): string {
 export function statsByDay(trades: Trade[]): Map<string, DayStats> {
   const out = new Map<string, DayStats>();
   for (const t of trades) {
+    if (!isCounted(t)) continue;
     const date = tradeDay(t);
     const s = out.get(date) ?? { date, netPnl: 0, trades: 0, wins: 0, losses: 0 };
     s.trades += 1;

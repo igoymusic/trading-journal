@@ -289,6 +289,10 @@ export async function levelOptionPrices(trade: Trade, stops: PriceLevel[], targe
     exitTime: trade.closeTime ? zonedToUtcMillis(trade.closeTime, settings.timeZone) : Date.now(),
     expiryTime: zonedToUtcMillis(`${trade.expiry}T16:00:00`, 'America/New_York'),
     optionBars: await optionBars(trade, client, db),
+    exits: trade.fills.filter((f) => f.side !== entrySide).flatMap((f) => {
+      const p = chart.fills.find((q) => q.fillId === f.id);
+      return p?.underlyingPrice === undefined ? [] : [{ underlying: p.underlyingPrice * r, optionPrice: f.price, time: p.time }];
+    }),
   };
   return { stops: priceLevels({ ...common, levels: upLevels(stops) }), targets: priceLevels({ ...common, levels: upLevels(targets) }) };
 }

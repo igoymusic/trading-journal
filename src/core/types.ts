@@ -60,7 +60,7 @@ export interface Trade {
   journal?: TradeJournal;
 }
 
-/** What you record about a trade: the setup it was, mistakes made, a 1-5 rating and free notes. */
+/** What you record about a trade: the setup it was, mistakes made, a 0.5-5 rating (half stars) and free notes. */
 export interface TradeJournal {
   notes: string;
   setupId: string | null;
@@ -79,6 +79,10 @@ export interface TradeJournal {
   underlyingExit?: number;
   /** Ids of the setup's playbook rules you followed on this trade; the rest count as broken. */
   rulesFollowed?: string[];
+  /** Left out of every total (day, month, reports, goals) while still listed. */
+  excluded?: boolean;
+  /** Chart tickers this trade's position box has been drawn on (so one you delete stays deleted). */
+  boxesPlaced?: string[];
 }
 
 /** A price on the underlying and how many contracts it applies to. */
@@ -120,3 +124,6 @@ export interface MistakeTag {
 }
 
 export const CONTRACT_MULTIPLIER = 100;
+
+/** Whether a trade counts toward totals: every trade does unless you unticked its Include box. */
+export const isCounted = (t: Trade) => !t.journal?.excluded;
